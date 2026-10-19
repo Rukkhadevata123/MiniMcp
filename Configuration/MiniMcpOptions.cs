@@ -10,8 +10,7 @@ public sealed record MiniMcpOptions(
     string? AccessTeam,
     string? AccessAudience,
     int Port = 8000,
-    bool EnableBuild = false,
-    int BuildTimeoutSeconds = 60)
+    string? BashPath = null)
 {
     public bool IsLocal => AuthMode == "Local";
     public string AccessIssuer => $"https://{AccessTeam}.cloudflareaccess.com";
@@ -51,13 +50,7 @@ public sealed record MiniMcpOptions(
             audience = Required("CF_ACCESS_AUD");
         }
 
-        var buildText = configuration["MCP_ENABLE_BUILD"];
-        var enableBuild = false;
-        if (!string.IsNullOrEmpty(buildText) && !bool.TryParse(buildText, out enableBuild))
-            throw new InvalidOperationException("MCP_ENABLE_BUILD must be true or false.");
-
         return new MiniMcpOptions(Required("MCP_ROOT"), mode, origin, team, audience,
-            Number("MCP_PORT", 8000, 1, 65535), enableBuild,
-            Number("MCP_BUILD_TIMEOUT_SECONDS", 60, 1, 600));
+            Number("MCP_PORT", 8000, 1, 65535), configuration["MCP_BASH_PATH"]);
     }
 }

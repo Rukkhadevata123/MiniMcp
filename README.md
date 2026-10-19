@@ -1,16 +1,18 @@
 # MiniMcp
 
-让 ChatGPT 通过 MCP 读取和修改自己电脑上的项目文件。服务使用 .NET 10、ASP.NET Core 和官方 MCP C# SDK，通过 Cloudflare Tunnel 发布，并使用 Cloudflare Access Managed OAuth 登录。
+让 ChatGPT 通过三个 MCP 工具读取文件、应用补丁和执行一次性 Bash 命令。服务使用 .NET 10、ASP.NET Core 和官方 MCP C# SDK，通过 Cloudflare Tunnel 发布，并使用 Cloudflare Access Managed OAuth 登录。
 
 ```text
 ChatGPT / MCP Client
         │ HTTPS + OAuth
 Cloudflare Access（指定邮箱授权 + Managed OAuth）
         │ Tunnel + 已签名的 Cf-Access-Jwt-Assertion
-cloudflared → http://127.0.0.1:8000 → MiniMcp → MCP_ROOT 内的项目文件
+cloudflared → http://127.0.0.1:8000 → MiniMcp → 文件工具 / Bash
 ```
 
 MiniMcp 本身不调用 OpenAI API，无需 OpenAI API Key。
+
+`read_file` 和 `apply_patch` 限定在 `MCP_ROOT` 内；**Bash 使用运行 MiniMcp 的账号权限，`MCP_ROOT` 只是默认工作目录，不是 shell 沙箱**。命令可以访问该账号能访问的其他文件及网络。只将服务开放给你信任的身份，并使用普通用户运行。
 
 ## 目录
 
@@ -19,12 +21,13 @@ MiniMcp 本身不调用 OpenAI API，无需 OpenAI API Key。
 - [工具、代码位置与配置](#configuration)
 - [首次部署：Arch 环境与配置文件](#arch-setup)
 - [Cloudflare Dashboard 完整配置](#cloudflare)
-- [在 ChatGPT 验证读取和写入](#chatgpt)
-- [可选：启用构建工具](#build-tool)
+- [在 ChatGPT 验证三个工具](#chatgpt)
+- [补丁格式与一次性 Bash 用法](#tool-usage)
 - [Arch：systemd 服务与自启动](#systemd)
 - [Windows 11：手动运行与自启动](#windows)
 - [日志解释与故障定位](#troubleshooting)
 - [开发检查与本地 MCP 测试](#development)
+- [实现参考](#references)
 - [许可证](#license)
 
 <a id="arch-manual"></a>
@@ -71,12 +74,13 @@ https://mcp.yoimiyalove.top/mcp
 | 应用依赖与运行 | 已验证；本机已还原项目依赖并成功运行服务 |
 | Cloudflare Tunnel | 已验证；QUIC 连接注册成功，收到公网 hostname 到本机端口的远程配置 |
 | ChatGPT 已认证调用链路 | 已验证；服务识别客户端 `openai-mcp`，成功处理工具发现及调用 |
-| `list_files` | 已验证；列出项目根目录，服务日志 `IsError = False` |
-| `read_file` | 已验证；读取 `Program.cs` 和 README |
-| `write_file` | 已验证；`overwrite: true` 覆盖 README，返回 `overwritten: true` |
-| 写入后回读 | 已验证；重新读取确认写入内容 |
-| 核心自动检查 | 已有 16 项通过记录，涵盖路径、大小上限、覆盖保护和构建进程控制 |
-| ChatGPT 调用 `build_project` | 待验证；当前配置关闭该工具 |
+| 三工具版本 | 27 项核心检查通过，覆盖按行读取、补丁、真实 Bash 执行、超时、取消与子进程清理；运行命令见[开发检查](#development) |
+| MCP SDK 内存流协议检查 | 已通过；恰好三个工具、参数 schema、补丁回读、Bash 返回与工具错误 |
+| 新版 HTTP 端到端 | 已通过 Arch 实机复测；ChatGPT 经公网 HTTPS、Access 和 Tunnel 完成新版工具发现与实际调用 |
+| 工具列表刷新 | 已验证；旧会话调用已删除工具被拒绝，重新发现工具后新版三个工具均调用成功 |
+| ChatGPT 调用 `bash` | 已验证；`pwd`、`uname -s`、文本输出和算术运算成功，退出码为 `0` |
+| ChatGPT 调用 `read_file` | 已验证；读取 UTF-8 文本和 `Program.cs` 前 35 行，未截断、无错误 |
+| ChatGPT 调用 `apply_patch` | 已验证；`dry_run=true` 预演和实际更新均成功，修改后回读确认内容已保存 |
 | 匿名拒绝、错误 AUD、过期令牌等失败分支 | 待专项验证；成功登录不能替代这些测试 |
 | Arch systemd 服务、注销后运行、重启自启 | 待实机验证；指南见后文 |
 | Windows 手动运行与自启动 | 待实机验证；保留完整步骤 |
@@ -89,28 +93,32 @@ https://mcp.yoimiyalove.top/mcp
 
 ### 工具
 
-默认开放三个文件工具，另外一个构建工具通过配置启用。
+固定提供以下三个工具。列目录、搜索、构建和查看 Git diff 都通过 `bash` 完成。
+
+此版本不保留旧工具兼容层。升级时以 [.env.example](.env.example) 为准清理旧配置，重启应用后刷新客户端工具列表。
 
 | 工具 | 主要参数 | 功能 |
 | --- | --- | --- |
-| `list_files` | `path`，默认 `.` | 列出最多 200 项，并返回 `truncated` |
-| `read_file` | `path` | 读取最多 256 KiB 的 UTF-8 文本 |
-| `write_file` | `path`、`content`、`overwrite` | 创建文件；覆盖已有文件需明确传 `overwrite: true` |
-| `build_project` | `path`，默认 `.` | 可选，固定执行 `dotnet build`，返回退出码、超时状态及截断后的输出 |
+| `read_file` | `path`、`start_line=1`、`end_line=null` | 读取 UTF-8 文本；行号从 1 开始、包含结束行，省略结束行表示读到末尾 |
+| `apply_patch` | `patch`、`dry_run=false` | 用文本补丁新增、更新、移动或删除文件；可先校验并查看变更文件计划 |
+| `bash` | `command`、`workdir="."`、`timeout_seconds=30` | 启动独立 Bash 执行一次命令，返回退出码和输出；超时范围 1–600 秒 |
 
-工具路径使用相对于 `MCP_ROOT` 的 `/` 分隔路径，例如 `Program.cs`、`Tools/FileTools.cs`。绝对路径、越界路径、符号链接与 junction 会被拒绝。`.git`、`.env*`、`.ssh`、`.aws`、`.config`、`.codex`、`.agents` 和 `.key`、`.pfx`、`.p12` 文件被过滤。
+文件工具的路径和 Bash 的 `workdir` 使用相对于 `MCP_ROOT` 的 `/` 分隔路径，例如 `Program.cs`、`Tools/WorkspaceTools.cs`。这些参数拒绝绝对路径、越界路径、符号链接与 junction，并过滤 `.git`、`.env*`、`.ssh`、`.aws`、`.config`、`.codex`、`.agents`、`.cloudflared`、`tunnel-token` 和 `.key`、`.pem`、`.pfx`、`.p12` 文件。**这些检查不约束 Bash 命令正文**，例如 `git diff` 可以正常读取 `.git`。
 
-写入先生成同目录临时文件，再替换目标，内容大小按 UTF-8 字节计算。文件接口适用于可信用户操作自己的项目；路径检查不隔离硬链接，也无法消除其他本机进程并发替换链接的竞态。构建可执行项目定义的 MSBuild 任务或脚本，应只对可信项目启用。
+文件工具仅支持不含 NUL 的 UTF-8 文本，单文件最多 256 KiB（含 BOM）。`read_file` 返回 `path`、`startLine`、`endLine`、`totalLines`、`truncated`、`content`；内容不附加行号，最多 16000 个 UTF-16 字符单元，不截断代理对。`truncated` 表示所选行范围被输出上限截断；最后一行可能只返回了一部分。可缩小行范围继续读取，超长单行需通过 Bash 选取片段。
+
+补丁先校验整批操作，再暂存新内容、备份原文件并替换；提交失败时尝试回滚。补丁和 Bash 调用共用一把锁，避免它们在服务内部同时修改文件。它们不与外部编辑器同步，也不保证断电/进程被强制终止时的多文件事务；回滚失败会报错，并保留同目录 `.minimcp-*.bak` 供恢复。路径检查不隔离硬链接，也无法消除其他本机进程替换链接的竞态。
 
 ### 代码位置
 
 | 文件 | 职责 |
 | --- | --- |
 | [Program.cs](Program.cs) | 监听配置、MCP 工具注册、`/mcp` 和 `/healthz` |
-| [Tools/FileTools.cs](Tools/FileTools.cs) | 三个文件工具的 MCP 入口与参数说明 |
-| [Tools/BuildTools.cs](Tools/BuildTools.cs) | 可选构建工具入口 |
-| [Services/ProjectWorkspace.cs](Services/ProjectWorkspace.cs) | 路径限制、文件列举、读取与写入 |
-| [Services/BuildRunner.cs](Services/BuildRunner.cs) | 构建进程、输出上限、超时与取消 |
+| [Tools/WorkspaceTools.cs](Tools/WorkspaceTools.cs) | 三个工具的 MCP 入口、参数与权限提示 |
+| [Services/ProjectWorkspace.cs](Services/ProjectWorkspace.cs) | 路径校验、UTF-8 文件读取与行范围 |
+| [Services/PatchService.cs](Services/PatchService.cs) | 补丁解析、精确匹配、预演与提交 |
+| [Services/BashRunner.cs](Services/BashRunner.cs) | 独立 Bash、环境变量、输出上限、超时与取消 |
+| [Services/ProcessLifetime.cs](Services/ProcessLifetime.cs) | Linux 进程组与 Windows Job Object 清理 |
 | [Security/CloudflareAccessAuthentication.cs](Security/CloudflareAccessAuthentication.cs) | Access JWT 校验及公钥缓存刷新 |
 | [Configuration/MiniMcpOptions.cs](Configuration/MiniMcpOptions.cs) | 环境变量与启动校验 |
 
@@ -124,8 +132,7 @@ https://mcp.yoimiyalove.top/mcp
 | `CF_ACCESS_TEAM` | 团队域名前缀 | 例如团队域名 `my-team.cloudflareaccess.com` 对应 `my-team` |
 | `CF_ACCESS_AUD` | Access 应用 AUD | Cloudflare 模式必填，来自应用设置 |
 | `MCP_PORT` | `8000` | 端口范围 1–65535；监听地址固定为 IPv4 loopback |
-| `MCP_ENABLE_BUILD` | `false` | 使用 `true` 才注册构建工具 |
-| `MCP_BUILD_TIMEOUT_SECONDS` | `60` | 构建超时，范围 1–600 秒；输出上限为 16000 字符 |
+| `MCP_BASH_PATH` | Linux：`/bin/bash`；Windows：`%ProgramFiles%\Git\bin\bash.exe` | Bash 可执行文件的绝对路径；未安装或路径无效时拒绝启动 |
 
 Cloudflare 模式缺少必要配置时拒绝启动。JWT 校验包含签名、RS256、Issuer、Audience 与有效期。公钥通过 ConfigurationManager 缓存，设置六小时自动刷新间隔，并支持未知 key ID 后的受限刷新。
 
@@ -149,13 +156,15 @@ Cloudflare 模式缺少必要配置时拒绝启动。JWT 校验包含签名、RS
 首次安装或需要补齐环境时执行：
 
 ```bash
-sudo pacman -Syu dotnet-sdk aspnet-runtime dotnet-targeting-pack aspnet-targeting-pack cloudflared
+sudo pacman -Syu --needed dotnet-sdk aspnet-runtime dotnet-targeting-pack aspnet-targeting-pack cloudflared bash util-linux git ripgrep
 dotnet --info
 dotnet --list-runtimes
 cloudflared --version
 ```
 
 确认系统运行时列表同时包含 `Microsoft.NETCore.App 10.0.x` 与 `Microsoft.AspNetCore.App 10.0.x`。Arch 的 ASP.NET Core 运行时和 targeting pack 是独立包。
+
+Bash 执行需要 `/bin/bash` 和 util-linux 提供的 `/usr/bin/setsid`。`git`、`rg` 用于下文的命令示例。
 
 在项目目录还原和构建：
 
@@ -183,8 +192,7 @@ MCP_PUBLIC_URL=https://mcp.yoimiyalove.top
 CF_ACCESS_TEAM=replace-with-your-team-prefix
 CF_ACCESS_AUD=replace-with-application-audience-tag
 MCP_PORT=8000
-MCP_ENABLE_BUILD=false
-MCP_BUILD_TIMEOUT_SECONDS=60
+MCP_BASH_PATH=/bin/bash
 ```
 
 首次验证可将 `MCP_ROOT` 设为 MiniMcp 项目本身；之后改为实际准备交给模型操作的项目。替换示例中的团队与 AUD 后，再按 [手动启动步骤](#arch-manual) 导入环境并运行。
@@ -283,7 +291,7 @@ chmod 600 "$HOME/.config/minimcp/tunnel-token"
 
 <a id="chatgpt"></a>
 
-## 在 ChatGPT 验证读取和写入
+## 在 ChatGPT 验证三个工具
 
 ### 1. 连接插件
 
@@ -298,34 +306,42 @@ chmod 600 "$HOME/.config/minimcp/tunnel-token"
 
 完成 Access 登录和工具扫描，再安装生成的插件。账户/工作区须允许自定义 MCP。新对话输入 `@`，选择 MiniMcp。[OpenAI 官方连接与使用说明](https://developers.openai.com/api/docs/guides/custom-mcp-server)
 
+更新工具名称、参数或描述后，按以下顺序刷新：
+
+1. 重启 MiniMcp，保持 Tunnel 运行。
+2. 在 [ChatGPT Plugins](https://chatgpt.com/plugins) 打开 MiniMcp 的连接详情，点击 **Refresh／刷新**。
+3. 确认工具列表只包含 `read_file`、`apply_patch`、`bash`。
+4. 新建对话，输入 `@` 重新选择 MiniMcp，再运行测试。[OpenAI 官方刷新步骤](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata)
+
+
 ### 2. 测试读取
 
 当 `MCP_ROOT` 为 MiniMcp 项目目录时，发送：
 
 ```text
 请使用 MiniMcp 插件：
-1. 调用 list_files，参数 {"path":"."}。
-2. 调用 read_file，参数 {"path":"Program.cs"}。
+1. 调用 bash，参数 {"command":"pwd; ls -la"}。
+2. 调用 read_file，参数 {"path":"Program.cs","start_line":1,"end_line":40}。
 3. 展示实际返回内容并解释程序功能；调用失败时展示具体错误。
 ```
 
 展开工具调用详情检查输入、输出；服务终端应看到对应工具完成且 `IsError = False`。如果切换了 MCP_ROOT，将 Program.cs 换为该项目实际存在的文件。
 
-### 3. 测试写入和覆盖
+### 3. 测试补丁、回读和清理
 
 选择项目内尚不存在的测试文件，例如 `mcp-smoke-test.txt`，发送：
 
 ```text
 请使用 MiniMcp：
-1. 调用 write_file，参数 {"path":"mcp-smoke-test.txt","content":"MiniMcp write test\n","overwrite":false}。
-2. 调用 read_file，参数 {"path":"mcp-smoke-test.txt"}，展示返回内容。
-3. 调用 write_file，参数 {"path":"mcp-smoke-test.txt","content":"MiniMcp overwrite test\n","overwrite":true}。
-4. 再读取这个文件，确认覆盖后的内容。
+1. 用 apply_patch 新增 mcp-smoke-test.txt，内容为 MiniMcp patch test 加一个换行。
+   先用 dry_run=true 校验并展示变更计划，再用相同 patch、dry_run=false 执行。
+2. 用 read_file 回读，确认文件内容。
+3. 用 apply_patch 把这一行改为 MiniMcp updated，再回读确认。
+4. 用 bash 执行 git diff --stat，展示退出码、stdout 和 stderr。
+5. 最后用 apply_patch 删除刚才创建的 mcp-smoke-test.txt。
 ```
 
-如果同名文件已存在，换一个测试文件名。写入按 ChatGPT 的工具确认设置操作。测试结束后在本机删除测试文件；当前没有删除工具。
-
-已有记录通过修改 README 并回读验证了覆盖写入。后续复测用独立测试文件，更便于检查和清理。
+如果同名文件已存在，换一个测试文件名。按 ChatGPT 的工具确认设置操作。`git diff` 不显示未跟踪文件的内容，因此测试新增文件以 `read_file` 回读为准；不是 Git 仓库时该命令会返回非零退出码。
 
 ### 4. 健康与认证检查
 
@@ -347,24 +363,75 @@ curl -i https://mcp.yoimiyalove.top/.well-known/oauth-authorization-server
 
 Managed OAuth 正常配置时，非浏览器未认证请求预期得到带发现信息的 `401`，授权服务器发现地址应返回 metadata。完整联调仍以实际工具调用为准。
 
-<a id="build-tool"></a>
+<a id="tool-usage"></a>
 
-## 可选：启用构建工具
+## 补丁格式与一次性 Bash 用法
 
-当前默认 `MCP_ENABLE_BUILD=false`。准备测试可信 .NET 项目时，在实际生效的配置中设置：
+### apply_patch
 
-```dotenv
-MCP_ENABLE_BUILD=true
-MCP_BUILD_TIMEOUT_SECONDS=60
+`patch` 是下面这样的完整字符串，使用 `*** Begin Patch` / `*** End Patch` 包裹。新增文件的每一行以 `+` 开头：
+
+```diff
+*** Begin Patch
+*** Add File: notes/example.txt
++hello
++world
+*** End Patch
 ```
 
-重启 MiniMcp，并在 ChatGPT 插件详情中刷新工具列表，再调用：
+更新已有文件前先读取。`@@` 开始一段修改，空格前缀表示上下文，`-` 表示删除，`+` 表示插入；空白上下文行也必须带一个空格前缀。以下示例把 `hello` 改为 `Hello` 并保留下一行：
 
-```text
-使用 MiniMcp 的 build_project，参数 {"path":"MiniMcp.csproj"}，展示构建退出码和输出。
+```diff
+*** Begin Patch
+*** Update File: notes/example.txt
+@@
+-hello
++Hello
+ world
+*** End Patch
 ```
 
-路径相对于 MCP_ROOT；根目录只有一个项目或解决方案时也可使用 `.`。构建超时会返回 `timedOut`，输出超过上限会标记 `outputTruncated`。核心测试覆盖进程控制，但 ChatGPT 构建调用尚待验证。
+移动可与修改合并，也可以单独使用；删除会删除整个文本文件：
+
+```diff
+*** Begin Patch
+*** Update File: notes/example.txt
+*** Move to: notes/renamed.txt
+*** End Patch
+```
+
+```diff
+*** Begin Patch
+*** Delete File: notes/renamed.txt
+*** End Patch
+```
+
+- 最多 64 个文件操作、补丁 UTF-8 大小最多 1 MiB。新增和移动的目标必须不存在；同一文件路径在一份补丁里只能涉及一次。
+- 匹配严格区分空白与大小写，必须在当前搜索范围内唯一；有重复片段时增加上下文。多个 `@@` 按原文件顺序处理，不允许重叠。
+- `@@ 精确的一整行` 可定位到该行之后；定位行本身也必须在尚未消费的范围内唯一。`*** End of File` 放在最后一段末尾，可限定匹配必须到文件末尾。只有 `+` 的修改段表示追加到文件末尾。
+- 不接受 `git diff` 的标准 unified diff 行号头，也不做模糊匹配。这是下文所述 Codex 补丁格式的严格子集。
+- 新文件使用 UTF-8 无 BOM、LF 换行。已有文件保留 BOM、末尾是否有换行及 Unix 权限；未改行保留原换行符，新增行采用原文件首个换行符（无换行符时用 LF）。
+- `dry_run=true` 完成同样的解析、路径、上下文和内容大小校验，返回文件级计划，不创建目录或写文件。返回 `dryRun` 和 `changes`，每项包含 `action`、`path`、`moveTo`、`beforeBytes`、`afterBytes`。真正执行时会重新校验，预演不会锁定文件供以后提交。
+
+### bash
+
+以下都是 `bash` 工具的参数示例：
+
+```json
+{"command":"pwd; ls -la"}
+{"command":"rg -n 'MapMcp' --glob '*.cs' ."}
+{"command":"git status --short; git diff -- Program.cs"}
+{"command":"dotnet build MiniMcp.csproj --nologo","timeout_seconds":120}
+{"command":"pwd; ls","workdir":"Services"}
+```
+
+返回 `exitCode`、`stdout`、`stderr`、`timedOut`、`outputTruncated`。非零退出码是命令结果，不会自动变成 MCP 工具错误；超时时 `exitCode=null`、`timedOut=true`，保留已经收集的输出。stdout、stderr 分别最多 16000 个 UTF-16 字符单元，超出部分继续读取并丢弃，避免管道堵塞。`outputTruncated` 也可能表示后代进程仍占用输出管道，清理后等待读取超过 5 秒而停止收集。
+
+每次使用 `--noprofile --norc` 启动新 Bash，不读 shell 启动脚本；上一次的 `cd`、`export`、函数和别名不会保留，文件修改会保留。需要连续操作时放在同一个 `command` 中。stdin 关闭，不支持交互输入、PTY、长期会话或后台任务管理；不要用它运行需要持续存活的服务器。
+
+命令正常结束、超时或取消后都会清理普通子进程：Linux 使用 `setsid` 创建进程组，Windows 使用带 `KILL_ON_JOB_CLOSE` 的 Job Object。主动脱离进程组的恶意程序不属于 Linux 清理保证范围，这些机制不提供文件或网络沙箱。
+
+子进程仅继承 PATH、HOME/用户目录、语言、临时目录、Windows 系统目录及 HTTP(S)/ALL/NO_PROXY 等基础变量，不自动继承 MiniMcp 的配置、凭据或 `BASH_ENV`。这不阻止命令主动读取账号可访问的配置文件。依赖自定义 SDK 环境变量的命令，可在单次命令中显式设置。
 
 <a id="systemd"></a>
 
@@ -399,6 +466,8 @@ systemctl --user daemon-reload
 | Tunnel 服务 | 同一用户运行；启动时拉起 MiniMcp，独立保持隧道连接 |
 
 两个模板使用 `/usr/bin/dotnet` 和 `/usr/bin/cloudflared`；在不同发行版使用时按实际安装位置调整。服务模板中的 `%h` 由 systemd 展开为该用户的 home。
+
+Bash 子进程继承服务的普通用户身份和 systemd 限制。模板的 `NoNewPrivileges=true` 会限制提权，`PrivateTmp=true` 会改变它看到的临时目录；它们不会将命令限制在 `MCP_ROOT`。后台服务也不会加载你的交互式 shell 配置，所需命令应在其 PATH 中可用。
 
 ### 2. 先手动启动服务并验收
 
@@ -494,6 +563,7 @@ sudo loginctl disable-linger "$USER"
 ```powershell
 winget install --id Microsoft.DotNet.SDK.10 --exact
 winget install --id Cloudflare.cloudflared --exact
+winget install --id Git.Git --exact
 ```
 
 重新打开终端：
@@ -509,6 +579,8 @@ dotnet build MiniMcp.csproj --no-restore
 
 确认 `Microsoft.AspNetCore.App 10.0.x` 可用。下面假设代码位于 `D:\Projects\MiniMcp`；替换为实际路径。[.NET Windows 安装说明](https://learn.microsoft.com/en-us/dotnet/core/install/windows)
 
+本项目在 Windows 使用 **Git for Windows 的 Bash**，不调用 PowerShell 或 WSL。默认路径为 `C:\Program Files\Git\bin\bash.exe`；自定义安装路径通过 `MCP_BASH_PATH` 指定。可在 PowerShell 验证 `& 'C:\Program Files\Git\bin\bash.exe' --version`。`rg` 不是 Git Bash 自带命令，使用搜索示例前另行安装并加入 PATH。[Git for Windows](https://gitforwindows.org/)
+
 ### 2. 两个 PowerShell 终端手动运行
 
 **终端一：配置当前进程环境并运行应用。**
@@ -521,8 +593,7 @@ $env:MCP_PUBLIC_URL = 'https://mcp.yoimiyalove.top'
 $env:CF_ACCESS_TEAM = 'replace-with-your-team-prefix'
 $env:CF_ACCESS_AUD = 'replace-with-application-audience-tag'
 $env:MCP_PORT = '8000'
-$env:MCP_ENABLE_BUILD = 'false'
-$env:MCP_BUILD_TIMEOUT_SECONDS = '60'
+$env:MCP_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
 dotnet run --no-launch-profile
 ```
 
@@ -552,7 +623,7 @@ curl.exe --fail http://127.0.0.1:8000/healthz
 Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
-然后在 ChatGPT 重复列举、读取和写入回读测试。结束时两个前台终端分别按 `Ctrl+C`。
+然后在 ChatGPT 重复读取、补丁回读和 Bash 测试。文件工具路径和 `workdir` 仍用相对路径及 `/`；命令正文使用 Bash 语法，例如 `pwd`、`git diff`、`dotnet build`。结束时两个前台终端分别按 `Ctrl+C`。
 
 ### 3. 双系统和两台电脑如何配置
 
@@ -580,8 +651,7 @@ set "MCP_PUBLIC_URL=https://mcp.yoimiyalove.top"
 set "CF_ACCESS_TEAM=replace-with-your-team-prefix"
 set "CF_ACCESS_AUD=replace-with-application-audience-tag"
 set "MCP_PORT=8000"
-set "MCP_ENABLE_BUILD=false"
-set "MCP_BUILD_TIMEOUT_SECONDS=60"
+set "MCP_BASH_PATH=%ProgramFiles%\Git\bin\bash.exe"
 cd /d "%~dp0"
 "%ProgramFiles%\dotnet\dotnet.exe" "%~dp0MiniMcp.dll" >> "%~dp0minimcp.log" 2>&1
 ```
@@ -648,14 +718,15 @@ Set-Service -Name cloudflared -StartupType Manual
 | `Registered tunnel connection`，`protocol=quic` | 日志中 QUIC 隧道已建立 |
 | 启动时找不到本地 `config.yml` | 本项目使用 Dashboard 管理配置和 token；后续应核对远程配置更新 |
 | 启动早期提示没有 ingress | 随后日志已收到包含 `mcp.yoimiyalove.top` 和本机 Service URL 的配置，实际工具调用也成功；据此可判断该提示没有持续阻断本次联调 |
-| `TCP Connectivity ... FAIL`，UDP/QUIC PASS | 本次通过 QUIC 工作，HTTP/2 的 TCP 路径仍不可达；要验证 TCP 回退能力时检查出站 TCP 7844 与网络/代理配置 |
+| `TCP Connectivity ... FAIL`，UDP/QUIC PASS | 最新预检查中 region1 的 TCP 检查失败、region2 通过；当前隧道仍使用 QUIC，完整的 HTTP/2 回退尚未实测 |
+| QUIC `timeout: no recent network activity` 后再次 `Registered tunnel connection` | 已记录到连接中断后重连成功|
 | 请求四条 HA 连接但最多提供两条 | 本次日志注册了两条连接；记录不足以确定限制原因，现有工具调用已成功 |
 | `No XML encryptor configured` | ASP.NET Core Data Protection 的本机密钥未配置静态加密；应与 Access JWT 校验分别看待 |
-| `"write_file" completed. IsError = False` | 工具在服务端执行成功；再回读可核对实际写入内容 |
+| `"apply_patch" completed. IsError = False` | 补丁调用成功；还需核对 dryRun，并回读确认实际写入内容 |
 
 Cloudflare Tunnel 的 QUIC 使用出站 UDP 7844，HTTP/2 使用出站 TCP 7844。[端口说明](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)
 
-Data Protection 密钥的存储和静态加密由 ASP.NET Core 的运行环境及配置决定；该条日志不能作为 Cloudflare JWT 校验失败的依据。长期运行时可按需单独配置密钥保护。[微软说明](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/default-settings?view=aspnetcore-10.0)
+Data Protection 密钥的存储和静态加密由 ASP.NET Core 的运行环境及配置决定。长期运行时可按需单独配置密钥保护。[微软说明](https://learn.microsoft.com/en-us/aspnet/core/security/data-protection/configuration/default-settings?view=aspnetcore-10.0)
 
 ### 常见问题
 
@@ -672,10 +743,14 @@ Data Protection 密钥的存储和静态加密由 ASP.NET Core 的运行环境�
 | 登录后仍 401 | 检查 team prefix、应用 AUD、机器时钟及服务认证日志 |
 | 403 | 检查当前登录邮箱是否匹配 Access 策略 |
 | ASP.NET 返回 400 | 核对 MCP_PUBLIC_URL 的 hostname 与请求 Host；再检查 MCP 请求格式 |
-| ChatGPT 看不到工具 | 确认插件已安装并在对话中选中，必要时刷新工具列表、重新登录 |
+| ChatGPT 看不到工具或调用旧工具报 `Unknown tool` | 重启新版服务，在插件连接详情点击 Refresh，确认工具列表后新建对话并重新选择 MiniMcp；仍显示旧列表时重新添加连接 |
 | 修改配置未生效 | 确认修改的是当前启动方式实际读取的配置，并重启应用 |
 | 修改代码未生效 | 前台重新运行；后台服务重新发布 DLL 并重启 |
 | 工具拒绝文件 | 检查相对路径、MCP_ROOT、链接、过滤规则、UTF-8 编码及大小上限 |
+| 启动提示 Bash 路径无效 | 检查 MCP_BASH_PATH；Windows 安装 Git for Windows；Linux 安装 bash 和 util-linux |
+| 补丁提示 context 不匹配或歧义 | 重新读取文件并增加精确上下文，避免重叠修改段；不要直接传 git diff 的行号格式 |
+| Bash 返回非零退出码 | 查看 stderr；核对 workdir、命令依赖和 PATH，服务不会加载 shell 启动脚本 |
+| Bash 超时或后台程序消失 | 单次调用有超时且结束后清理子进程；长期服务应在本机终端或 systemd 中启动 |
 | systemd 提示没有用户总线 | 在实际登录用户的会话里使用 `systemctl --user`，核对用户管理器和 linger |
 | systemd 在 NAMESPACE 阶段失败 | 核对系统对用户服务沙箱选项的支持，结合模板的 PrivateTmp 等设置排查 |
 | `NU1301` | 检查运行终端能否访问 NuGet 源 `https://api.nuget.org/v3/index.json` |
@@ -690,7 +765,15 @@ Data Protection 密钥的存储和静态加密由 ASP.NET Core 的运行环境�
 dotnet run --project tests/MiniMcp.Checks
 ```
 
-Unix 上还测试构建进程的超时、取消、子进程清理与输出截断。检查项目不替代真实 OAuth、Windows 或重启自启测试。
+检查使用临时工作区和真实 Bash，覆盖读取行范围、UTF-8/字节上限、路径/链接、补丁预演与整批校验、BOM/换行/Unix 权限，以及命令退出码、输出截断、超时和取消。Linux 额外检查超时、取消和正常退出后的子进程清理。运行前需安装 Bash（Linux 还需 util-linux）；测试不替代真实 OAuth、Windows 或重启自启验证。
+
+另有基于实际 MCP SDK 的内存流协议检查，无需监听端口，验证初始化、恰好三个工具、参数 schema、结构化返回及工具错误：
+
+```bash
+dotnet run --project tests/MiniMcp.ProtocolChecks
+```
+
+该检查复用主项目依赖，不新增测试框架；它不覆盖 ASP.NET HTTP 传输与 Cloudflare 认证链路。
 
 只在本机联调、需要暂时关闭认证时，先停止已有的生产进程，再在独立终端运行：
 
@@ -714,6 +797,16 @@ curl --no-buffer http://127.0.0.1:8000/mcp \
 ```
 
 该服务使用 stateless Streamable HTTP，无需保存 MCP session ID。主项目常规构建命令为 `dotnet restore MiniMcp.csproj` 和 `dotnet build MiniMcp.csproj --no-restore`。
+
+<a id="references"></a>
+
+## 实现参考
+
+本项目的补丁引擎和进程执行代码用 C# 独立实现，参考了其公开的格式和接口设计：
+
+- **OpenAI Codex**（Apache-2.0）：参考 [apply-patch 的语法解析器](https://github.com/openai/codex/blob/main/codex-rs/apply-patch/src/parser.rs) 的 `Begin/End Patch`、`Add/Delete/Update File`、`Move to`、`@@` 和 `End of File` 格式。本项目使用精确且唯一的上下文匹配，保留文件编码/换行，并增加 `dry_run` 文件计划；不是 Codex 补丁引擎的完整移植。
+- **DeepSeek Harness**（MIT）：参考 [tool-bash 文档](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/shell/tool-bash/README.md) 的一次性 shell、工作目录、独立调用状态及命令退出结果设计。本项目使用 .NET Process，超时后终止命令，不提供上游的后台任务转交与任务管理功能。
+- 进程清理依据 Linux [setsid](https://man7.org/linux/man-pages/man1/setsid.1.html) 和微软 [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 的平台接口。
 
 <a id="license"></a>
 

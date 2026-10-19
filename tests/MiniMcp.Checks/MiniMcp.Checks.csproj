@@ -8,7 +8,6 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Compile Include="../../Configuration/MiniMcpOptions.cs" Link="MiniMcpOptions.cs" />
-    <Compile Include="../../Services/ProjectWorkspace.cs" Link="ProjectWorkspace.cs" />
-    <Compile Include="../../Services/BuildRunner.cs" Link="BuildRunner.cs" />
+    <Compile Include="../../Services/*.cs" Link="Services/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

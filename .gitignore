@@ -38,6 +38,7 @@ tunnel-token.*
 *.log
 logs/
 *.tmp
+.minimcp-*.bak
 *.swp
 *~
 .DS_Store

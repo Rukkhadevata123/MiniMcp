@@ -19,14 +19,11 @@ builder.WebHost.ConfigureKestrel(options =>
 
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton<ProjectWorkspace>();
-builder.Services.AddSingleton<BuildRunner>();
-var mcp = builder.Services.AddMcpServer()
+builder.Services.AddSingleton<PatchService>();
+builder.Services.AddSingleton<BashRunner>();
+builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
-    .WithTools<FileTools>();
-if (settings.EnableBuild)
-{
-    mcp.WithTools<BuildTools>();
-}
+    .WithTools<WorkspaceTools>();
 
 if (!settings.IsLocal)
 {
@@ -36,6 +33,7 @@ if (!settings.IsLocal)
 var app = builder.Build();
 // Resolve now so invalid/nonexistent roots fail at startup, before accepting requests.
 _ = app.Services.GetRequiredService<ProjectWorkspace>();
+_ = app.Services.GetRequiredService<BashRunner>();
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 if (settings.IsLocal)
@@ -50,6 +48,5 @@ else
     app.MapMcp("/mcp").RequireAuthorization();
 }
 
-app.Logger.LogInformation("MiniMcp mode: {Mode}; build tool enabled: {EnableBuild}",
-    settings.AuthMode, settings.EnableBuild);
+app.Logger.LogInformation("MiniMcp mode: {Mode}; tools: read_file, apply_patch, bash", settings.AuthMode);
 app.Run();
