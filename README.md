@@ -76,6 +76,7 @@ https://mcp.yoimiyalove.top/mcp
 | ChatGPT 已认证调用链路 | 已验证；服务识别客户端 `openai-mcp`，成功处理工具发现及调用 |
 | 三工具版本 | 27 项核心检查通过，覆盖按行读取、补丁、真实 Bash 执行、超时、取消与子进程清理；运行命令见[开发检查](#development) |
 | MCP SDK 内存流协议检查 | 已通过；恰好三个工具、参数 schema、补丁回读、Bash 返回与工具错误 |
+| 新旧协议互通 | 本地内存流检查通过；SDK 默认选择 `2026-07-28`，显式指定该版或 `2025-11-25` 时均可发现三个工具并调用 `read_file` |
 | 新版 HTTP 端到端 | 已通过 Arch 实机复测；ChatGPT 经公网 HTTPS、Access 和 Tunnel 完成新版工具发现与实际调用 |
 | 工具列表刷新 | 已验证；旧会话调用已删除工具被拒绝，重新发现工具后新版三个工具均调用成功 |
 | ChatGPT 调用 `bash` | 已验证；`pwd`、`uname -s`、文本输出和算术运算成功，退出码为 `0` |
@@ -767,13 +768,15 @@ dotnet run --project tests/MiniMcp.Checks
 
 检查使用临时工作区和真实 Bash，覆盖读取行范围、UTF-8/字节上限、路径/链接、补丁预演与整批校验、BOM/换行/Unix 权限，以及命令退出码、输出截断、超时和取消。Linux 额外检查超时、取消和正常退出后的子进程清理。运行前需安装 Bash（Linux 还需 util-linux）；测试不替代真实 OAuth、Windows 或重启自启验证。
 
-另有基于实际 MCP SDK 的内存流协议检查，无需监听端口，验证初始化、恰好三个工具、参数 schema、结构化返回及工具错误：
+另有基于实际 MCP SDK 的内存流协议检查，无需监听端口，验证客户端连接、恰好三个工具、参数 schema、结构化返回及工具错误：
 
 ```bash
 dotnet run --project tests/MiniMcp.ProtocolChecks
 ```
 
 该检查复用主项目依赖，不新增测试框架；它不覆盖 ASP.NET HTTP 传输与 Cloudflare 认证链路。
+
+当前 MCP C# SDK `2.2.0` 支持 `2026-07-28` 修订，也兼容 `2025-11-25`。新版移除 `initialize` 握手与 `MCP-Session-Id`，改为逐请求携带协议元数据；`server/discover` 用于可选的版本与能力查询。项目未将服务固定到旧协议。[协议版本与兼容机制](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)、[SDK 兼容说明](https://github.com/modelcontextprotocol/csharp-sdk/blob/v2.2.0/docs/versioning.md)
 
 只在本机联调、需要暂时关闭认证时，先停止已有的生产进程，再在独立终端运行：
 
@@ -792,9 +795,12 @@ Local 模式仅接受 loopback Host。在这次无认证本机联调期间停止
 curl --no-buffer http://127.0.0.1:8000/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  -H 'MCP-Protocol-Version: 2025-11-25' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+  -H 'MCP-Protocol-Version: 2026-07-28' \
+  -H 'Mcp-Method: tools/list' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'
 ```
+
+这是新版协议请求，正文版本须与请求头一致。调用具体工具时还需要对应的 `Mcp-Name` 请求头；SDK 客户端会处理这些协议字段。只替换旧示例里的版本日期不够。[HTTP 请求元数据规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#request-metadata)
 
 该服务使用 stateless Streamable HTTP，无需保存 MCP session ID。主项目常规构建命令为 `dotnet restore MiniMcp.csproj` 和 `dotnet build MiniMcp.csproj --no-restore`。
 
