@@ -1,0 +1,44 @@
+# .NET build, publish, test, and package outputs (including nested projects)
+[Bb]in/
+[Oo]bj/
+artifacts/
+[Pp]ublish/
+[Tt]est[Rr]esults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+.nuget/
+.dotnet/
+
+# Local configuration, private test records, and credentials
+.env*
+!.env.example
+chatgpt.txt
+tunnel-token
+tunnel-token.*
+.cloudflared/
+.aws/
+.codex/
+.agents/
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Editor and per-user settings
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs, temporary files, and OS metadata
+*.log
+logs/
+*.tmp
+*.swp
+*~
+.DS_Store
+Thumbs.db
