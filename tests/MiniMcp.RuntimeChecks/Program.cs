@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using MiniMcp.Configuration;
 using MiniMcp.Runtime;
 
 using var client = new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
@@ -139,6 +140,111 @@ await Check("invalid ports are rejected", () =>
     }
     return Task.CompletedTask;
 });
+
+await Check("configuration defaults follow user directories and native XDG rules", () =>
+{
+    var previousConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+    var previousState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
+    var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-paths-{Guid.NewGuid():N}");
+    try
+    {
+        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.Combine(temporary, "config"));
+        Environment.SetEnvironmentVariable("XDG_STATE_HOME", Path.Combine(temporary, "state"));
+        var paths = ConfigurationPaths.ForCurrentUser();
+        if (OperatingSystem.IsWindows())
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MiniMcp");
+            Assert(paths.SettingsFile == Path.Combine(directory, "settings.json"));
+            Assert(paths.PolicyFile == Path.Combine(directory, "policy.json"));
+            Assert(paths.RecoveryDirectory == Path.Combine(directory, "recovery"));
+        }
+        else
+        {
+            Assert(paths.SettingsFile == Path.Combine(temporary, "config", "minimcp", "settings.json"));
+            Assert(paths.PolicyFile == Path.Combine(temporary, "config", "minimcp", "policy.json"));
+            Assert(paths.RecoveryDirectory == Path.Combine(temporary, "state", "minimcp", "recovery"));
+            foreach (var value in new[] { "", "relative/path" })
+            {
+                Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", value);
+                Environment.SetEnvironmentVariable("XDG_STATE_HOME", value);
+                var fallback = ConfigurationPaths.ForCurrentUser();
+                var userDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                Assert(fallback.SettingsFile == Path.Combine(userDirectory, ".config", "minimcp", "settings.json"));
+                Assert(fallback.PolicyFile == Path.Combine(userDirectory, ".config", "minimcp", "policy.json"));
+                Assert(fallback.RecoveryDirectory == Path.Combine(userDirectory, ".local", "state", "minimcp", "recovery"));
+            }
+        }
+        Assert(!Directory.Exists(temporary));
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", previousConfig);
+        Environment.SetEnvironmentVariable("XDG_STATE_HOME", previousState);
+    }
+    return Task.CompletedTask;
+});
+
+await Check("settings selection is anchored to the caller and leaves local policy fixed", () =>
+{
+    var paths = ConfigurationPaths.ForCurrentUser();
+    var workingDirectory = Path.Combine(Path.GetTempPath(), "minimcp caller");
+    var selected = paths.ResolveSettingsFile("configs/../settings.json", workingDirectory);
+    Assert(selected == Path.Combine(workingDirectory, "settings.json"));
+    Assert(paths.ResolveSettingsFile(null, workingDirectory) == paths.SettingsFile);
+    Assert(paths.ResolveSettingsFile(selected, Path.GetTempPath()) == selected);
+    var defaults = ConfigurationPaths.ForCurrentUser();
+    Assert(paths.PolicyFile == defaults.PolicyFile && paths.RecoveryDirectory == defaults.RecoveryDirectory);
+    return Task.CompletedTask;
+});
+
+await Check("JSON paths use their own file directories and remain stable after cwd changes", () =>
+{
+    var previous = Environment.CurrentDirectory;
+    var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-paths-{Guid.NewGuid():N}");
+    var settings = Path.Combine(temporary, "config", "settings.json");
+    var policy = Path.Combine(temporary, "user", "policy.json");
+    try
+    {
+        var project = ConfigurationPaths.ResolveValuePath("../project with spaces", settings);
+        Environment.CurrentDirectory = Path.GetTempPath();
+        Assert(project == Path.Combine(temporary, "project with spaces"));
+        Assert(ConfigurationPaths.ResolveValuePath("../project with spaces", settings) == project);
+        Assert(ConfigurationPaths.ResolveValuePath("recovery", policy) == Path.Combine(temporary, "user", "recovery"));
+        Assert(ConfigurationPaths.ResolveValuePath(project, policy) == project);
+        Assert(!Directory.Exists(temporary));
+    }
+    finally { Environment.CurrentDirectory = previous; }
+    return Task.CompletedTask;
+});
+
+await Check("configuration paths do not expand home, environment or shell expressions", () =>
+{
+    var directory = Path.Combine(Path.GetTempPath(), "minimcp literal paths");
+    var settings = Path.Combine(directory, "settings.json");
+    foreach (var path in new[] { "~/project", "%LOCALAPPDATA%/project", "$HOME/project", "$(pwd)/project" })
+        Assert(ConfigurationPaths.ResolveValuePath(path, settings) == Path.Combine(directory, path.Replace('/', Path.DirectorySeparatorChar)));
+    return Task.CompletedTask;
+});
+
+await Check("configuration paths reject empty, malformed and ambiguous Windows paths", async () =>
+{
+    var paths = ConfigurationPaths.ForCurrentUser();
+    var settings = paths.SettingsFile;
+    foreach (var path in new[] { "", " ", "invalid\0path" })
+        await RejectAsync<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath(path, settings)));
+    await RejectAsync<ArgumentException>(() => Task.FromResult(paths.ResolveSettingsFile("settings.json", "relative/base")));
+    await RejectAsync<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath("project", "relative/settings.json")));
+    if (OperatingSystem.IsWindows())
+    {
+        foreach (var path in new[] { "C:project", "C:", "\\project", "/project" })
+        {
+            await RejectAsync<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath(path, settings)));
+            await RejectAsync<ArgumentException>(() => Task.FromResult(paths.ResolveSettingsFile(path, Path.GetTempPath())));
+        }
+    }
+});
+
+await ExternalProgramLocatorChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;
