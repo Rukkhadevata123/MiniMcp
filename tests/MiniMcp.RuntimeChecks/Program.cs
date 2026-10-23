@@ -113,6 +113,22 @@ await Check("disposal releases the port and prevents subsequent startup", async 
     finally { await runtime.DisposeAsync(); }
 });
 
+await Check("host lifecycle does not dispatch work to the caller synchronization context", async () =>
+{
+    await using var runtime = new McpRuntime(0);
+    var context = new RecordingSynchronizationContext();
+    Task Invoke(Func<Task> operation)
+    {
+        var previous = SynchronizationContext.Current;
+        try { SynchronizationContext.SetSynchronizationContext(context); return operation(); }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+    await Invoke(() => runtime.StartAsync()).WaitAsync(TimeSpan.FromSeconds(5));
+    await Healthy(runtime);
+    await Invoke(() => runtime.StopAsync()).WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(context.PostCount == 0);
+});
+
 await Check("invalid ports are rejected", () =>
 {
     foreach (var port in new[] { -1, 65536 })
@@ -137,4 +153,16 @@ static async Task RejectAsync<TException>(Func<Task> action) where TException : 
     try { await action(); }
     catch (TException) { return; }
     throw new Exception($"Expected {typeof(TException).Name}.");
+}
+
+internal sealed class RecordingSynchronizationContext : SynchronizationContext
+{
+    private int _posts;
+    public int PostCount => Volatile.Read(ref _posts);
+
+    public override void Post(SendOrPostCallback callback, object? state)
+    {
+        Interlocked.Increment(ref _posts);
+        base.Post(callback, state);
+    }
 }

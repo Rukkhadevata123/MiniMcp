@@ -31,7 +31,8 @@ public sealed class McpRuntime : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        await _lifecycle.WaitAsync(cancellationToken);
+        // Host construction can do synchronous work; do not perform it on the caller's UI context.
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -51,7 +52,7 @@ public sealed class McpRuntime : IAsyncDisposable
 
             try
             {
-                await application.StartAsync(cancellationToken);
+                await application.StartAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 var address = new Uri(application.Urls.Single());
                 _application = application;
@@ -59,7 +60,7 @@ public sealed class McpRuntime : IAsyncDisposable
             }
             catch (Exception startupError)
             {
-                try { await application.DisposeAsync().AsTask().WaitAsync(ShutdownTimeout); }
+                try { await application.DisposeAsync().AsTask().WaitAsync(ShutdownTimeout).ConfigureAwait(false); }
                 catch (Exception cleanupError)
                 {
                     // Retain ownership so a caller can retry cleanup rather than create a second host.
@@ -74,18 +75,18 @@ public sealed class McpRuntime : IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        await _lifecycle.WaitAsync(cancellationToken);
-        try { await StopCoreAsync(cancellationToken); }
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+        try { await StopCoreAsync(cancellationToken).ConfigureAwait(false); }
         finally { _lifecycle.Release(); }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _lifecycle.WaitAsync();
+        await _lifecycle.WaitAsync().ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
             if (_disposed) return;
-            await StopCoreAsync(CancellationToken.None);
+            await StopCoreAsync(CancellationToken.None).ConfigureAwait(false);
             _disposed = true;
         }
         finally { _lifecycle.Release(); }
@@ -97,8 +98,8 @@ public sealed class McpRuntime : IAsyncDisposable
         if (_application is null) return;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(ShutdownTimeout);
-        await _application.StopAsync(deadline.Token);
-        await _application.DisposeAsync().AsTask().WaitAsync(deadline.Token);
+        await _application.StopAsync(deadline.Token).ConfigureAwait(false);
+        await _application.DisposeAsync().AsTask().WaitAsync(deadline.Token).ConfigureAwait(false);
         _application = null;
         Volatile.Write(ref _address, null);
     }

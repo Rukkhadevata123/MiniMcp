@@ -1,10 +1,10 @@
 # MiniMcp
 
-MiniMcp 正在重组为 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口，HTTP 服务由入口在进程内托管。
+MiniMcp 由 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口组成，HTTP 服务在入口进程内运行。
 
-当前已完成业务代码迁移和进程内 HTTP 启停原型：CLI 可启动仅有 `/healthz` 的 loopback 服务。正式 JSON 配置、MCP HTTP 工具注册、执行模式、审批、恢复记录和桌面界面尚未接入。
+CLI 与桌面窗口直接控制 Runtime 的启动和停止。当前 HTTP 入口仅提供本机健康检查 `/healthz`，`/mcp` 返回 404。
 
-旧根项目、环境变量配置入口及其部署模板已移除。当前 `/mcp` 返回 404，不对外开放工具，也不能把已有核心代码视为已经接入只读或审批保护。
+文件、补丁、Bash 和 Cloudflare Access 认证的核心代码由独立检查程序验证；当前 HTTP 入口不对外开放这些工具。
 
 ## 项目结构
 
@@ -18,17 +18,22 @@ src/
     Services/               文件、补丁、Bash 与进程清理
     Tools/                  三个 MCP 工具入口
   MiniMcp.Cli/               .NET 10 命令行入口
+  MiniMcp.Desktop/           Windows WinUI 3 本机服务窗口
 tests/
   MiniMcp.Checks/            引用 Runtime 的核心行为检查
   MiniMcp.ProtocolChecks/    实际 MCP SDK 内存流检查
   MiniMcp.RuntimeChecks/     实际 loopback HTTP 生命周期检查
 ```
 
-WinUI 项目会在进程内生命周期验证的小步中加入。当前解决方案只包含跨平台项目。
+根解决方案包含全部项目，供 Windows 构建和编辑器加载。Linux 使用 CLI 项目作为构建入口，项目引用会自动构建 Runtime，不涉及 WinUI：
+
+```bash
+dotnet build src/MiniMcp.Cli/MiniMcp.Cli.csproj
+```
 
 ## 构建与 CLI 入口
 
-需要 .NET 10 SDK；在仓库根目录执行：
+需要 .NET 10 SDK；Windows 上在仓库根目录构建完整解决方案：
 
 ```powershell
 dotnet build MiniMcp.slnx
@@ -40,7 +45,20 @@ dotnet run --project src/MiniMcp.Cli -- run --port 8000
 
 正常结束返回 `0`，启动/停止失败返回 `1`，无效参数返回 `2`，启动阶段取消返回 `130`。端口冲突不会停止已有服务。`run` 目前是健康端点原型，不接受正式配置文件，也不启用 `/mcp`。
 
-Runtime 是类库，不作为独立服务 DLL 启动。CLI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`，后续 WinUI 复用同一生命周期。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
+CLI 与 WinUI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
+
+## Windows 桌面入口
+
+需要 .NET 10 SDK、Windows SDK 和 WinUI 构建工具。单独构建和运行：
+
+```powershell
+dotnet build src/MiniMcp.Desktop/MiniMcp.Desktop.csproj
+dotnet run --project src/MiniMcp.Desktop --no-launch-profile
+```
+
+窗口使用端口 8000，提供启动、停止、运行地址和错误信息。启动后访问 `http://127.0.0.1:8000/healthz`；关闭窗口会先取消进行中的启动，再停止并释放 Runtime。端口被其他程序占用时显示错误，不结束占用者。
+
+桌面采用未打包模式，Windows App SDK 运行文件复制到输出目录；.NET 10 / ASP.NET Core 运行依赖由目标机器提供。
 
 ## 当前核心工具
 

@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
     <Project Path="src/MiniMcp.Cli/MiniMcp.Cli.csproj" />
+    <Project Path="src/MiniMcp.Desktop/MiniMcp.Desktop.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/MiniMcp.Checks/MiniMcp.Checks.csproj" />
