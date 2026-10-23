@@ -6,7 +6,7 @@ namespace MiniMcp.Desktop;
 public partial class App : Application
 {
     private Window? _window;
-    internal McpRuntime Runtime { get; } = new(8000);
+    internal McpRuntime Runtime { get; } = new();
 
     public App()
     {

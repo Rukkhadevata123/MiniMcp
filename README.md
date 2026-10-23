@@ -51,7 +51,7 @@ dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode Read
 
 CLI 与 WinUI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
-`McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动本机健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 使用正式配置启动，桌面原型使用固定端口。
+`McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动本机健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 与桌面都使用正式配置启动。
 
 `examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。工具执行权限在工具接入时处理。
 
@@ -86,7 +86,7 @@ dotnet build src/MiniMcp.Desktop/MiniMcp.Desktop.csproj
 dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 ```
 
-窗口使用端口 8000，提供启动、停止、运行地址和错误信息。启动后访问 `http://127.0.0.1:8000/healthz`；关闭窗口会先取消进行中的启动，再停止并释放 Runtime。端口被其他程序占用时显示错误，不结束占用者。
+窗口显示默认配置和策略文件路径，每次点击启动都会重新读取 `%LOCALAPPDATA%/MiniMcp/settings.json` 与同目录的 `policy.json`，复用 CLI 的校验和运行流程。界面显示最近一次启动的实际项目、端口、认证配置、执行配置和健康检查地址；缺少或损坏配置时显示文件名及错误，修正后可重试。配置文件修改在下次启动时生效。关闭窗口会取消配置加载或启动，等待停止并释放 Runtime；端口冲突保留已有服务。长路径和错误信息可换行，较小窗口可滚动查看。
 
 桌面采用未打包模式，Windows App SDK 运行文件复制到输出目录；.NET 10 / ASP.NET Core 运行依赖由目标机器提供。
 

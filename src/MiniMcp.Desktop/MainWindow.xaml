@@ -6,26 +6,44 @@
     Title="MiniMcp">
     <Grid x:Name="Root" Padding="32" Loaded="OnRootLoaded"
           Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
-        <StackPanel MaxWidth="560" Spacing="20" VerticalAlignment="Center" HorizontalAlignment="Stretch">
-            <StackPanel Spacing="8">
-                <TextBlock Text="MiniMcp" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="本机健康检查服务" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                <TextBlock Text="端口 8000 · 仅本机访问" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            </StackPanel>
-            <StackPanel Spacing="8">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <ProgressRing x:Name="BusyIndicator" Width="20" Height="20" Visibility="Collapsed" />
-                    <TextBlock x:Name="StatusText" Text="已停止" VerticalAlignment="Center" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel MaxWidth="640" Spacing="20" HorizontalAlignment="Stretch">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="MiniMcp" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="本机健康检查服务" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="从用户 JSON 配置启动 · 仅本机访问" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
-                <TextBlock x:Name="AddressText" Text="启动后显示本机地址" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <StackPanel Spacing="8">
+                    <TextBlock Text="配置文件" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="ConfigPathText" AutomationProperties.AutomationId="ConfigPath"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="本机策略" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="PolicyPathText" AutomationProperties.AutomationId="PolicyPath"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </StackPanel>
+                <StackPanel Spacing="8">
+                    <TextBlock Text="最近一次启动配置" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="ProjectText" Text="启动后显示项目" AutomationProperties.AutomationId="Project"
+                               TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="ConfigurationText" Text="端口和模式取自配置文件" AutomationProperties.AutomationId="Configuration"
+                               TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ProgressRing x:Name="BusyIndicator" Width="20" Height="20" Visibility="Collapsed" />
+                        <TextBlock x:Name="StatusText" Text="已停止" VerticalAlignment="Center" AutomationProperties.AutomationId="Status"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                    <TextBlock x:Name="AddressText" Text="启动后显示本机地址" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                               AutomationProperties.AutomationId="Address" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="StartButton" Content="启动" Click="OnStartClicked" Style="{ThemeResource AccentButtonStyle}"
+                            AutomationProperties.AutomationId="Start" />
+                    <Button x:Name="StopButton" Content="停止" Click="OnStopClicked" IsEnabled="False" AutomationProperties.AutomationId="Stop" />
+                </StackPanel>
+                <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" AutomationProperties.AutomationId="Error" />
+                <TextBlock Text="修改配置后，下次启动生效。服务仅提供 /healthz 健康检查；关闭窗口会停止服务。"
+                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <Button x:Name="StartButton" Content="启动" Click="OnStartClicked" Style="{ThemeResource AccentButtonStyle}" />
-                <Button x:Name="StopButton" Content="停止" Click="OnStopClicked" IsEnabled="False" />
-            </StackPanel>
-            <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" />
-            <TextBlock Text="启动后可通过 /healthz 检查本机服务。关闭窗口会停止服务。"
-                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Window>
