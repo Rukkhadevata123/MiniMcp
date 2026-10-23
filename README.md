@@ -49,7 +49,7 @@ dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode Read
 
 正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。HTTP 入口提供本机健康检查，`/mcp` 返回 404；配置中的认证、工具权限和隧道由对应功能的接入步骤处理。Linux 信号路径未实机验证。
 
-CLI 与 WinUI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
+CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration)`、`StopAsync` 和 `DisposeAsync` 控制服务；公开启动接口必须提供完整校验生成的配置。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
 `McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动本机健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 与桌面都使用正式配置启动。
 

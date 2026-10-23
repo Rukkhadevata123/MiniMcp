@@ -9,6 +9,8 @@ using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Allo
 };
 var passed = 0;
 var failed = 0;
+using var lifetimeFixture = new RuntimeLifetimeFixture();
+var configuration = lifetimeFixture.Configuration;
 
 async Task Check(string name, Func<Task> action)
 {
@@ -31,8 +33,9 @@ await Check("real loopback health endpoint ignores ambient URLs and exposes no M
     {
         Environment.SetEnvironmentVariable("ASPNETCORE_URLS", "http://0.0.0.0:1");
         await using var runtime = new McpRuntime(0);
-        await runtime.StartAsync();
+        await runtime.StartAsync(configuration);
         Assert(runtime.Address!.Host == "127.0.0.1" && runtime.Address.Port > 1);
+        Assert(ReferenceEquals(runtime.Snapshot.Configuration, configuration));
         await Healthy(runtime);
         using var unavailable = await client.GetAsync(new Uri(runtime.Address, "mcp"));
         Assert(unavailable.StatusCode == HttpStatusCode.NotFound);
@@ -43,17 +46,17 @@ await Check("real loopback health endpoint ignores ambient URLs and exposes no M
 await Check("stop is idempotent, releases its port and permits restarting", async () =>
 {
     await using var runtime = new McpRuntime(0);
-    await runtime.StartAsync();
+    await runtime.StartAsync(configuration);
     var port = runtime.Address!.Port;
     await runtime.StopAsync();
     await runtime.StopAsync();
     Assert(runtime.Address is null);
     await using (var replacement = new McpRuntime(port))
     {
-        await replacement.StartAsync();
+        await replacement.StartAsync(configuration);
         await Healthy(replacement);
     }
-    await runtime.StartAsync();
+    await runtime.StartAsync(configuration);
     await Healthy(runtime);
 });
 
@@ -62,7 +65,7 @@ await Check("concurrent starts create only one host", async () =>
     await using var runtime = new McpRuntime(0);
     async Task<bool> Attempt()
     {
-        try { await runtime.StartAsync(); return true; }
+        try { await runtime.StartAsync(configuration); return true; }
         catch (InvalidOperationException) { return false; }
     }
     var attempts = await Task.WhenAll(Attempt(), Attempt());
@@ -73,13 +76,13 @@ await Check("concurrent starts create only one host", async () =>
 await Check("port conflict cleans failed startup without stopping its existing owner", async () =>
 {
     await using var owner = new McpRuntime(0);
-    await owner.StartAsync();
+    await owner.StartAsync(configuration);
     await using var contender = new McpRuntime(owner.Address!.Port);
-    await RejectAsync<IOException>(() => contender.StartAsync());
+    await RejectAsync<IOException>(() => contender.StartAsync(configuration));
     Assert(contender.Address is null);
     await Healthy(owner);
     await owner.StopAsync();
-    await contender.StartAsync();
+    await contender.StartAsync(configuration);
     await Healthy(contender);
 });
 
@@ -88,9 +91,9 @@ await Check("cancelled start and stop retain consistent ownership", async () =>
     using var cancelled = new CancellationTokenSource();
     cancelled.Cancel();
     await using var runtime = new McpRuntime(0);
-    await RejectAsync<OperationCanceledException>(() => runtime.StartAsync(cancelled.Token));
+    await RejectAsync<OperationCanceledException>(() => runtime.StartAsync(configuration, cancelled.Token));
     Assert(runtime.Address is null);
-    await runtime.StartAsync();
+    await runtime.StartAsync(configuration);
     await RejectAsync<OperationCanceledException>(() => runtime.StopAsync(cancelled.Token));
     await Healthy(runtime);
     await runtime.StopAsync();
@@ -102,13 +105,13 @@ await Check("disposal releases the port and prevents subsequent startup", async 
     var runtime = new McpRuntime(0);
     try
     {
-        await runtime.StartAsync();
+        await runtime.StartAsync(configuration);
         var port = runtime.Address!.Port;
         await runtime.DisposeAsync();
         await runtime.DisposeAsync();
-        await RejectAsync<ObjectDisposedException>(() => runtime.StartAsync());
+        await RejectAsync<ObjectDisposedException>(() => runtime.StartAsync(configuration));
         await using var replacement = new McpRuntime(port);
-        await replacement.StartAsync();
+        await replacement.StartAsync(configuration);
         await Healthy(replacement);
     }
     finally { await runtime.DisposeAsync(); }
@@ -124,13 +127,13 @@ await Check("host lifecycle does not dispatch work to the caller synchronization
         try { SynchronizationContext.SetSynchronizationContext(context); return operation(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
-    await Invoke(() => runtime.StartAsync()).WaitAsync(TimeSpan.FromSeconds(5));
+    await Invoke(() => runtime.StartAsync(configuration)).WaitAsync(TimeSpan.FromSeconds(5));
     await Healthy(runtime);
     await Invoke(() => runtime.StopAsync()).WaitAsync(TimeSpan.FromSeconds(5));
     Assert(context.PostCount == 0);
 });
 
-await Check("invalid ports are rejected", () =>
+await Check("invalid internal test port overrides are rejected", () =>
 {
     foreach (var port in new[] { -1, 65536 })
     {

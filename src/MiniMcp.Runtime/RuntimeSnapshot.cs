@@ -13,8 +13,8 @@ public enum RuntimeState
 }
 
 /// <summary>
-/// A coherent view of the current or most recent startup attempt. Configuration is absent before
-/// the first configured start or when using the temporary port-only prototype API.
+/// A coherent view of the current or most recent startup attempt. Configuration is absent
+/// before the first start and is retained with the last run ID after stopping.
 /// A fault may retain host ownership and its last bound address until cleanup succeeds.
 /// </summary>
 public sealed record RuntimeSnapshot(RuntimeState State, Guid? RunId = null,

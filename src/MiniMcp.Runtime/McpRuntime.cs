@@ -9,39 +9,34 @@ using MiniMcp.Configuration;
 namespace MiniMcp.Runtime;
 
 /// <summary>
-/// Caller-owned HTTP lifetime prototype. Only /healthz is registered at this stage.
-/// Port zero requests an ephemeral loopback port for in-process checks.
+/// Caller-owned loopback HTTP lifetime started with validated configuration.
+/// The HTTP surface currently provides /healthz.
 /// </summary>
 public sealed class McpRuntime : IAsyncDisposable
 {
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(10);
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
-    private readonly int _port;
+    private readonly int? _testPortOverride;
     private WebApplication? _application;
     private RuntimeSnapshot _snapshot = new(RuntimeState.Stopped);
     private bool _disposed;
 
-    public McpRuntime(int port = 8000)
+    public McpRuntime() { }
+
+    // In-process checks can request port zero without weakening the persisted port range.
+    internal McpRuntime(int testPort)
     {
-        ArgumentOutOfRangeException.ThrowIfNegative(port);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
-        _port = port;
+        ArgumentOutOfRangeException.ThrowIfNegative(testPort);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(testPort, 65535);
+        _testPortOverride = testPort;
     }
 
     public RuntimeSnapshot Snapshot => Volatile.Read(ref _snapshot);
     public Uri? Address => Snapshot.Address;
 
-    // The entry prototypes use this overload until their JSON configuration migration is complete.
-    public Task StartAsync(CancellationToken cancellationToken = default) => StartCoreAsync(null, cancellationToken);
-
-    public Task StartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
+    public async Task StartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        return StartCoreAsync(configuration, cancellationToken);
-    }
-
-    private async Task StartCoreAsync(RuntimeConfiguration? configuration, CancellationToken cancellationToken)
-    {
         // Host construction can do synchronous work; do not perform it on the caller's UI context.
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
@@ -58,7 +53,7 @@ public sealed class McpRuntime : IAsyncDisposable
                     ApplicationName = typeof(McpRuntime).Assembly.GetName().Name,
                     ContentRootPath = AppContext.BaseDirectory
                 });
-                var port = configuration?.Settings.Port ?? _port;
+                var port = _testPortOverride ?? configuration.Settings.Port;
                 builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
                 builder.Services.AddRouting();
                 builder.Services.AddSingleton<IHostLifetime>(new CallerControlledLifetime());

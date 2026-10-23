@@ -46,7 +46,7 @@ internal static class RuntimeSnapshotChecks
             await check("configured startup binds the JSON port and publishes a coherent running snapshot", async () =>
             {
                 var configuration = await Configuration(FreePort());
-                await using var runtime = new McpRuntime(0);
+                await using var runtime = new McpRuntime();
                 Assert(runtime.Snapshot.State == RuntimeState.Stopped && runtime.Snapshot.RunId is null);
                 await runtime.StartAsync(configuration);
                 var snapshot = runtime.Snapshot;
@@ -62,7 +62,7 @@ internal static class RuntimeSnapshotChecks
             await check("stopped sessions retain their configuration and restart with a new run ID and selected port", async () =>
             {
                 var firstConfiguration = await Configuration(FreePort());
-                await using var runtime = new McpRuntime(0);
+                await using var runtime = new McpRuntime();
                 await runtime.StartAsync(firstConfiguration);
                 var first = runtime.Snapshot;
                 await runtime.StopAsync();
@@ -80,7 +80,7 @@ internal static class RuntimeSnapshotChecks
             await check("duplicate configured starts preserve the active session and its configuration", async () =>
             {
                 var configuration = await Configuration(FreePort());
-                await using var runtime = new McpRuntime(0);
+                await using var runtime = new McpRuntime();
                 await runtime.StartAsync(configuration);
                 var active = runtime.Snapshot;
                 var other = await Configuration(FreePort());
@@ -92,9 +92,9 @@ internal static class RuntimeSnapshotChecks
             await check("configured port conflicts report faults without affecting the owner and allow a clean retry", async () =>
             {
                 await using var owner = new McpRuntime(0);
-                await owner.StartAsync();
+                await owner.StartAsync(await Configuration(8000));
                 var configuration = await Configuration(owner.Address!.Port);
-                await using var runtime = new McpRuntime(0);
+                await using var runtime = new McpRuntime();
                 await Reject<IOException>(() => runtime.StartAsync(configuration));
                 var failed = runtime.Snapshot;
                 Assert(failed.State == RuntimeState.Faulted && failed.Address is null && !string.IsNullOrEmpty(failed.Error));
@@ -109,7 +109,7 @@ internal static class RuntimeSnapshotChecks
             await check("cancelled operations preserve truthful state and disposal publishes a final snapshot", async () =>
             {
                 var configuration = await Configuration(FreePort());
-                await using var runtime = new McpRuntime(0);
+                await using var runtime = new McpRuntime();
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
                 await Reject<OperationCanceledException>(() => runtime.StartAsync(configuration, cancelled.Token));
