@@ -27,9 +27,9 @@ public sealed class ConfigurationValidator
 
     /// <summary>
     /// Validates values, normalizes paths and checks enabled dependencies without starting programs.
-    /// Returns the same model types with absolute paths; the input drafts are unchanged.
+    /// Returns an immutable snapshot containing the normalized models; input drafts are unchanged.
     /// </summary>
-    public (AppSettings Settings, ExecutionPolicy Policy) Validate(
+    public RuntimeConfiguration Validate(
         AppSettings settings, string settingsFile, ExecutionPolicy policy)
     {
         ValidateValues(settings, policy);
@@ -65,7 +65,7 @@ public sealed class ConfigurationValidator
             });
             settings = settings with { Tunnel = settings.Tunnel with { ExecutablePath = cloudflared } };
         }
-        return (settings, normalized.Policy);
+        return new RuntimeConfiguration(settings, normalized.Policy);
     }
 
     /// <summary>

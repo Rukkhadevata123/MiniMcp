@@ -183,7 +183,7 @@ internal static class ConfigurationDependencyChecks
                 }
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
-                try { await loader.LoadAsync(source, temporary, cancelled.Token); throw new Exception("Cancellation was ignored."); }
+                try { await loader.LoadAsync(source, temporary, cancellationToken: cancelled.Token); throw new Exception("Cancellation was ignored."); }
                 catch (OperationCanceledException) { }
             });
         }

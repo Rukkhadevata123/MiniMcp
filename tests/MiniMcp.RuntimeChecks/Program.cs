@@ -253,6 +253,7 @@ await ConfigurationDependencyChecks.RunAsync(Check);
 await ConfigurationSerializationChecks.RunAsync(Check);
 await ConfigurationSaveChecks.RunAsync(Check);
 await ConfigurationPolicySaveChecks.RunAsync(Check);
+await RuntimeConfigurationChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;

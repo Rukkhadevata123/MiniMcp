@@ -25,15 +25,17 @@ public sealed partial class ConfigurationStore
 
     /// <summary>
     /// Loads the selected settings and fixed local policy, then applies the shared validation pipeline.
+    /// An optional local mode selection overrides only this snapshot, after both files have been parsed.
     /// ReadSettingsAsync/ReadPolicyAsync remain available for editing drafts and retaining file revisions.
     /// </summary>
-    public async Task<(AppSettings Settings, ExecutionPolicy Policy)> LoadAsync(string? path, string workingDirectory,
-        CancellationToken cancellationToken = default)
+    public async Task<RuntimeConfiguration> LoadAsync(string? path, string workingDirectory,
+        ExecutionMode? mode = null, CancellationToken cancellationToken = default)
     {
         var settings = await ReadSettingsAsync(path, workingDirectory, cancellationToken).ConfigureAwait(false);
         var policy = await ReadPolicyAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        var result = new ConfigurationValidator(_paths).Validate(settings.Value, settings.FilePath, policy.Value);
+        var selectedPolicy = mode is { } selected ? policy.Value with { Mode = selected } : policy.Value;
+        var result = new ConfigurationValidator(_paths).Validate(settings.Value, settings.FilePath, selectedPolicy);
         cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
