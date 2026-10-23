@@ -7,6 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <ProjectReference Include="../../MiniMcp.csproj" />
+    <ProjectReference Include="../../src/MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
   </ItemGroup>
 </Project>

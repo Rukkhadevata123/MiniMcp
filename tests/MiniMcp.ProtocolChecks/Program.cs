@@ -19,7 +19,7 @@ try
     var services = new ServiceCollection();
     services.AddLogging();
     services.AddSingleton(new MiniMcpOptions(root, "Local", null, null, null,
-        BashPath: Environment.GetEnvironmentVariable("MCP_BASH_PATH")));
+        BashPath: Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH")));
     services.AddSingleton<ProjectWorkspace>();
     services.AddSingleton<PatchService>();
     services.AddSingleton<BashRunner>();

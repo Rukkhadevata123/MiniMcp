@@ -20,10 +20,10 @@ public sealed class ProjectWorkspace
     {
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
         if (!Directory.Exists(Root))
-            throw new InvalidOperationException("MCP_ROOT must be an existing project directory.");
+            throw new InvalidOperationException("The project root must be an existing project directory.");
         if (Root == Path.GetPathRoot(Root) || Root ==
             Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)))
-            throw new InvalidOperationException("MCP_ROOT must name a project, not the filesystem root or your home directory.");
+            throw new InvalidOperationException("The project root must name a project, not the filesystem root or your home directory.");
         CheckRoot();
     }
 
@@ -38,7 +38,7 @@ public sealed class ProjectWorkspace
         var relative = Path.GetRelativePath(Root, full);
         if (relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
             Path.IsPathRooted(relative))
-            throw new WorkspaceException("The path is outside MCP_ROOT.");
+            throw new WorkspaceException("The path is outside the project root.");
 
         CheckRoot();
         var current = Root;

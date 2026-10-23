@@ -21,7 +21,7 @@ public sealed class BashRunner
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "bin", "bash.exe")
             : "/bin/bash");
         if (!Path.IsPathFullyQualified(_bashPath) || !File.Exists(_bashPath))
-            throw new InvalidOperationException("MCP_BASH_PATH must point to an existing Bash executable (on Windows, install Git for Windows).");
+            throw new InvalidOperationException("The Bash path must point to an existing executable (on Windows, install Git for Windows).");
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux())
             throw new InvalidOperationException("Bash process cleanup is supported on Linux and Windows.");
         if (OperatingSystem.IsLinux() && !File.Exists("/usr/bin/setsid"))
@@ -92,7 +92,7 @@ public sealed class BashRunner
             {
                 timedOut = !cancellationToken.IsCancellationRequested;
             }
-            catch (Win32Exception) { throw new WorkspaceException("Bash could not start or process containment could not be established. Check MCP_BASH_PATH and service permissions."); }
+            catch (Win32Exception) { throw new WorkspaceException("Bash could not start or process containment could not be established. Check the Bash path and service permissions."); }
             finally
             {
                 if (started)

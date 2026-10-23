@@ -1,13 +1,12 @@
 using System.Diagnostics;
 using System.Text;
-using Microsoft.Extensions.Configuration;
 using MiniMcp.Configuration;
 using MiniMcp.Services;
 
 var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-checks-{Guid.NewGuid():N}");
 var root = Path.Combine(temporary, "project with spaces");
 Directory.CreateDirectory(root);
-var options = new MiniMcpOptions(root, "Local", null, null, null, BashPath: Environment.GetEnvironmentVariable("MCP_BASH_PATH"));
+var options = new MiniMcpOptions(root, "Local", null, null, null, BashPath: Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH"));
 var workspace = new ProjectWorkspace(options);
 var patches = new PatchService(workspace);
 var bash = new BashRunner(workspace, options);
@@ -183,19 +182,10 @@ try
             Reject<WorkspaceException>(() => new ProjectWorkspace(options with { Root = Path.Combine(temporary, "root-link") }));
         });
     }
-    await Check("authentication defaults to protected mode and validates configuration", () =>
+    await Check("Bash executable requires an existing absolute path", () =>
     {
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["MCP_ROOT"] = root }).Build();
-        Reject<InvalidOperationException>(() => MiniMcpOptions.Load(config));
-        config["MCP_PUBLIC_URL"] = "https://mcp.example.com";
-        config["CF_ACCESS_TEAM"] = "my-team";
-        config["CF_ACCESS_AUD"] = "test-audience";
-        Assert(!MiniMcpOptions.Load(config).IsLocal);
-        config["MCP_PUBLIC_URL"] = "https://mcp.example.com/mcp";
-        Reject<InvalidOperationException>(() => MiniMcpOptions.Load(config));
-        config["MCP_AUTH_MODE"] = "Typo";
-        Reject<InvalidOperationException>(() => MiniMcpOptions.Load(config));
         Reject<InvalidOperationException>(() => new BashRunner(workspace, options with { BashPath = "relative/bash" }));
+        Reject<InvalidOperationException>(() => new BashRunner(workspace, options with { BashPath = Path.Combine(temporary, "missing-bash") }));
         return Task.CompletedTask;
     });
     await Check("real Bash supports pipelines, multiline commands, quoting and Unicode", async () =>
