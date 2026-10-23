@@ -25,7 +25,7 @@ examples/
 tests/
   MiniMcp.Checks/            引用 Runtime 的核心行为检查
   MiniMcp.ProtocolChecks/    实际 MCP SDK 内存流检查
-  MiniMcp.RuntimeChecks/     实际 loopback HTTP 生命周期检查
+  MiniMcp.RuntimeChecks/     配置、实际 HTTP 生命周期及 CLI 集成检查
 ```
 
 根解决方案包含全部项目，供 Windows 构建和编辑器加载。Linux 使用 CLI 项目作为构建入口，项目引用会自动构建 Runtime，不涉及 WinUI：
@@ -36,23 +36,24 @@ dotnet build src/MiniMcp.Cli/MiniMcp.Cli.csproj
 
 ## 构建与 CLI 入口
 
-需要 .NET 10 SDK；Windows 上在仓库根目录构建完整解决方案：
+需要 .NET 10 SDK；Windows 上在仓库根目录构建完整解决方案。先参考 `examples/settings.local.json` 准备 `settings.json`，将 `projectRoot` 设置为实际项目目录；相对路径以 JSON 所在目录为基准。
 
 ```powershell
 dotnet build MiniMcp.slnx
 dotnet run --project src/MiniMcp.Cli -- --help
-dotnet run --project src/MiniMcp.Cli -- run --port 8000
+dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json
+dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode ReadOnly
 ```
 
-无参数同样显示帮助。`run` 默认端口为 8000，`--port` 范围为 1–65535；仅监听 `127.0.0.1`，访问 `http://127.0.0.1:8000/healthz` 返回 `{"status":"ok"}`。按 Ctrl+C 正常停止；Linux 也接收 SIGTERM，但尚未在 Linux 实机验证。
+无参数或 `run --help` 显示帮助。`run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]` 从 JSON 读取端口及项目；省略 `--config` 时使用默认用户配置，策略固定来自用户目录的 `policy.json`。`--mode` 只覆盖本次会话，不写文件。监听 `127.0.0.1`，访问输出的 `/healthz` 地址返回 `{"status":"ok"}`；Ctrl+C 或 Linux SIGTERM 正常停止并释放服务。
 
-正常结束返回 `0`，启动/停止失败返回 `1`，无效参数返回 `2`，启动阶段取消返回 `130`。端口冲突不会停止已有服务。`run` 目前是健康端点原型，不接受正式配置文件，也不启用 `/mcp`。
+正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。HTTP 入口提供本机健康检查，`/mcp` 返回 404；配置中的认证、工具权限和隧道由对应功能的接入步骤处理。Linux 信号路径未实机验证。
 
 CLI 与 WinUI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
-`McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动本机健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 和桌面原型入口仍使用端口参数；正式配置中的认证、工具权限和隧道由对应功能的接入步骤处理。
+`McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动本机健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 使用正式配置启动，桌面原型使用固定端口。
 
-`examples/` 提供不含凭据的 JSON 格式示例，当前入口不读取这些文件。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。模型定义不代表工具权限检查已接入。
+`examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。工具执行权限在工具接入时处理。
 
 Runtime 的 `ConfigurationPaths` 提供共用路径规则：Windows 配置位于 `%LOCALAPPDATA%/MiniMcp/`，Linux 位于 `$XDG_CONFIG_HOME/minimcp/`（默认 `~/.config/minimcp/`）；其中分别存放 `settings.json`、`policy.json`。恢复目录在 Windows 默认为配置目录下的 `recovery/`，Linux 为 `$XDG_STATE_HOME/minimcp/recovery/`（默认 `~/.local/state/minimcp/recovery/`），相对 XDG 值忽略。配置文件选择相对调用者工作目录，JSON 内路径相对所属文件目录；路径计算不创建文件，不展开环境变量或 `~`。这些规则供后续配置加载器使用。
 
