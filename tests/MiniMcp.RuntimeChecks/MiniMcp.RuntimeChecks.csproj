@@ -7,5 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
+    <None Include="../../examples/settings.local.json;../../examples/policy.readonly.json"
+          Link="examples/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
