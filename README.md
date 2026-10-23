@@ -1,10 +1,10 @@
 # MiniMcp
 
-MiniMcp 正在重组为 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口，MCP 服务将由入口在进程内托管。
+MiniMcp 正在重组为 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口，HTTP 服务由入口在进程内托管。
 
-当前完成的是项目骨架与业务代码迁移：Runtime 包含现有文件、补丁、Bash 工具及 Cloudflare Access 认证代码；CLI 仅提供帮助。HTTP 启停、正式 JSON 配置、执行模式、审批、恢复记录和桌面界面尚未接入。
+当前已完成业务代码迁移和进程内 HTTP 启停原型：CLI 可启动仅有 `/healthz` 的 loopback 服务。正式 JSON 配置、MCP HTTP 工具注册、执行模式、审批、恢复记录和桌面界面尚未接入。
 
-旧根项目、环境变量配置入口及其部署模板已移除。当前不能通过 CLI 启动 MCP 服务，也不能把这次重组视为已经启用只读或审批保护。
+旧根项目、环境变量配置入口及其部署模板已移除。当前 `/mcp` 返回 404，不对外开放工具，也不能把已有核心代码视为已经接入只读或审批保护。
 
 ## 项目结构
 
@@ -12,6 +12,7 @@ MiniMcp 正在重组为 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口�
 MiniMcp.slnx
 src/
   MiniMcp.Runtime/           .NET 10 类库
+    McpRuntime.cs            由调用者控制的进程内 HTTP 生命周期
     Configuration/          核心内存选项，正式 JSON 配置待实现
     Security/               Cloudflare Access JWT 验证
     Services/               文件、补丁、Bash 与进程清理
@@ -20,6 +21,7 @@ src/
 tests/
   MiniMcp.Checks/            引用 Runtime 的核心行为检查
   MiniMcp.ProtocolChecks/    实际 MCP SDK 内存流检查
+  MiniMcp.RuntimeChecks/     实际 loopback HTTP 生命周期检查
 ```
 
 WinUI 项目会在进程内生命周期验证的小步中加入。当前解决方案只包含跨平台项目。
@@ -31,11 +33,14 @@ WinUI 项目会在进程内生命周期验证的小步中加入。当前解决�
 ```powershell
 dotnet build MiniMcp.slnx
 dotnet run --project src/MiniMcp.Cli -- --help
+dotnet run --project src/MiniMcp.Cli -- run --port 8000
 ```
 
-无参数同样显示帮助；未知命令返回退出码 `2`。服务启动命令尚未实现。
+无参数同样显示帮助。`run` 默认端口为 8000，`--port` 范围为 1–65535；仅监听 `127.0.0.1`，访问 `http://127.0.0.1:8000/healthz` 返回 `{"status":"ok"}`。按 Ctrl+C 正常停止；Linux 也接收 SIGTERM，但尚未在 Linux 实机验证。
 
-Runtime 是类库，不作为独立服务 DLL 启动。后续 CLI/WinUI 直接引用它，不通过子进程或管理 REST API 调用。
+正常结束返回 `0`，启动/停止失败返回 `1`，无效参数返回 `2`，启动阶段取消返回 `130`。端口冲突不会停止已有服务。`run` 目前是健康端点原型，不接受正式配置文件，也不启用 `/mcp`。
+
+Runtime 是类库，不作为独立服务 DLL 启动。CLI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`，后续 WinUI 复用同一生命周期。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
 ## 当前核心工具
 
@@ -58,11 +63,14 @@ Bash 使用运行账号的实际权限，项目根只是默认工作目录，不
 ```powershell
 dotnet run --project tests/MiniMcp.Checks
 dotnet run --project tests/MiniMcp.ProtocolChecks
+dotnet run --project tests/MiniMcp.RuntimeChecks
 ```
 
 运行检查需要 Bash。Windows 默认使用 `C:\Program Files\Git\bin\bash.exe`；Linux 使用 `/bin/bash` 并需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径。
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流验证工具发现、参数、返回值和错误；它不验证 HTTP、OAuth 或公网 Tunnel。
+
+Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、取消、停止后重用端口和释放后禁止启动；同时确认当前 `/mcp` 未开放。它不替代后续 MCP HTTP、WinUI 或 OAuth 的实际验证。
 
 <a id="references"></a>
 
