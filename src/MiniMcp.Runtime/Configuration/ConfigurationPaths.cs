@@ -6,7 +6,7 @@ namespace MiniMcp.Configuration;
 /// </summary>
 public sealed class ConfigurationPaths
 {
-    private ConfigurationPaths(string configurationDirectory, string stateDirectory)
+    internal ConfigurationPaths(string configurationDirectory, string stateDirectory)
     {
         SettingsFile = Path.GetFullPath(Path.Combine(configurationDirectory, "settings.json"));
         PolicyFile = Path.GetFullPath(Path.Combine(configurationDirectory, "policy.json"));

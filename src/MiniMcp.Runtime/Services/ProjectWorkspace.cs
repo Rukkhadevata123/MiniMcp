@@ -16,15 +16,19 @@ public sealed class ProjectWorkspace
     internal SemaphoreSlim Mutations { get; } = new(1, 1);
     public string Root { get; }
 
-    public ProjectWorkspace(MiniMcpOptions settings)
+    public ProjectWorkspace(MiniMcpOptions settings) => Root = ValidateRoot(settings.Root);
+
+    internal static string ValidateRoot(string path)
     {
-        Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(settings.Root));
-        if (!Directory.Exists(Root))
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        if (!Directory.Exists(root))
             throw new InvalidOperationException("The project root must be an existing project directory.");
-        if (Root == Path.GetPathRoot(Root) || Root ==
-            Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)))
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (string.Equals(root, Path.GetPathRoot(root), comparison) || string.Equals(root,
+            Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)), comparison))
             throw new InvalidOperationException("The project root must name a project, not the filesystem root or your home directory.");
-        CheckRoot();
+        CheckRoot(root);
+        return root;
     }
 
     public string Resolve(string path)
@@ -40,7 +44,7 @@ public sealed class ProjectWorkspace
             Path.IsPathRooted(relative))
             throw new WorkspaceException("The path is outside the project root.");
 
-        CheckRoot();
+        CheckRoot(Root);
         var current = Root;
         foreach (var part in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -143,9 +147,9 @@ public sealed class ProjectWorkspace
 
     internal string Relative(string path) => Path.GetRelativePath(Root, path).Replace('\\', '/');
 
-    private void CheckRoot()
+    private static void CheckRoot(string root)
     {
-        for (var directory = new DirectoryInfo(Root); directory is not null; directory = directory.Parent)
+        for (var directory = new DirectoryInfo(root); directory is not null; directory = directory.Parent)
             RejectLink(directory.FullName);
     }
 

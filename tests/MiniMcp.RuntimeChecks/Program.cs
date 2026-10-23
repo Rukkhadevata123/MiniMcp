@@ -246,6 +246,10 @@ await Check("configuration paths reject empty, malformed and ambiguous Windows p
 
 await ExternalProgramLocatorChecks.RunAsync(Check);
 await ConfigurationJsonChecks.RunAsync(Check);
+await ConfigurationStoreChecks.RunAsync(Check);
+await ConfigurationValidatorChecks.RunAsync(Check);
+await ConfigurationValueChecks.RunAsync(Check);
+await ConfigurationDependencyChecks.RunAsync(Check);
 await ConfigurationSerializationChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
