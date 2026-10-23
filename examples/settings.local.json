@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "projectRoot": "./project",
+  "port": 8000,
+  "bashPath": "",
+  "authentication": {
+    "mode": "Local",
+    "publicOrigin": null,
+    "team": null,
+    "audience": null
+  },
+  "tunnel": {
+    "enabled": false,
+    "executablePath": "",
+    "tokenFilePath": ""
+  }
+}

@@ -13,12 +13,15 @@ MiniMcp.slnx
 src/
   MiniMcp.Runtime/           .NET 10 类库
     McpRuntime.cs            由调用者控制的进程内 HTTP 生命周期
-    Configuration/          核心内存选项，正式 JSON 配置待实现
+    Configuration/          运行配置、认证和本机执行策略模型
     Security/               Cloudflare Access JWT 验证
     Services/               文件、补丁、Bash 与进程清理
     Tools/                  三个 MCP 工具入口
   MiniMcp.Cli/               .NET 10 命令行入口
   MiniMcp.Desktop/           Windows WinUI 3 本机服务窗口
+examples/
+  settings.local.json       本机运行配置格式示例
+  policy.readonly.json      本机只读策略格式示例
 tests/
   MiniMcp.Checks/            引用 Runtime 的核心行为检查
   MiniMcp.ProtocolChecks/    实际 MCP SDK 内存流检查
@@ -46,6 +49,8 @@ dotnet run --project src/MiniMcp.Cli -- run --port 8000
 正常结束返回 `0`，启动/停止失败返回 `1`，无效参数返回 `2`，启动阶段取消返回 `130`。端口冲突不会停止已有服务。`run` 目前是健康端点原型，不接受正式配置文件，也不启用 `/mcp`。
 
 CLI 与 WinUI 直接调用 `McpRuntime.StartAsync/StopAsync/DisposeAsync`。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
+
+`examples/` 提供不含凭据的 JSON 格式示例，当前入口不读取这些文件。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。模型定义不代表工具权限检查已接入。
 
 ## Windows 桌面入口
 
