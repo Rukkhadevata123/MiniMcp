@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace MiniMcp.Configuration;
 
 /// <summary>
-/// Reads configuration files. Raw reads check JSON format only;
+/// Reads and saves configuration files. Raw reads check JSON format only;
 /// LoadAsync also applies path normalization and shared business/dependency validation.
 /// </summary>
 public sealed partial class ConfigurationStore
@@ -13,10 +13,15 @@ public sealed partial class ConfigurationStore
     public const int MaxFileBytes = 64 * 1024;
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private readonly ConfigurationPaths _paths;
+    private readonly Func<Task>? _beforeCommit;
 
     public ConfigurationStore() : this(ConfigurationPaths.ForCurrentUser()) { }
 
-    internal ConfigurationStore(ConfigurationPaths paths) => _paths = paths;
+    internal ConfigurationStore(ConfigurationPaths paths, Func<Task>? beforeCommit = null)
+    {
+        _paths = paths;
+        _beforeCommit = beforeCommit;
+    }
 
     /// <summary>
     /// Loads the selected settings and fixed local policy, then applies the shared validation pipeline.
