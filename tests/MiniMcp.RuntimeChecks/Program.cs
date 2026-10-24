@@ -267,6 +267,7 @@ await ConfigurationDependencyChecks.RunAsync(Check);
 await ConfigurationSerializationChecks.RunAsync(Check);
 await ConfigurationSaveChecks.RunAsync(Check);
 await ConfigurationPolicySaveChecks.RunAsync(Check);
+await ConfigurationPatchLimitChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);

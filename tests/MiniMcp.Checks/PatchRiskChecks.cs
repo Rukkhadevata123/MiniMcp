@@ -91,11 +91,11 @@ internal static class PatchRiskChecks
                 "*** Update File: custom.md\n*** Move to: renamed.md",
                 "*** Delete File: custom.md"
             })
-                Assert((PatchRiskClassifier.Classify(await fixture.Prepare(body), fixture.Path("custom.md")).Reasons & PatchRiskReason.CriticalFile) != 0, body);
+                Assert((fixture.Classify(await fixture.Prepare(body), fixture.Path("custom.md")).Reasons & PatchRiskReason.CriticalFile) != 0, body);
             var destination = await fixture.Prepare("*** Update File: source.cs\n*** Move to: custom-next.cs");
-            Assert(PatchRiskClassifier.Classify(destination, fixture.Path("custom-next.cs")).Changes[0].Kind == PatchFileKind.Critical, "Selected target");
+            Assert(fixture.Classify(destination, fixture.Path("custom-next.cs")).Changes[0].Kind == PatchFileKind.Critical, "Selected target");
             var add = await fixture.Prepare("*** Add File: custom-new.md\n+new");
-            Assert(PatchRiskClassifier.Classify(add, fixture.Path("custom-new.md")).Changes[0].Kind == PatchFileKind.Critical, "Selected new path");
+            Assert(fixture.Classify(add, fixture.Path("custom-new.md")).Changes[0].Kind == PatchFileKind.Critical, "Selected new path");
         });
 
         await check("shebang detection uses before and after snapshots including a UTF-8 BOM", async () =>
@@ -159,7 +159,7 @@ internal static class PatchRiskChecks
             Assert(actual.Reasons == expected.Reasons && actual.Changes.SequenceEqual(expected.Changes) && !Directory.Exists(fixture.Root), "No filesystem reads or writes");
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
-            try { PatchRiskClassifier.Classify(plan, fixture.SettingsPath, cancelled.Token); throw new Exception("Expected cancellation"); }
+            try { PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), fixture.SettingsPath, new(), cancelled.Token); throw new Exception("Expected cancellation"); }
             catch (OperationCanceledException) { }
 
             Directory.CreateDirectory(fixture.Root);
@@ -190,7 +190,8 @@ internal static class PatchRiskChecks
         public string Path(string relative) => System.IO.Path.Combine(Root, relative);
         public void Put(string path, string text) => File.WriteAllText(Path(path), text, new UTF8Encoding(false));
         public Task<PatchPlan> Prepare(string body) => Service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch");
-        public PatchRiskAssessment Classify(PatchPlan plan) => PatchRiskClassifier.Classify(plan, SettingsPath);
+        public PatchRiskAssessment Classify(PatchPlan plan, string? settingsPath = null) =>
+            PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), settingsPath ?? SettingsPath, new());
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => System.IO.Path.GetRelativePath(DirectoryPath, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
         public void Dispose() { Workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }

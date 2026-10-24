@@ -267,6 +267,7 @@ try
     await PatchPlanChecks.RunAsync(Check);
     await PatchDiffChecks.RunAsync(Check);
     await PatchRiskChecks.RunAsync(Check);
+    await PatchBatchChecks.RunAsync(Check);
     Console.WriteLine($"\n{passed} passed, {failed} failed.");
     return failed == 0 ? 0 : 1;
 }

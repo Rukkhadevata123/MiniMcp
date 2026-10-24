@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using MiniMcp.Configuration;
 
 namespace MiniMcp.Services;
 
@@ -11,14 +12,20 @@ internal enum PatchRiskReason
     CriticalFile = 1,
     UnknownFileType = 2,
     Delete = 4,
-    Move = 8
+    Move = 8,
+    PathLimitExceeded = 16,
+    ChangedLineLimitExceeded = 32,
+    ChangedByteLimitExceeded = 64
 }
 
 internal sealed record PatchChangeRisk(PatchChange Summary, PatchFileKind Kind, PatchRiskReason Reasons);
+internal sealed record PatchBatchSize(int Paths, long ChangedLines, long ChangedBytes);
 
 // Classification describes this exact snapshot. It is neither approval nor permission to commit it.
-internal sealed record PatchRiskAssessment(PatchPlan Plan, ImmutableArray<PatchChangeRisk> Changes, PatchRiskReason Reasons)
+internal sealed record PatchRiskAssessment(PatchPreview Preview, ImmutableArray<PatchChangeRisk> Changes,
+    PatchBatchSize Size, PatchApprovalLimits Limits, PatchRiskReason Reasons)
 {
+    public PatchPlan Plan => Preview.Plan;
     public bool RequiresApproval => Reasons != PatchRiskReason.None;
 }
 
@@ -65,16 +72,23 @@ internal static class PatchRiskClassifier
         ".github", ".gitlab", ".circleci", ".buildkite", ".devcontainer", ".vscode", ".idea"
     };
 
-    public static PatchRiskAssessment Classify(PatchPlan plan, string settingsFilePath, CancellationToken cancellationToken = default)
+    public static PatchRiskAssessment Classify(PatchPreview preview, string settingsFilePath,
+        PatchApprovalLimits limits, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(preview);
+        ArgumentNullException.ThrowIfNull(limits);
         if (!Path.IsPathFullyQualified(settingsFilePath))
             throw new ArgumentException("The validated settings file path must be absolute.", nameof(settingsFilePath));
+        var plan = preview.Plan;
         var changes = ImmutableArray.CreateBuilder<PatchChangeRisk>(plan.Changes.Length);
+        var paths = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var total = PatchRiskReason.None;
         foreach (var change in plan.Changes)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            paths.Add(change.Source);
+            paths.Add(change.Destination);
             var reasons = PathReason(change.Summary.Path);
             if (change.Summary.MoveTo is { } destination) reasons |= PathReason(destination);
             // The selected settings file can have any name, including an ordinary source/document suffix.
@@ -97,7 +111,13 @@ internal static class PatchRiskClassifier
             changes.Add(new(change.Summary, kind, reasons));
             total |= reasons;
         }
-        return new(plan, changes.MoveToImmutable(), total);
+        // Use exactly the complete preview's changed-content statistics, never file sizes or display length.
+        var size = new PatchBatchSize(paths.Count, checked((long)preview.Statistics.AddedLines + preview.Statistics.RemovedLines),
+            checked(preview.Statistics.AddedBytes + preview.Statistics.RemovedBytes));
+        if (size.Paths > limits.MaxPaths) total |= PatchRiskReason.PathLimitExceeded;
+        if (size.ChangedLines > limits.MaxChangedLines) total |= PatchRiskReason.ChangedLineLimitExceeded;
+        if (size.ChangedBytes > limits.MaxChangedBytes) total |= PatchRiskReason.ChangedByteLimitExceeded;
+        return new(preview, changes.MoveToImmutable(), size, limits, total);
     }
 
     private static PatchRiskReason PathReason(string path)

@@ -80,6 +80,11 @@ public sealed class ConfigurationValidator
         Require(policy.SchemaVersion == 1, "policy.schemaVersion", "Unsupported policy schema version; expected 1.");
         Require(settings.Port is >= 1 and <= 65535, "port", "Use a port between 1 and 65535.");
         Require(Enum.IsDefined(policy.Mode), "mode", "Unknown execution mode.");
+        var limits = policy.PatchApprovalLimits
+            ?? throw new ConfigurationValidationException("patchApprovalLimits", "Must not be null.");
+        Require(limits.MaxPaths >= 0, "patchApprovalLimits.maxPaths", "Use a nonnegative integer.");
+        Require(limits.MaxChangedLines >= 0, "patchApprovalLimits.maxChangedLines", "Use a nonnegative integer.");
+        Require(limits.MaxChangedBytes >= 0, "patchApprovalLimits.maxChangedBytes", "Use a nonnegative integer.");
         var authentication = settings.Authentication
             ?? throw new ConfigurationValidationException("authentication", "Must not be null.");
         var tunnel = settings.Tunnel ?? throw new ConfigurationValidationException("tunnel", "Must not be null.");

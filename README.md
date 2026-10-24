@@ -63,7 +63,9 @@ HTTP Host 白名单在 Local 模式包含 `localhost`、`127.0.0.1` 和 `[::1]`�
 
 CloudflareAccess 的 `/mcp` 要求认证，每个请求由认证/授权中间件校验单个 `Cf-Access-Jwt-Assertion`：验证 RS256 签名、团队 issuer、应用 AUD 和有效期，从团队的 HTTPS JWKS 地址缓存并受限刷新公钥。Cookie 和客户端 OAuth Bearer 不作为 Access JWT；Managed OAuth 由 Cloudflare 网关处理。JWT 声明不会改变本机执行策略。Local 模式允许匿名 MCP 请求，`/healthz` 在两种模式下均允许匿名诊断；本机健康响应不验证公网网关连通性。[Cloudflare JWT 验证说明](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 
-`examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。执行权限在共用工具入口检查。
+`examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限、恢复目录和补丁审批阈值。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。执行权限在共用工具入口检查。
+
+`policy.json` 的 `patchApprovalLimits` 保存 ProjectEdit 普通补丁自动放行的上限：`maxPaths` 默认 10，`maxChangedLines` 默认 500，`maxChangedBytes` 默认 65536。口径为整批不同路径数、增删行之和、增删真实字节之和，移动包含源和目标两个路径；超过任一上限需要确认。各项接受 0 至 2147483647 的整数，0 表示该维度的非零变更需要确认；省略对象或字段使用默认值，负值、空值和错误类型报错。当前配置入口支持校验和保存这些值，实际补丁写入关闭。
 
 Runtime 的 `ConfigurationPaths` 提供共用路径规则：Windows 配置位于 `%LOCALAPPDATA%/MiniMcp/`，Linux 位于 `$XDG_CONFIG_HOME/minimcp/`（默认 `~/.config/minimcp/`）；其中分别存放 `settings.json`、`policy.json`。恢复目录在 Windows 默认为配置目录下的 `recovery/`，Linux 为 `$XDG_STATE_HOME/minimcp/recovery/`（默认 `~/.local/state/minimcp/recovery/`），相对 XDG 值忽略。配置文件选择相对调用者工作目录，JSON 内路径相对所属文件目录；路径计算不创建文件，不展开环境变量或 `~`。这些规则供后续配置加载器使用。
 
@@ -134,7 +136,7 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 运行检查需要 Bash，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
 
-核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、完整 diff 重建及预算边界、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、写入拒绝及 Bash 权限；检查大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
+核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、写入拒绝及 Bash 权限；检查大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 
 Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、会话隔离、真实 Bash 子进程的客户端/运行时取消、等待修改锁的调用取消、停止期限及释放任务复用、停止后重用端口和释放后禁止启动；同时验证真实 JWT 签名/issuer/AUD/有效期/算法校验、单个断言头、公钥缓存与受限刷新、执行策略独立性、Host 白名单及固定长度/分块请求体上限。认证检查只替换 JWKS 文档获取，密钥在内存中生成，不依赖公网或真实 Cloudflare 凭据。
 
