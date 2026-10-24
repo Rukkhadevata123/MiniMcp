@@ -26,15 +26,19 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
     File.WriteAllText(Path.Combine(root, "sample.txt"), "first\nsecond\n");
     File.WriteAllText(Path.Combine(root, ".env"), "PRIVATE_TEST_VALUE=fixture\n");
     File.WriteAllText(Path.Combine(root, "complex.txt"), string.Concat(Enumerable.Range(0, 1000).Select(i => $"old{i}\n")));
-    var before = Snapshot(directory);
+    File.WriteAllText(Path.Combine(root, "moving.cs"), "same\n");
     var paths = new ConfigurationPaths(Path.Combine(directory, "user"), Path.Combine(directory, "state"));
-    var configuration = new ConfigurationValidator(paths).Validate(new AppSettings
+    var settings = new AppSettings
     {
         ProjectRoot = root,
         // ReadOnly must work even when no Bash path has been resolved.
         BashPath = mode == ExecutionMode.ReadOnly ? "" : Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
         Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
-    }, Path.Combine(directory, "settings.json"), new ExecutionPolicy { Mode = mode });
+    };
+    var source = Path.Combine(root, "custom.md");
+    File.WriteAllText(source, ConfigurationJson.SerializeSettings(settings));
+    var before = Snapshot(directory);
+    var configuration = new ConfigurationValidator(paths).Validate(settings, source, new ExecutionPolicy { Mode = mode });
 
     var input = new Pipe();
     var output = new Pipe();
@@ -65,7 +69,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);
             if (tool.Name == "apply_patch")
                 Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
-                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "diff", "dryRun", "statistics" }), "Public preview output schema");
+                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
         }
         Console.WriteLine($"PASS {mode}: MCP initialize, exact tool list and parameter schemas");
 
@@ -83,9 +87,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                     Assert(result.StructuredContent is null && !result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains("# Review diff")), "Errors expose no partial preview");
                 else
                 {
-                    Assert(payload.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "diff", "dryRun", "statistics" }), "Only public preview fields are exported");
+                    Assert(payload.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "decision", "diff", "dryRun", "risk", "statistics" }), "Only public preview fields are exported");
                     using var textPayload = JsonDocument.Parse(result.Content.OfType<TextContentBlock>().Single().Text);
-                    Assert(textPayload.RootElement.GetProperty("diff").GetString() == payload.GetProperty("diff").GetString(), "Text and structured content contain the same complete diff");
+                    Assert(JsonElement.DeepEquals(textPayload.RootElement, payload), "Text and structured content contain the same complete preview and decision");
                 }
             }
             return payload;
@@ -120,6 +124,8 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             var expected = JsonSerializer.SerializeToElement(expectedStatistics[i], new JsonSerializerOptions(JsonSerializerDefaults.Web));
             Assert(JsonElement.DeepEquals(preview.GetProperty("statistics"), expected) &&
                 JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total statistics");
+            CheckReview(preview, mode, actions[i] is "move" ? ["Move"] : actions[i] is "delete" ? ["Delete"] : []);
+            Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("kind").GetString() == "Ordinary", "File kind is a string");
             await Call("apply_patch", new() { ["patch"] = patches[i] }, error: true,
                 message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "recovery records");
         }
@@ -130,16 +136,47 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         }, error: true);
         Console.WriteLine($"PASS {mode}: read boundaries, patch previews and denied add/update/move/delete");
 
+        var riskCases = new (string Body, string[] Reasons)[]
+        {
+            ("*** Add File: nested/ordinary.md\n+x\n*** Add File: Directory.Build.cs\n+b\n*** Add File: data.json\n+u\n" +
+                "*** Delete File: sample.txt\n*** Update File: moving.cs\n*** Move to: renamed.cs", ["CriticalFile", "UnknownFileType", "Delete", "Move"]),
+            (string.Join('\n', Enumerable.Range(0, 11).Select(i => $"*** Add File: path{i}.md")), ["PathLimitExceeded"]),
+            ("*** Add File: lines.md\n" + string.Join('\n', Enumerable.Repeat("+", 501)), ["ChangedLineLimitExceeded"]),
+            ("*** Add File: bytes.md\n+" + new string('x', 65536), ["ChangedByteLimitExceeded"]),
+            ("*** Update File: custom.md\n@@\n-  \"port\": 8000,\n+  \"port\": 8123,", ["CriticalFile"])
+        };
+        foreach (var (body, reasons) in riskCases)
+        {
+            var patch = "*** Begin Patch\n" + body + "\n*** End Patch";
+            var preview = await Call("apply_patch", new()
+            {
+                ["patch"] = patch, ["dry_run"] = true, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true,
+                ["patchApprovalLimits"] = new { maxPaths = int.MaxValue, maxChangedLines = int.MaxValue, maxChangedBytes = int.MaxValue }
+            });
+            CheckReview(preview, mode, reasons);
+            Assert(preview.GetProperty("risk").GetProperty("limits").GetProperty("maxPaths").GetInt32() == 10, "Only local limits apply");
+            if (body.StartsWith("*** Update File: custom.md", StringComparison.Ordinal))
+                Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("kind").GetString() == "Critical", "Actual selected settings source is critical");
+            await Call("apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true },
+                error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : mode == ExecutionMode.ProjectEdit ? "local approval" : "recovery records");
+        }
+        Console.WriteLine($"PASS {mode}: risk causes, batch thresholds, selected settings and mode decisions cannot be overridden by tool arguments");
+
         var longLine = new string('x', 180_000) + "TAIL中👋\t\u001b";
         var large = await Call("apply_patch", new() { ["patch"] = "*** Begin Patch\n*** Add File: large.txt\n+" + longLine + "\n*** End Patch", ["dry_run"] = true });
         var largeDiff = large.GetProperty("diff").GetString()!;
         Assert(largeDiff.Length > 16_000 && largeDiff.Contains("TAIL中👋\\t\\u001b\\n\""), "Large preview remains complete and escaped");
         Assert(large.GetProperty("statistics").GetProperty("addedBytes").GetInt64() == System.Text.Encoding.UTF8.GetByteCount(longLine + "\n"), "Statistics use unescaped UTF-8 bytes");
+        CheckReview(large, mode, "ChangedByteLimitExceeded");
         Console.WriteLine($"PASS {mode}: complete large escaped diff survives structured and text serialization");
 
         await Call("apply_patch", new()
         {
             ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["dry_run"] = true
+        }, error: true, message: "display limit");
+        await Call("apply_patch", new()
+        {
+            ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["approved"] = true
         }, error: true, message: "display limit");
         var complex = "*** Begin Patch\n*** Update File: complex.txt\n@@\n" +
             string.Concat(Enumerable.Range(0, 1000).Select(i => $"-old{i}\n")) + string.Concat(Enumerable.Range(0, 1000).Select(i => $"+new{i}\n")) + "*** End Patch";
@@ -187,6 +224,24 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
 static string[] Snapshot(string directory) => Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories)
     .Order(StringComparer.Ordinal).Select(path => Path.GetRelativePath(directory, path) +
         (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
+
+static void CheckReview(JsonElement preview, ExecutionMode mode, params string[] reasons)
+{
+    var risk = preview.GetProperty("risk");
+    Assert(risk.GetProperty("reasons").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal)
+        .SequenceEqual(reasons.Order(StringComparer.Ordinal)), "Whole-batch risk names");
+    var statistics = preview.GetProperty("statistics");
+    Assert(risk.GetProperty("size").GetProperty("changedLines").GetInt64() == statistics.GetProperty("addedLines").GetInt64() + statistics.GetProperty("removedLines").GetInt64() &&
+        risk.GetProperty("size").GetProperty("changedBytes").GetInt64() == statistics.GetProperty("addedBytes").GetInt64() + statistics.GetProperty("removedBytes").GetInt64(), "Risk and diff share real statistics");
+    var decision = preview.GetProperty("decision");
+    var review = mode == ExecutionMode.ProjectEdit && reasons.Length != 0;
+    Assert(decision.GetProperty("mode").GetString() == mode.ToString() &&
+        decision.GetProperty("disposition").GetString() == (mode == ExecutionMode.ReadOnly ? "Denied" : review ? "RequiresApproval" : "Automatic"), "Local mode decision");
+    string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["RecoveryUnavailable", "ApprovalUnavailable"] : ["RecoveryUnavailable"];
+    Assert(decision.GetProperty("blockers").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal)
+        .SequenceEqual(blockers.Order(StringComparer.Ordinal)), "Current blocking causes");
+    Assert(!decision.GetProperty("canCommit").GetBoolean() && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "No preview grants commit permission");
+}
 
 static void Assert(bool condition, string message)
 {

@@ -1,4 +1,5 @@
 using MiniMcp.Configuration;
+using MiniMcp.Services;
 
 internal static class RuntimeConfigurationChecks
 {
@@ -66,6 +67,78 @@ internal static class RuntimeConfigurationChecks
                 Assert((await File.ReadAllBytesAsync(source)).SequenceEqual(settingsBytes));
                 Assert((await File.ReadAllBytesAsync(paths.PolicyFile)).SequenceEqual(policyBytes));
                 Assert((await store.ReadPolicyAsync()).Value.Mode == ExecutionMode.ReadOnly);
+            });
+
+            await check("loaded runtime configurations retain the normalized selected source for critical-file classification", async () =>
+            {
+                await Write(draft, new ExecutionPolicy());
+                var selected = Path.Combine(root, "custom.md");
+                var customDraft = draft with { ProjectRoot = ".", BashPath = "../tools/bash" };
+                await File.WriteAllTextAsync(selected, ConfigurationJson.SerializeSettings(customDraft));
+                var before = await File.ReadAllBytesAsync(selected);
+                var workspace = new ProjectWorkspace(root);
+                try
+                {
+                    var plan = await new PatchService(workspace).PrepareAsync(
+                        "*** Begin Patch\n*** Update File: custom.md\n@@\n-  \"port\": 8000,\n+  \"port\": 8123,\n*** End Patch");
+                    var preview = PatchDiffBuilder.Create(plan);
+                    foreach (var mode in Enum.GetValues<ExecutionMode>())
+                    {
+                        var configuration = await store.LoadAsync("project/nested/../custom.md", temporary, mode);
+                        Assert(configuration.SettingsFilePath == selected && Path.IsPathFullyQualified(configuration.SettingsFilePath));
+                        Assert(configuration.Settings.ProjectRoot == root && configuration.Settings.BashPath == bash && configuration.Policy.Mode == mode);
+                        var risk = PatchRiskClassifier.Classify(preview, configuration.SettingsFilePath, configuration.Policy.PatchApprovalLimits);
+                        Assert(risk.Changes[0].Kind == PatchFileKind.Critical && risk.Reasons == PatchRiskReason.CriticalFile);
+                    }
+                    Assert((await File.ReadAllBytesAsync(selected)).SequenceEqual(before) && !Directory.Exists(Path.Combine(root, "nested")));
+                }
+                finally { workspace.Mutations.Dispose(); }
+            });
+
+            await check("reselecting settings keeps earlier configuration sources isolated after external edits and deletion", async () =>
+            {
+                await Write(draft, new ExecutionPolicy());
+                var firstSource = Path.Combine(root, "first.md");
+                var secondSource = Path.Combine(root, "second.cs");
+                var value = draft with { ProjectRoot = ".", BashPath = "" };
+                await File.WriteAllTextAsync(firstSource, ConfigurationJson.SerializeSettings(value));
+                await File.WriteAllTextAsync(secondSource, ConfigurationJson.SerializeSettings(value with { Port = 8123 }));
+                var first = await store.LoadAsync(firstSource, temporary);
+                var second = await store.LoadAsync(secondSource, temporary);
+                Assert(first.SettingsFilePath == firstSource && second.SettingsFilePath == secondSource);
+                var workspace = new ProjectWorkspace(root);
+                try
+                {
+                    var plan = await new PatchService(workspace).PrepareAsync(
+                        "*** Begin Patch\n*** Update File: first.md\n@@\n-  \"port\": 8000,\n+  \"port\": 9000,\n*** End Patch");
+                    var preview = PatchDiffBuilder.Create(plan);
+                    await File.WriteAllTextAsync(firstSource, "external edit");
+                    File.Delete(secondSource);
+                    Assert(first.SettingsFilePath == firstSource && second.SettingsFilePath == secondSource);
+                    Assert(first.Settings.Port == 8000 && second.Settings.Port == 8123);
+                    Assert(PatchRiskClassifier.Classify(preview, first.SettingsFilePath, first.Policy.PatchApprovalLimits).Reasons == PatchRiskReason.CriticalFile);
+                    Assert(!PatchRiskClassifier.Classify(preview, second.SettingsFilePath, second.Policy.PatchApprovalLimits).RequiresApproval);
+                    Assert(await File.ReadAllTextAsync(firstSource) == "external edit" && !File.Exists(secondSource));
+                }
+                finally { workspace.Mutations.Dispose(); }
+            });
+
+            await check("validated in-memory drafts retain their intended source without creating configuration or project directories", async () =>
+            {
+                var intended = Path.Combine(root, "pending", "draft.md");
+                var candidate = Path.Combine(root, "pending", "nested", "..", "draft.md");
+                var configuration = new ConfigurationValidator(paths).Validate(draft with { ProjectRoot = root, BashPath = "" },
+                    candidate, new ExecutionPolicy());
+                Assert(configuration.SettingsFilePath == intended && !Directory.Exists(Path.Combine(root, "pending")));
+                var workspace = new ProjectWorkspace(root);
+                try
+                {
+                    var plan = await new PatchService(workspace).PrepareAsync("*** Begin Patch\n*** Add File: pending/draft.md\n+{}\n*** End Patch");
+                    var risk = PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), configuration.SettingsFilePath, configuration.Policy.PatchApprovalLimits);
+                    Assert(risk.Changes[0].Kind == PatchFileKind.Critical && risk.Reasons == PatchRiskReason.CriticalFile);
+                    Assert(!File.Exists(intended) && !Directory.Exists(Path.Combine(root, "pending")) && !Directory.Exists(paths.RecoveryDirectory));
+                }
+                finally { workspace.Mutations.Dispose(); }
             });
 
             await check("a read-only session override skips Bash required by the persisted execution mode", async () =>

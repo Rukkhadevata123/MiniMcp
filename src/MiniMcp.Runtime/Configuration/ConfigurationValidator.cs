@@ -65,7 +65,7 @@ public sealed class ConfigurationValidator
             });
             settings = settings with { Tunnel = settings.Tunnel with { ExecutablePath = cloudflared } };
         }
-        return new RuntimeConfiguration(settings, normalized.Policy);
+        return new RuntimeConfiguration(settings, normalized.Policy, normalized.SettingsFilePath);
     }
 
     /// <summary>
@@ -106,10 +106,10 @@ public sealed class ConfigurationValidator
     }
 
     /// <summary>
-    /// Returns copies with absolute paths without changing the persisted values or creating files.
+    /// Returns copies with absolute paths and the normalized source path, without changing drafts or creating files.
     /// Authentication, dependency and other business checks are performed separately.
     /// </summary>
-    public (AppSettings Settings, ExecutionPolicy Policy) NormalizePaths(
+    public (AppSettings Settings, ExecutionPolicy Policy, string SettingsFilePath) NormalizePaths(
         AppSettings settings, string settingsFile, ExecutionPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -156,7 +156,7 @@ public sealed class ConfigurationValidator
                 ExecutablePath = OptionalPath("tunnel.executablePath", settings.Tunnel.ExecutablePath),
                 TokenFilePath = OptionalPath("tunnel.tokenFilePath", settings.Tunnel.TokenFilePath)
             }
-        }, policy with { RecoveryDirectory = recovery });
+        }, policy with { RecoveryDirectory = recovery }, source);
     }
 
     private static string CheckProgram(string? path, string name)

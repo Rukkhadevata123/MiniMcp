@@ -19,7 +19,6 @@ internal enum PatchRiskReason
 }
 
 internal sealed record PatchChangeRisk(PatchChange Summary, PatchFileKind Kind, PatchRiskReason Reasons);
-internal sealed record PatchBatchSize(int Paths, long ChangedLines, long ChangedBytes);
 
 // Classification describes this exact snapshot. It is neither approval nor permission to commit it.
 internal sealed record PatchRiskAssessment(PatchPreview Preview, ImmutableArray<PatchChangeRisk> Changes,

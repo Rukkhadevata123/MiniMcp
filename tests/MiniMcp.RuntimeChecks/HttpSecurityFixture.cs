@@ -25,7 +25,8 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-http-security-{Guid.NewGuid():N}");
     private readonly RSA _rsa = RSA.Create(2048);
     public HttpSecurityFixture(AuthenticationMode mode = AuthenticationMode.CloudflareAccess,
-        ExecutionMode executionMode = ExecutionMode.ReadOnly, bool mapProbes = true)
+        ExecutionMode executionMode = ExecutionMode.ReadOnly, bool mapProbes = true,
+        PatchApprovalLimits? patchLimits = null, string? settingsRelativePath = null)
     {
         Root = Path.Combine(_directory, "project");
         Directory.CreateDirectory(Root);
@@ -42,7 +43,8 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
             {
                 Mode = mode, PublicOrigin = "https://mcp.example.com", Team = "fixture-team", Audience = Audience
             }
-        }, Path.Combine(_directory, "settings.json"), new ExecutionPolicy { Mode = executionMode });
+        }, settingsRelativePath is null ? Path.Combine(_directory, "settings.json") : Path.Combine(Root, settingsRelativePath),
+            new ExecutionPolicy { Mode = executionMode, PatchApprovalLimits = patchLimits ?? new() });
         var key = _rsa.ExportParameters(false);
         Documents = new SigningDocuments(JsonSerializer.Serialize(new
         {

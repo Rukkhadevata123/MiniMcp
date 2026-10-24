@@ -6,12 +6,15 @@ namespace MiniMcp.Configuration;
 /// </summary>
 public sealed class RuntimeConfiguration
 {
-    internal RuntimeConfiguration(AppSettings settings, ExecutionPolicy policy)
+    internal RuntimeConfiguration(AppSettings settings, ExecutionPolicy policy, string settingsFilePath)
     {
         Settings = settings;
         Policy = policy;
+        SettingsFilePath = settingsFilePath;
     }
 
     public AppSettings Settings { get; }
     public ExecutionPolicy Policy { get; }
+    /// <summary>The normalized source path, or intended save path when validating an in-memory draft.</summary>
+    public string SettingsFilePath { get; }
 }

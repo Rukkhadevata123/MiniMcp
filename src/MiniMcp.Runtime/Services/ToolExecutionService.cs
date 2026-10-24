@@ -43,14 +43,16 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     public Task<PatchPreviewResult> ApplyPatchAsync(string patch, bool dryRun = false,
         CancellationToken cancellationToken = default) => ExecuteAsync(async token =>
         {
-            if (!dryRun)
-                throw new WorkspaceException(Configuration.Policy.Mode == ExecutionMode.ReadOnly
-                    ? "ReadOnly mode does not allow patch writes. Use dry_run=true to preview changes."
-                    : "Patch writes are unavailable until recovery records are supported. Use dry_run=true to preview changes.");
             var plan = await _patches.PrepareAsync(patch, token).ConfigureAwait(false);
             // Await the actual computation: cancellation must finish before the call leaves in-flight tracking.
-            var preview = await Task.Run(() => PatchDiffBuilder.Create(plan, token), token).ConfigureAwait(false);
-            return preview.ToResult();
+            var decision = await Task.Run(() =>
+            {
+                var preview = PatchDiffBuilder.Create(plan, token);
+                var assessment = PatchRiskClassifier.Classify(preview, Configuration.SettingsFilePath, Configuration.Policy.PatchApprovalLimits, token);
+                return PatchWritePolicy.Decide(assessment, Configuration.Policy.Mode, token);
+            }, token).ConfigureAwait(false);
+            if (!dryRun) throw new WorkspaceException(decision.RejectionMessage);
+            return PatchPreviewResult.FromDecision(decision);
         }, cancellationToken);
 
     public Task<BashResult> RunBashAsync(string command, string workdir = ".", int timeoutSeconds = 30,

@@ -16,7 +16,7 @@ internal static class PatchDiffBuilder
         ArgumentNullException.ThrowIfNull(plan);
         var budget = new Budget(cancellationToken);
         var output = new Output(budget);
-        var files = ImmutableArray.CreateBuilder<PatchFilePreview>();
+        var files = ImmutableArray.CreateBuilder<PatchFileDiff>();
         var total = new PatchStatistics(0, 0, 0, 0);
         output.Append("# Review diff: quoted lines escape controls and include their original line endings.\n");
         foreach (var change in plan.Changes)
@@ -52,7 +52,7 @@ internal static class PatchDiffBuilder
             }
             Hunks(output, edits, budget);
             var statistics = new PatchStatistics(addedLines, removedLines, addedBytes, removedBytes);
-            files.Add(new PatchFilePreview(change.Summary, statistics));
+            files.Add(new PatchFileDiff(change.Summary, statistics));
             total += statistics;
         }
         return new PatchPreview(plan, output.ToString(), files.ToImmutable(), total);
