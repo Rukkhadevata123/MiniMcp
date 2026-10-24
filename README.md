@@ -55,6 +55,8 @@ CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration
 
 每次启动在监听前初始化独立的工具执行服务，绑定快照中的同一份配置和 `RunId`。该 Host 的请求共享执行服务、工作区和修改互斥，服务由 Host 的 DI 容器释放；停止后旧执行服务拒绝调用，重新启动使用新的会话。工作区初始化、启动或端口绑定失败会清理已创建的资源；清理失败保留所有权并阻止再次启动。
 
+每次工具调用登记在所属会话中，并同时响应客户端和会话取消。停止先拒绝新调用，再取消并等待在途调用清理，包括运行中的 Bash 及等待修改锁的预演，随后停止和释放 Host。整个流程共用 10 秒期限；超时或取消等待后保留故障状态与资源所有权，重试继续等待未完成的停止或释放任务，清理完成后才允许启动新会话。
+
 `examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。工具执行权限在工具接入时处理。
 
 Runtime 的 `ConfigurationPaths` 提供共用路径规则：Windows 配置位于 `%LOCALAPPDATA%/MiniMcp/`，Linux 位于 `$XDG_CONFIG_HOME/minimcp/`（默认 `~/.config/minimcp/`）；其中分别存放 `settings.json`、`policy.json`。恢复目录在 Windows 默认为配置目录下的 `recovery/`，Linux 为 `$XDG_STATE_HOME/minimcp/recovery/`（默认 `~/.local/state/minimcp/recovery/`），相对 XDG 值忽略。配置文件选择相对调用者工作目录，JSON 内路径相对所属文件目录；路径计算不创建文件，不展开环境变量或 `~`。这些规则供后续配置加载器使用。
@@ -122,7 +124,7 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具参数、读取、预演、写入拒绝及 Bash 权限；同时检查拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 
-Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、取消、停止后重用端口和释放后禁止启动；同时确认当前 `/mcp` 未开放。它不替代后续 MCP HTTP、WinUI 或 OAuth 的实际验证。
+Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、会话隔离、真实 Bash 子进程的客户端/运行时取消、等待修改锁的调用取消、停止期限及释放任务复用、停止后重用端口和释放后禁止启动；同时确认当前 `/mcp` 未开放。它不替代后续 MCP HTTP、WinUI 或 OAuth 的实际验证。
 
 <a id="references"></a>
 

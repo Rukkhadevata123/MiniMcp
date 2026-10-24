@@ -3,6 +3,15 @@ using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Runtime;
 
+// A real descendant process used to verify Bash cancellation and runtime shutdown containment.
+if (args is ["--execution-child", var marker])
+{
+    await File.WriteAllTextAsync(marker + ".tmp", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    File.Move(marker + ".tmp", marker);
+    await Task.Delay(Timeout.InfiniteTimeSpan);
+    return 0;
+}
+
 using var client = new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
 {
     Timeout = TimeSpan.FromSeconds(3)
@@ -261,6 +270,7 @@ await ConfigurationPolicySaveChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
+await RuntimeCallChecks.RunAsync(Check);
 await CliChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");

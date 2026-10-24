@@ -21,6 +21,8 @@ public sealed class McpRuntime : IAsyncDisposable
     private readonly Action<IServiceCollection>? _configureServices;
     private WebApplication? _application;
     private ToolExecutionService? _execution;
+    private Task? _hostStopTask;
+    private Task? _hostDisposeTask;
     private RuntimeSnapshot _snapshot = new(RuntimeState.Stopped);
     private bool _disposed;
 
@@ -82,12 +84,18 @@ public sealed class McpRuntime : IAsyncDisposable
                 }
                 catch (Exception startupError)
                 {
-                    try { await application.DisposeAsync().AsTask().WaitAsync(ShutdownTimeout).ConfigureAwait(false); }
+                    // Retain both ownership and any unfinished cleanup task until cleanup actually completes.
+                    _application = application;
+                    Volatile.Write(ref _execution, execution);
+                    try
+                    {
+                        using var deadline = new CancellationTokenSource(ShutdownTimeout);
+                        if (execution is not null) await execution.StopAsync(deadline.Token).ConfigureAwait(false);
+                        await DisposeHostAsync(application, deadline.Token).ConfigureAwait(false);
+                        ReleaseHost();
+                    }
                     catch (Exception cleanupError)
                     {
-                        // Retain ownership so a caller can retry cleanup rather than create a second host.
-                        _application = application;
-                        Volatile.Write(ref _execution, execution);
                         throw new AggregateException("Startup failed and HTTP host cleanup did not complete.", startupError, cleanupError);
                     }
                     throw;
@@ -131,15 +139,25 @@ public sealed class McpRuntime : IAsyncDisposable
             if (!_disposed) Publish(Snapshot with { State = RuntimeState.Stopped, Address = null, Error = null });
             return;
         }
-        Publish(Snapshot with { State = RuntimeState.Stopping, Error = null });
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(ShutdownTimeout);
-            await _application.StopAsync(deadline.Token).ConfigureAwait(false);
-            await _application.DisposeAsync().AsTask().WaitAsync(deadline.Token).ConfigureAwait(false);
-            _application = null;
-            Volatile.Write(ref _execution, null);
+            var draining = _execution?.StopAsync(deadline.Token);
+            Publish(Snapshot with { State = RuntimeState.Stopping, Error = null });
+            if (draining is not null) await draining.ConfigureAwait(false);
+            var application = _application;
+            var token = deadline.Token;
+            // A failed stop can be retried; never overlap stopping with an unfinished disposal.
+            if (_hostDisposeTask is null)
+            {
+                if (_hostStopTask is null || _hostStopTask.IsFaulted || _hostStopTask.IsCanceled)
+                    _hostStopTask = Task.Run(() => application.StopAsync(token));
+                await _hostStopTask.WaitAsync(token).ConfigureAwait(false);
+            }
+            await DisposeHostAsync(application, token).ConfigureAwait(false);
+            ReleaseHost();
             Publish(Snapshot with { State = RuntimeState.Stopped, Address = null });
         }
         catch (Exception error)
@@ -147,6 +165,21 @@ public sealed class McpRuntime : IAsyncDisposable
             Publish(Snapshot with { State = RuntimeState.Faulted, Error = error.Message });
             throw;
         }
+    }
+
+    private Task DisposeHostAsync(WebApplication application, CancellationToken cancellationToken)
+    {
+        // Dispatch even synchronous disposal work so a blocking service cannot bypass the shared deadline.
+        _hostDisposeTask ??= Task.Run(async () => await application.DisposeAsync().ConfigureAwait(false));
+        return _hostDisposeTask.WaitAsync(cancellationToken);
+    }
+
+    private void ReleaseHost()
+    {
+        _application = null;
+        Volatile.Write(ref _execution, null);
+        _hostStopTask = null;
+        _hostDisposeTask = null;
     }
 
     private void Publish(RuntimeSnapshot snapshot) => Volatile.Write(ref _snapshot, snapshot);

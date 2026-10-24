@@ -64,14 +64,14 @@ internal static class RuntimeSessionChecks
                 var runId = Guid.NewGuid();
                 var services = new ServiceCollection();
                 services.AddToolExecution(runId, firstConfiguration);
-                using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
+                await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
                 using var first = provider.CreateScope();
                 using var second = provider.CreateScope();
                 var execution = first.ServiceProvider.GetRequiredService<ToolExecutionService>();
                 Assert(ReferenceEquals(execution, second.ServiceProvider.GetRequiredService<ToolExecutionService>()));
                 Assert(ReferenceEquals(execution, provider.GetRequiredService<ToolExecutionService>()));
                 Assert(execution.RunId == runId && ReferenceEquals(execution.Configuration, firstConfiguration));
-                provider.Dispose();
+                await provider.DisposeAsync();
                 Assert(execution.IsDisposed);
                 await Reject<ObjectDisposedException>(() => execution.ReadFileAsync("sample.txt"));
             });

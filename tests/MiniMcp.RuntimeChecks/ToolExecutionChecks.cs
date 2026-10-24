@@ -26,7 +26,7 @@ internal static class ToolExecutionChecks
                     }, Path.Combine(temporary, "settings.json"), new ExecutionPolicy { Mode = mode });
                     File.Delete(bash); // A dependency can disappear after complete configuration validation.
 
-                    using var execution = new ToolExecutionService(Guid.NewGuid(), configuration);
+                    await using var execution = new ToolExecutionService(Guid.NewGuid(), configuration);
                     if ((await execution.ReadFileAsync("sample.txt")).Content != "original\n") throw new Exception("Read failed.");
                     var preview = await execution.ApplyPatchAsync("*** Begin Patch\n*** Add File: preview/new.txt\n+new\n*** End Patch", dryRun: true);
                     if (!preview.DryRun) throw new Exception("Preview failed.");
