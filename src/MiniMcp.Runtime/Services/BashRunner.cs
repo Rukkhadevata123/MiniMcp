@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Serialization;
-using MiniMcp.Configuration;
 
 namespace MiniMcp.Services;
 
@@ -14,13 +13,11 @@ public sealed class BashRunner
     private readonly ProjectWorkspace _workspace;
     private readonly string _bashPath;
 
-    public BashRunner(ProjectWorkspace workspace, MiniMcpOptions settings)
+    public BashRunner(ProjectWorkspace workspace, string bashPath)
     {
         _workspace = workspace;
-        _bashPath = settings.BashPath ?? (OperatingSystem.IsWindows()
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "bin", "bash.exe")
-            : "/bin/bash");
-        if (!Path.IsPathFullyQualified(_bashPath) || !File.Exists(_bashPath))
+        _bashPath = bashPath;
+        if (string.IsNullOrWhiteSpace(_bashPath) || !Path.IsPathFullyQualified(_bashPath) || !File.Exists(_bashPath))
             throw new InvalidOperationException("The Bash path must point to an existing executable (on Windows, install Git for Windows).");
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux())
             throw new InvalidOperationException("Bash process cleanup is supported on Linux and Windows.");

@@ -1,5 +1,4 @@
 using System.Text;
-using MiniMcp.Configuration;
 
 namespace MiniMcp.Services;
 
@@ -16,7 +15,7 @@ public sealed class ProjectWorkspace
     internal SemaphoreSlim Mutations { get; } = new(1, 1);
     public string Root { get; }
 
-    public ProjectWorkspace(MiniMcpOptions settings) => Root = ValidateRoot(settings.Root);
+    public ProjectWorkspace(string projectRoot) => Root = ValidateRoot(projectRoot);
 
     internal static string ValidateRoot(string path)
     {

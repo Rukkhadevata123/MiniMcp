@@ -252,6 +252,7 @@ await ConfigurationJsonChecks.RunAsync(Check);
 await ConfigurationStoreChecks.RunAsync(Check);
 await ConfigurationValidatorChecks.RunAsync(Check);
 await ConfigurationValueChecks.RunAsync(Check);
+await AuthenticationRegistrationChecks.RunAsync(Check);
 await ConfigurationDependencyChecks.RunAsync(Check);
 await ConfigurationSerializationChecks.RunAsync(Check);
 await ConfigurationSaveChecks.RunAsync(Check);

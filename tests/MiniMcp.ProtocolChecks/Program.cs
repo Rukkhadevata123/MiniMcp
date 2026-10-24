@@ -18,11 +18,11 @@ try
     var output = new Pipe();
     var services = new ServiceCollection();
     services.AddLogging();
-    services.AddSingleton(new MiniMcpOptions(root, "Local", null, null, null,
-        BashPath: Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH")));
-    services.AddSingleton<ProjectWorkspace>();
+    var bashPath = ExternalProgramLocator.FindBash(Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
+        Path.Combine(Environment.CurrentDirectory, "settings.json")) ?? throw new InvalidOperationException("Bash is required for protocol checks.");
+    services.AddSingleton(_ => new ProjectWorkspace(root));
     services.AddSingleton<PatchService>();
-    services.AddSingleton<BashRunner>();
+    services.AddSingleton(provider => new BashRunner(provider.GetRequiredService<ProjectWorkspace>(), bashPath));
     services.AddMcpServer().WithStreamServerTransport(input.Reader.AsStream(), output.Writer.AsStream()).WithTools<WorkspaceTools>();
     await using var provider = services.BuildServiceProvider();
     var server = provider.GetRequiredService<McpServer>();

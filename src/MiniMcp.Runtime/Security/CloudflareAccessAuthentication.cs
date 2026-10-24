@@ -10,9 +10,12 @@ namespace MiniMcp.Security;
 public static class CloudflareAccessAuthentication
 {
     public static IServiceCollection AddCloudflareAccess(
-        this IServiceCollection services, MiniMcpOptions settings)
+        this IServiceCollection services, AuthenticationSettings settings)
     {
-        var issuer = settings.AccessIssuer;
+        ArgumentNullException.ThrowIfNull(settings);
+        if (settings.Mode != AuthenticationMode.CloudflareAccess)
+            throw new InvalidOperationException("Cloudflare Access registration requires CloudflareAccess authentication mode.");
+        var issuer = $"https://{settings.Team}.cloudflareaccess.com";
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
@@ -34,7 +37,7 @@ public static class CloudflareAccessAuthentication
                     ValidateIssuer = true,
                     ValidIssuer = issuer,
                     ValidateAudience = true,
-                    ValidAudience = settings.AccessAudience,
+                    ValidAudience = settings.Audience,
                     ValidateLifetime = true,
                     RequireExpirationTime = true,
                     RequireSignedTokens = true,

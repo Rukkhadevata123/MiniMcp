@@ -6,10 +6,11 @@ using MiniMcp.Services;
 var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-checks-{Guid.NewGuid():N}");
 var root = Path.Combine(temporary, "project with spaces");
 Directory.CreateDirectory(root);
-var options = new MiniMcpOptions(root, "Local", null, null, null, BashPath: Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH"));
-var workspace = new ProjectWorkspace(options);
+var bashPath = ExternalProgramLocator.FindBash(Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
+    Path.Combine(Environment.CurrentDirectory, "settings.json")) ?? throw new InvalidOperationException("Bash is required for core checks.");
+var workspace = new ProjectWorkspace(root);
 var patches = new PatchService(workspace);
-var bash = new BashRunner(workspace, options);
+var bash = new BashRunner(workspace, bashPath);
 var passed = 0;
 var failed = 0;
 
@@ -179,13 +180,13 @@ try
             }
             Assert(File.ReadAllText(Path.Combine(outside, "secret")) == "secret");
             Directory.CreateSymbolicLink(Path.Combine(temporary, "root-link"), root);
-            Reject<WorkspaceException>(() => new ProjectWorkspace(options with { Root = Path.Combine(temporary, "root-link") }));
+            Reject<WorkspaceException>(() => new ProjectWorkspace(Path.Combine(temporary, "root-link")));
         });
     }
-    await Check("Bash executable requires an existing absolute path", () =>
+    await Check("Bash requires an explicit existing absolute file path without fallback", () =>
     {
-        Reject<InvalidOperationException>(() => new BashRunner(workspace, options with { BashPath = "relative/bash" }));
-        Reject<InvalidOperationException>(() => new BashRunner(workspace, options with { BashPath = Path.Combine(temporary, "missing-bash") }));
+        foreach (var path in new[] { null, "", " ", "relative/bash", Path.Combine(temporary, "missing-bash"), root })
+            Reject<InvalidOperationException>(() => new BashRunner(workspace, path!));
         return Task.CompletedTask;
     });
     await Check("real Bash supports pipelines, multiline commands, quoting and Unicode", async () =>
