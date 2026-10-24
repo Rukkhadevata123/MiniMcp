@@ -41,13 +41,14 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         ExecuteAsync(token => _workspace.ReadFileAsync(path, startLine, endLine, token), cancellationToken);
 
     public Task<PatchResult> ApplyPatchAsync(string patch, bool dryRun = false,
-        CancellationToken cancellationToken = default) => ExecuteAsync(token =>
+        CancellationToken cancellationToken = default) => ExecuteAsync(async token =>
         {
             if (!dryRun)
                 throw new WorkspaceException(Configuration.Policy.Mode == ExecutionMode.ReadOnly
                     ? "ReadOnly mode does not allow patch writes. Use dry_run=true to preview changes."
                     : "Patch writes are unavailable until recovery records are supported. Use dry_run=true to preview changes.");
-            return _patches.ApplyAsync(patch, dryRun: true, token);
+            var plan = await _patches.PrepareAsync(patch, token).ConfigureAwait(false);
+            return plan.ToResult(dryRun: true);
         }, cancellationToken);
 
     public Task<BashResult> RunBashAsync(string command, string workdir = ".", int timeoutSeconds = 30,

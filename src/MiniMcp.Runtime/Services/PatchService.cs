@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -12,25 +13,27 @@ internal sealed class PatchService(ProjectWorkspace workspace)
 {
     private sealed record Chunk(string? Anchor, string[] Lines, bool EndOfFile);
     private sealed record Operation(string Action, string Path, string? MoveTo, string? Content, List<Chunk> Chunks);
-    private sealed class Change(string source, string destination, TextFile? before, byte[]? after, PatchChange summary)
+    private sealed class Change(PlannedPatchChange plan)
     {
-        public string Source { get; } = source;
-        public string Destination { get; } = destination;
-        public TextFile? Before { get; } = before;
-        public byte[]? After { get; } = after;
-        public PatchChange Summary { get; } = summary;
+        public string Source => plan.Source;
+        public string Destination => plan.Destination;
+        public TextFile? Before => plan.Before;
+        public ImmutableArray<byte>? After => plan.After;
         public string? Temporary { get; set; }
         public string? Backup { get; set; }
         public bool Installed { get; set; }
     }
 
-    public async Task<PatchResult> ApplyAsync(string patch, bool dryRun = false, CancellationToken cancellationToken = default)
+    public async Task<PatchPlan> PrepareAsync(string patch, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var operations = Parse(patch);
-        await workspace.Mutations.WaitAsync(cancellationToken);
+        await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var changes = new List<Change>();
+            workspace.Resolve(".");
+            if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
+            var changes = new List<PlannedPatchChange>();
             var paths = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
             foreach (var operation in operations)
             {
@@ -43,14 +46,14 @@ internal sealed class PatchService(ProjectWorkspace workspace)
                     throw new WorkspaceException("Patch operations require file paths, not directories.");
                 if ((operation.Action == "add" || operation.MoveTo is not null) && File.Exists(destination))
                     throw new WorkspaceException("An add/move destination already exists.");
-                TextFile? before = operation.Action == "add" ? null : await workspace.SnapshotAsync(source, cancellationToken);
-                var after = operation.Action switch
+                TextFile? before = operation.Action == "add" ? null : await workspace.SnapshotAsync(source, cancellationToken).ConfigureAwait(false);
+                ImmutableArray<byte>? after = operation.Action switch
                 {
-                    "add" => ProjectWorkspace.Encode(operation.Content!),
-                    "update" => ProjectWorkspace.Encode(Update(before!.Text, operation.Chunks), before.HasBom),
+                    "add" => ProjectWorkspace.Encode(operation.Content!).ToImmutableArray(),
+                    "update" => ProjectWorkspace.Encode(Update(before!.Text, operation.Chunks), before.HasBom).ToImmutableArray(),
                     _ => null
                 };
-                changes.Add(new Change(source, destination, before, after,
+                changes.Add(new PlannedPatchChange(source, destination, before, after,
                     new PatchChange(operation.MoveTo is null ? operation.Action : "move", workspace.Relative(source),
                         operation.MoveTo is null ? null : workspace.Relative(destination), before?.Bytes.Length ?? 0, after?.Length ?? 0)));
             }
@@ -63,8 +66,22 @@ internal sealed class PatchService(ProjectWorkspace workspace)
                     if (File.Exists(parent)) throw new WorkspaceException("A parent path is a file.");
             }
             cancellationToken.ThrowIfCancellationRequested();
-            if (!dryRun) await CommitAsync(changes, cancellationToken);
-            return new PatchResult(dryRun, changes.Select(change => change.Summary).ToArray());
+            return new PatchPlan(this, changes.ToImmutableArray());
+        }
+        finally { workspace.Mutations.Release(); }
+    }
+
+    public async Task<PatchResult> CommitAsync(PatchPlan plan, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
+        await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Reject stale plans before creating any directories, staging files or rollback backups.
+            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+            await CommitCoreAsync(plan, cancellationToken).ConfigureAwait(false);
+            return plan.ToResult(dryRun: false);
         }
         finally { workspace.Mutations.Release(); }
     }
@@ -190,8 +207,34 @@ internal sealed class PatchService(ProjectWorkspace workspace)
         return match;
     }
 
-    private async Task CommitAsync(List<Change> changes, CancellationToken cancellationToken)
+    private async Task ValidatePlanAsync(PatchPlan plan, CancellationToken cancellationToken)
     {
+        workspace.Resolve(".");
+        if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
+        foreach (var change in plan.Changes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            workspace.Resolve(workspace.Relative(change.Source));
+            workspace.Resolve(workspace.Relative(change.Destination));
+            if (Directory.Exists(change.Source) || Directory.Exists(change.Destination))
+                throw new WorkspaceException("A patch path became a directory; prepare a new plan.");
+            foreach (var path in new[] { change.Source, change.Destination })
+                for (var parent = Path.GetDirectoryName(path); parent != workspace.Root && parent is not null; parent = Path.GetDirectoryName(parent))
+                    if (File.Exists(parent)) throw new WorkspaceException("A patch parent path became a file; prepare a new plan.");
+            if (change.Before is not null)
+            {
+                var current = await workspace.SnapshotAsync(change.Source, cancellationToken).ConfigureAwait(false);
+                if (!current.Bytes.AsSpan().SequenceEqual(change.Before.Bytes.AsSpan()) || current.Mode != change.Before.Mode)
+                    throw new WorkspaceException("A file changed since the patch was prepared; prepare a new plan.");
+            }
+            if ((change.Before is null || change.Source != change.Destination) && File.Exists(change.Destination))
+                throw new WorkspaceException("A patch destination appeared since the patch was prepared.");
+        }
+    }
+
+    private async Task CommitCoreAsync(PatchPlan plan, CancellationToken cancellationToken)
+    {
+        var changes = plan.Changes.Select(change => new Change(change)).ToList();
         var directories = new List<string>();
         var committed = false;
         try
@@ -209,25 +252,12 @@ internal sealed class PatchService(ProjectWorkspace workspace)
                 if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
                 await using (var stream = new FileStream(change.Temporary, options))
                 {
-                    await stream.WriteAsync(change.After!, cancellationToken);
+                    await stream.WriteAsync(change.After!.Value.AsMemory(), cancellationToken);
                     await stream.FlushAsync(cancellationToken);
                 }
                 if (!OperatingSystem.IsWindows() && change.Before?.Mode is { } mode) File.SetUnixFileMode(change.Temporary, mode);
             }
-            foreach (var change in changes)
-            {
-                workspace.Resolve(workspace.Relative(change.Source));
-                workspace.Resolve(workspace.Relative(change.Destination));
-                if (change.Before is not null)
-                {
-                    var current = await workspace.SnapshotAsync(change.Source, cancellationToken);
-                    if (!current.Bytes.AsSpan().SequenceEqual(change.Before.Bytes))
-                        throw new WorkspaceException("A file changed while preparing the patch; read it again.");
-                }
-                if ((change.Before is null || change.Source != change.Destination) &&
-                    (File.Exists(change.Destination) || Directory.Exists(change.Destination)))
-                    throw new WorkspaceException("A patch destination appeared while preparing the patch.");
-            }
+            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             // Once commit starts, finish or roll back instead of leaving half a patch on cancellation.
             foreach (var change in changes)

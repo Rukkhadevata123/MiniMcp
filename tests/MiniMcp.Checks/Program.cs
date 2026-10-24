@@ -14,8 +14,11 @@ var bash = new BashRunner(workspace, bashPath);
 var passed = 0;
 var failed = 0;
 
-Task<PatchResult> Patch(string body, bool dry = false, CancellationToken ct = default) =>
-    patches.ApplyAsync("*** Begin Patch\n" + body + "\n*** End Patch\n", dry, ct);
+async Task<PatchResult> Patch(string body, bool dry = false, CancellationToken ct = default)
+{
+    var plan = await patches.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch\n", ct);
+    return dry ? plan.ToResult(dryRun: true) : await patches.CommitAsync(plan, ct);
+}
 void Put(string path, string text) => File.WriteAllText(Path.Combine(root, path), text, new UTF8Encoding(false));
 string Get(string path) => File.ReadAllText(Path.Combine(root, path));
 async Task Check(string name, Func<Task> action)
@@ -143,7 +146,7 @@ try
             "*** Add File: parent\n+x\n*** Add File: parent/child\n+y", "*** Update File: read.txt\n@@\n one",
             "*** Update File: read.txt\n@@ -1,1 +1,1 @@\n-one\n+x", "*** Add File: wrong\nno prefix" })
             await RejectAsync<WorkspaceException>(() => Patch(body));
-        await RejectAsync<WorkspaceException>(() => patches.ApplyAsync("not a patch"));
+        await RejectAsync<WorkspaceException>(() => patches.PrepareAsync("not a patch"));
         Assert(!File.Exists(Path.Combine(root, "duplicate")) && !File.Exists(Path.Combine(root, "parent")));
     });
     await Check("patch size, operation count, binary and resulting file byte limits", async () =>
@@ -261,6 +264,7 @@ try
             await AssertStopped(int.Parse(Get("cancel-child.pid")));
         });
     }
+    await PatchPlanChecks.RunAsync(Check);
     Console.WriteLine($"\n{passed} passed, {failed} failed.");
     return failed == 0 ? 0 : 1;
 }

@@ -1,10 +1,11 @@
+using System.Collections.Immutable;
 using System.Text;
 
 namespace MiniMcp.Services;
 
 public sealed class WorkspaceException(string message) : Exception(message);
 public sealed record ReadResult(string Path, int StartLine, int EndLine, int TotalLines, bool Truncated, string Content);
-internal sealed record TextFile(byte[] Bytes, string Text, bool HasBom, UnixFileMode? Mode);
+internal sealed record TextFile(ImmutableArray<byte> Bytes, string Text, bool HasBom, UnixFileMode? Mode);
 internal sealed record TextLine(string Text, string Ending);
 
 internal sealed class ProjectWorkspace
@@ -105,7 +106,7 @@ internal sealed class ProjectWorkspace
         {
             var bom = count >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf;
             var offset = bom ? 3 : 0;
-            return new TextFile(bytes[..count], Utf8.GetString(bytes, offset, count - offset), bom,
+            return new TextFile(ImmutableArray.Create(bytes, 0, count), Utf8.GetString(bytes, offset, count - offset), bom,
                 OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(file));
         }
         catch (DecoderFallbackException) { throw new WorkspaceException("The file is not valid UTF-8 text."); }
