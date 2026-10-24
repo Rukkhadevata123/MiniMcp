@@ -6,6 +6,8 @@ namespace MiniMcp.Services;
 internal sealed class PatchPlan(PatchService owner, ImmutableArray<PlannedPatchChange> changes)
 {
     internal PatchService Owner { get; } = owner;
+    // The creation policy is captured with the plan; Unix creation still applies the process umask.
+    public UnixFileMode? NewFileCreateMode { get; } = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite;
     public ImmutableArray<PlannedPatchChange> Changes { get; } = changes;
     public PatchResult ToResult(bool dryRun) => new(dryRun, Changes.Select(change => change.Summary).ToArray());
 }
