@@ -2,9 +2,11 @@ using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MiniMcp.Configuration;
+using MiniMcp.Security;
 using MiniMcp.Services;
 
 namespace MiniMcp.Runtime;
@@ -19,6 +21,7 @@ public sealed class McpRuntime : IAsyncDisposable
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly int? _testPortOverride;
     private readonly Action<IServiceCollection>? _configureServices;
+    private readonly Action<IEndpointRouteBuilder>? _configureEndpoints;
     private WebApplication? _application;
     private ToolExecutionService? _execution;
     private Task? _hostStopTask;
@@ -28,13 +31,15 @@ public sealed class McpRuntime : IAsyncDisposable
 
     public McpRuntime() { }
 
-    // In-process checks can use port zero and inject service failures without changing public startup.
-    internal McpRuntime(int testPort, Action<IServiceCollection>? configureServices = null)
+    // Checks can use port zero, failing services and probe routes without changing the public HTTP surface.
+    internal McpRuntime(int testPort, Action<IServiceCollection>? configureServices = null,
+        Action<IEndpointRouteBuilder>? configureEndpoints = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(testPort);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(testPort, 65535);
         _testPortOverride = testPort;
         _configureServices = configureServices;
+        _configureEndpoints = configureEndpoints;
     }
 
     public RuntimeSnapshot Snapshot => Volatile.Read(ref _snapshot);
@@ -62,10 +67,31 @@ public sealed class McpRuntime : IAsyncDisposable
                     ContentRootPath = AppContext.BaseDirectory
                 });
                 var port = _testPortOverride ?? configuration.Settings.Port;
-                builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+                builder.WebHost.UseKestrel(options =>
+                {
+                    options.Listen(IPAddress.Loopback, port);
+                    options.Limits.MaxRequestBodySize = 2 * 1024 * 1024;
+                });
                 builder.Services.AddRouting();
                 builder.Services.AddSingleton<IHostLifetime>(new CallerControlledLifetime());
                 builder.Services.AddToolExecution(runId, configuration);
+                var authentication = configuration.Settings.Authentication;
+                List<string> allowedHosts = ["localhost", "127.0.0.1", "[::1]"];
+                switch (authentication.Mode)
+                {
+                    case AuthenticationMode.Local: break;
+                    case AuthenticationMode.CloudflareAccess:
+                        allowedHosts.Add(new Uri(authentication.PublicOrigin!).Host);
+                        builder.Services.AddCloudflareAccess(authentication);
+                        break;
+                    default: throw new InvalidOperationException("Unknown authentication mode.");
+                }
+                builder.Services.AddHostFiltering(options =>
+                {
+                    options.AllowedHosts = allowedHosts;
+                    options.AllowEmptyHosts = false;
+                    options.IncludeFailureMessage = false;
+                });
                 _configureServices?.Invoke(builder.Services);
                 var application = builder.Build();
                 ToolExecutionService? execution = null;
@@ -74,7 +100,15 @@ public sealed class McpRuntime : IAsyncDisposable
                 {
                     // Resolve before listening, so workspace initialization cannot fail on the first tool request.
                     execution = application.Services.GetRequiredService<ToolExecutionService>();
-                    application.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+                    application.UseHostFiltering();
+                    application.UseRouting();
+                    if (authentication.Mode == AuthenticationMode.CloudflareAccess)
+                    {
+                        application.UseAuthentication();
+                        application.UseAuthorization();
+                    }
+                    application.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+                    _configureEndpoints?.Invoke(application);
                     await application.StartAsync(cancellationToken).ConfigureAwait(false);
                     cancellationToken.ThrowIfCancellationRequested();
                     var running = Snapshot with { State = RuntimeState.Running, Address = new Uri(application.Urls.Single()) };

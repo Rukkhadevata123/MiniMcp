@@ -78,7 +78,8 @@ internal static class ConfigurationValueChecks
         {
             foreach (var origin in new[]
             {
-                "http://mcp.example.com", "mcp.example.com", "https://", "https://mcp.example.com:0", "https://mcp.example.com:65536",
+                "http://mcp.example.com", "mcp.example.com", "https://", "https://*", "https://*.example.com",
+                "https://mcp.example.com:0", "https://mcp.example.com:65536",
                 "https://user:password@mcp.example.com", "https://@mcp.example.com", "https://mcp.example.com/mcp",
                 "https://mcp.example.com/.", "https://mcp.example.com/mcp/..", "https://mcp.example.com/%2e",
                 "https://mcp.example.com//", "https://mcp.example.com?", "https://mcp.example.com/?x=1",

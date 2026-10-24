@@ -16,8 +16,11 @@ public static class CloudflareAccessAuthentication
         if (settings.Mode != AuthenticationMode.CloudflareAccess)
             throw new InvalidOperationException("Cloudflare Access registration requires CloudflareAccess authentication mode.");
         var issuer = $"https://{settings.Team}.cloudflareaccess.com";
+        services.AddSingleton<IDocumentRetriever>(_ => new HttpDocumentRetriever { RequireHttps = true });
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+            .AddJwtBearer();
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IDocumentRetriever>((options, documents) =>
             {
                 options.MapInboundClaims = false;
                 options.IncludeErrorDetails = false;
@@ -27,7 +30,7 @@ public static class CloudflareAccessAuthentication
                 options.ConfigurationManager = new ConfigurationManager<OpenIdConnectConfiguration>(
                     $"{issuer}/cdn-cgi/access/certs",
                     new AccessSigningKeysRetriever(issuer),
-                    new HttpDocumentRetriever { RequireHttps = true })
+                    documents)
                 {
                     AutomaticRefreshInterval = TimeSpan.FromHours(6),
                     RefreshInterval = TimeSpan.FromMinutes(5)

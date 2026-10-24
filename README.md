@@ -47,7 +47,7 @@ dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode Read
 
 无参数或 `run --help` 显示帮助。`run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]` 从 JSON 读取端口及项目；省略 `--config` 时使用默认用户配置，策略固定来自用户目录的 `policy.json`。`--mode` 只覆盖本次会话，不写文件。监听 `127.0.0.1`，访问输出的 `/healthz` 地址返回 `{"status":"ok"}`；Ctrl+C 或 Linux SIGTERM 正常停止并释放服务。
 
-正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。HTTP 入口提供本机健康检查，`/mcp` 返回 404；配置中的认证、工具权限和隧道由对应功能的接入步骤处理。Linux 信号路径未实机验证。
+正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。HTTP 入口提供本机健康检查，`/mcp` 返回 404；HTTP 认证与请求边界见下文，工具调用使用本机执行策略，当前入口不启动受管隧道。Linux 信号路径未实机验证。
 
 CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration)`、`StopAsync` 和 `DisposeAsync` 控制服务；公开启动接口必须提供完整校验生成的配置。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
@@ -56,6 +56,10 @@ CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration
 每次启动在监听前初始化独立的工具执行服务，绑定快照中的同一份配置和 `RunId`。该 Host 的请求共享执行服务、工作区和修改互斥，服务由 Host 的 DI 容器释放；停止后旧执行服务拒绝调用，重新启动使用新的会话。工作区初始化、启动或端口绑定失败会清理已创建的资源；清理失败保留所有权并阻止再次启动。
 
 每次工具调用登记在所属会话中，并同时响应客户端和会话取消。停止先拒绝新调用，再取消并等待在途调用清理，包括运行中的 Bash 及等待修改锁的预演，随后停止和释放 Host。整个流程共用 10 秒期限；超时或取消等待后保留故障状态与资源所有权，重试继续等待未完成的停止或释放任务，清理完成后才允许启动新会话。
+
+HTTP Host 白名单在 Local 模式包含 `localhost`、`127.0.0.1` 和 `[::1]`，CloudflareAccess 模式另外包含 `publicOrigin` 的主机名；空 Host、其他域名及子域名被拒绝，转发头不改变 Host 或协议判断。Kestrel 请求体上限为 2 MiB，HTTP/1.1 分块请求的分块头尾开销也计入上限；超限读取返回 413。[Kestrel 实现](https://github.com/dotnet/aspnetcore/blob/v10.0.13/src/Servers/Kestrel/Core/src/Internal/Http/Http1ChunkedEncodingMessageBody.cs#L313)
+
+CloudflareAccess 使用认证/授权中间件校验单个 `Cf-Access-Jwt-Assertion`：验证 RS256 签名、团队 issuer、应用 AUD 和有效期，从团队的 HTTPS JWKS 地址缓存并受限刷新公钥。Cookie 和客户端 OAuth Bearer 不作为 Access JWT；Managed OAuth 由 Cloudflare 网关处理。JWT 声明不会改变本机执行策略。`/healthz` 允许匿名诊断，`/mcp` 返回 404。[Cloudflare JWT 验证说明](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 
 `examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限和恢复目录。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。工具执行权限在工具接入时处理。
 
@@ -124,7 +128,7 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具参数、读取、预演、写入拒绝及 Bash 权限；同时检查拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 
-Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、会话隔离、真实 Bash 子进程的客户端/运行时取消、等待修改锁的调用取消、停止期限及释放任务复用、停止后重用端口和释放后禁止启动；同时确认当前 `/mcp` 未开放。它不替代后续 MCP HTTP、WinUI 或 OAuth 的实际验证。
+Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、会话隔离、真实 Bash 子进程的客户端/运行时取消、等待修改锁的调用取消、停止期限及释放任务复用、停止后重用端口和释放后禁止启动；同时验证真实 JWT 签名/issuer/AUD/有效期/算法校验、单个断言头、公钥缓存与受限刷新、执行策略独立性、Host 白名单及固定长度/分块请求体上限。认证检查只替换 JWKS 文档获取，密钥在内存中生成，不依赖公网或真实 Cloudflare 凭据；确认默认 Host 不暴露测试探针且 `/mcp` 返回 404。检查不替代 MCP HTTP 客户端、WinUI 或公网 OAuth/Tunnel 的实际验证。
 
 <a id="references"></a>
 

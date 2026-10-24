@@ -271,6 +271,7 @@ await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
 await RuntimeCallChecks.RunAsync(Check);
+await HttpSecurityChecks.RunAsync(Check);
 await CliChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
