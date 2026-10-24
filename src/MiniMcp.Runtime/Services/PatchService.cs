@@ -11,6 +11,8 @@ public sealed record PatchResult(bool DryRun, PatchChange[] Changes);
 // Independent implementation of the Codex patch syntax; see README for references and differences.
 internal sealed class PatchService(ProjectWorkspace workspace)
 {
+    internal string ProjectRoot => workspace.Root;
+
     private sealed record Chunk(string? Anchor, string[] Lines, bool EndOfFile);
     private sealed record Operation(string Action, string Path, string? MoveTo, string? Content, List<Chunk> Chunks);
     private sealed class Change(PlannedPatchChange plan)
