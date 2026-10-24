@@ -24,20 +24,25 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
     private const string KeyId = "fixture-key";
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-http-security-{Guid.NewGuid():N}");
     private readonly RSA _rsa = RSA.Create(2048);
-    public HttpSecurityFixture(AuthenticationMode mode = AuthenticationMode.CloudflareAccess)
+    public HttpSecurityFixture(AuthenticationMode mode = AuthenticationMode.CloudflareAccess,
+        ExecutionMode executionMode = ExecutionMode.ReadOnly, bool mapProbes = true)
     {
         Root = Path.Combine(_directory, "project");
         Directory.CreateDirectory(Root);
         File.WriteAllText(Path.Combine(Root, "sample.txt"), "read-only fixture\n");
         var paths = new ConfigurationPaths(Path.Combine(_directory, "user"), Path.Combine(_directory, "state"));
+        var bash = executionMode == ExecutionMode.ReadOnly ? "" : ExternalProgramLocator.FindBash(
+            Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "", Path.Combine(Environment.CurrentDirectory, "settings.json"))
+            ?? throw new Exception("Bash is required for HTTP editing-mode checks.");
         Configuration = new ConfigurationValidator(paths).Validate(new AppSettings
         {
             ProjectRoot = Root,
+            BashPath = bash,
             Authentication = new AuthenticationSettings
             {
                 Mode = mode, PublicOrigin = "https://mcp.example.com", Team = "fixture-team", Audience = Audience
             }
-        }, Path.Combine(_directory, "settings.json"), new ExecutionPolicy());
+        }, Path.Combine(_directory, "settings.json"), new ExecutionPolicy { Mode = executionMode });
         var key = _rsa.ExportParameters(false);
         Documents = new SigningDocuments(JsonSerializer.Serialize(new
         {
@@ -48,7 +53,7 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         {
             if (mode == AuthenticationMode.CloudflareAccess)
                 services.Replace(ServiceDescriptor.Singleton<IDocumentRetriever>(Documents));
-        }, routes => MapProbes(routes, mode));
+        }, mapProbes ? routes => MapProbes(routes, mode) : null);
     }
 
     public string Root { get; }

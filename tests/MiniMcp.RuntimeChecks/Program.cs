@@ -35,7 +35,7 @@ async Task Healthy(McpRuntime runtime)
     Assert(body.RootElement.GetProperty("status").GetString() == "ok");
 }
 
-await Check("real loopback health endpoint ignores ambient URLs and exposes no MCP tools", async () =>
+await Check("real loopback endpoints ignore ambient URLs and reject standalone MCP GET", async () =>
 {
     var previous = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
     try
@@ -46,8 +46,8 @@ await Check("real loopback health endpoint ignores ambient URLs and exposes no M
         Assert(runtime.Address!.Host == "127.0.0.1" && runtime.Address.Port > 1);
         Assert(ReferenceEquals(runtime.Snapshot.Configuration, configuration));
         await Healthy(runtime);
-        using var unavailable = await client.GetAsync(new Uri(runtime.Address, "mcp"));
-        Assert(unavailable.StatusCode == HttpStatusCode.NotFound);
+        using var mcpGet = await client.GetAsync(new Uri(runtime.Address, "mcp"));
+        Assert(mcpGet.StatusCode == HttpStatusCode.MethodNotAllowed);
     }
     finally { Environment.SetEnvironmentVariable("ASPNETCORE_URLS", previous); }
 });
@@ -272,6 +272,7 @@ await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
 await RuntimeCallChecks.RunAsync(Check);
 await HttpSecurityChecks.RunAsync(Check);
+await McpHttpChecks.RunAsync(Check);
 await CliChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");

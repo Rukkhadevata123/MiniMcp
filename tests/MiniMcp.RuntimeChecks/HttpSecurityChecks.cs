@@ -210,13 +210,18 @@ internal static class HttpSecurityChecks
             Assert(fixture.Runtime.Snapshot.Configuration!.Settings.Authentication.Mode == AuthenticationMode.CloudflareAccess);
             await using var production = new McpRuntime(0);
             await production.StartAsync(fixture.Configuration);
-            foreach (var path in new[] { "protected", "read", "patch", "bash", "body", "mcp" })
+            foreach (var path in new[] { "protected", "read", "patch", "bash", "body" })
             {
                 using var response = await fixture.Client.GetAsync(new Uri(production.Address!, path));
                 Assert(response.StatusCode == HttpStatusCode.NotFound);
             }
             using var health = await fixture.Client.GetAsync(new Uri(production.Address!, "healthz"));
             Assert(health.StatusCode == HttpStatusCode.OK);
+            using var mcpRequest = new HttpRequestMessage(HttpMethod.Post, new Uri(production.Address!, "mcp"))
+            { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
+            mcpRequest.Headers.TryAddWithoutValidation("Accept", "application/json, text/event-stream");
+            using var mcp = await fixture.Client.SendAsync(mcpRequest);
+            if (mcp.StatusCode != HttpStatusCode.Unauthorized) throw new Exception($"Anonymous MCP request returned {(int)mcp.StatusCode}, expected 401.");
         });
     }
 

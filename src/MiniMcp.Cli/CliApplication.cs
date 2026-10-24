@@ -22,7 +22,8 @@ internal static class CliApplication
                   --config    settings.json 路径，省略时读取默认用户配置
                   --mode      仅覆盖本次会话的执行模式，省略时使用本机 policy.json
 
-                端口取自 JSON，仅监听本机。当前提供 /healthz，/mcp 返回 404。
+                端口取自 JSON，仅监听本机。/mcp 提供 stateless Streamable HTTP，/healthz 用于健康检查。
+                所有模式允许读取和预演；补丁写入关闭，Bash 仅 FullAccess 可用。
                 按 Ctrl+C 停止；Linux 支持 SIGTERM。
                 """);
             return 0;
@@ -65,6 +66,8 @@ internal static class CliApplication
                 started = true;
                 var snapshot = runtime.Snapshot;
                 output.WriteLine($"本机健康检查：{new Uri(snapshot.Address!, "healthz").AbsoluteUri}");
+                output.WriteLine($"MCP：{new Uri(snapshot.Address!, "mcp").AbsoluteUri}");
+                output.WriteLine($"认证模式：{configuration.Settings.Authentication.Mode}");
                 output.WriteLine($"项目：{Visible(configuration.Settings.ProjectRoot)}");
                 output.WriteLine($"配置执行模式：{configuration.Policy.Mode}");
                 output.WriteLine("按 Ctrl+C 停止。");

@@ -143,7 +143,7 @@ internal static class RuntimeCallChecks
         }
     }
 
-    private static string ChildCommand(string marker)
+    internal static string ChildCommand(string marker)
     {
         static string Quote(string value) => "'" + value.Replace('\\', '/').Replace("'", "'\\''") + "'";
         var executable = Environment.ProcessPath ?? throw new Exception("Cannot locate the check executable.");
@@ -152,7 +152,7 @@ internal static class RuntimeCallChecks
         return Quote(executable) + assembly + " --execution-child " + Quote(marker) + " & wait";
     }
 
-    private static async Task<Process> ObserveChildAsync(string marker, Task running)
+    internal static async Task<Process> ObserveChildAsync(string marker, Task running)
     {
         for (var i = 0; i < 500; i++)
         {
@@ -168,7 +168,7 @@ internal static class RuntimeCallChecks
         throw new Exception("Timed out observing the actual Bash descendant.");
     }
 
-    private static async Task AssertStoppedAsync(Process child)
+    internal static async Task AssertStoppedAsync(Process child)
     {
         for (var i = 0; i < 150; i++)
         {
@@ -179,7 +179,7 @@ internal static class RuntimeCallChecks
         throw new Exception($"Bash descendant {child.Id} is still running.");
     }
 
-    private static void KillIfRunning(Process child)
+    internal static void KillIfRunning(Process child)
     {
         try { if (!child.HasExited) child.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { }

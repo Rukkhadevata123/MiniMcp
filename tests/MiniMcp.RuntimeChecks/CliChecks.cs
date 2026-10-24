@@ -13,6 +13,7 @@ internal static class CliChecks
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "state"));
         var store = new ConfigurationStore(paths);
         Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "cli.txt"), "CLI MCP fixture\n");
         Directory.CreateDirectory(working);
         using var client = new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
         { Timeout = TimeSpan.FromSeconds(3) };
@@ -57,12 +58,17 @@ internal static class CliChecks
                 var address = await output.Ready.Task;
                 using var response = await client.GetAsync(address);
                 Assert(response.StatusCode == HttpStatusCode.OK);
-                using var unavailable = await client.GetAsync(new Uri(address, "mcp"));
-                Assert(unavailable.StatusCode == HttpStatusCode.NotFound);
+                await using (var mcp = await McpHttpChecks.ConnectAsync(address, client, stop.Token))
+                {
+                    Assert((await mcp.ListToolsAsync(cancellationToken: stop.Token)).Count == 3);
+                    var read = await mcp.CallToolAsync("read_file", new Dictionary<string, object?> { ["path"] = "cli.txt" }, cancellationToken: stop.Token);
+                    Assert(McpHttpChecks.Structured(read).GetProperty("content").GetString() == "CLI MCP fixture\n");
+                }
                 stop.Cancel();
                 Assert(await running.WaitAsync(TimeSpan.FromSeconds(15)) == 0);
                 Assert(error.ToString() == "" && output.ToString().Contains(root, StringComparison.Ordinal));
                 Assert(output.ToString().Contains($"配置执行模式：{mode}", StringComparison.Ordinal));
+                Assert(output.ToString().Contains(new Uri(address, "mcp").AbsoluteUri, StringComparison.Ordinal));
                 var released = new TcpListener(IPAddress.Loopback, address.Port);
                 try { released.Start(); }
                 finally { released.Stop(); }

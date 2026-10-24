@@ -10,8 +10,9 @@
             <StackPanel MaxWidth="640" Spacing="20" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="8">
                     <TextBlock Text="MiniMcp" Style="{ThemeResource TitleTextBlockStyle}" />
-                    <TextBlock Text="本机健康检查服务" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                    <TextBlock Text="从用户 JSON 配置启动 · 仅本机访问" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="本机 MCP 服务" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="从用户 JSON 配置启动 · 本机监听 · 按配置鉴权" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
                 <StackPanel Spacing="8">
                     <TextBlock Text="配置文件" Style="{ThemeResource BodyStrongTextBlockStyle}" />
@@ -41,7 +42,7 @@
                     <Button x:Name="StopButton" Content="停止" Click="OnStopClicked" IsEnabled="False" AutomationProperties.AutomationId="Stop" />
                 </StackPanel>
                 <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" AutomationProperties.AutomationId="Error" />
-                <TextBlock Text="修改配置后，下次启动生效。服务仅提供 /healthz 健康检查；关闭窗口会停止服务。"
+                <TextBlock Text="修改配置后，下次启动生效。/mcp 提供 MCP 服务，/healthz 用于健康检查。读取和预演可用；补丁写入关闭，Bash 仅 FullAccess 可用。关闭窗口会停止服务。"
                            TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
         </ScrollViewer>

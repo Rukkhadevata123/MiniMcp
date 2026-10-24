@@ -147,7 +147,8 @@ public sealed partial class MainWindow : Window
             ConfigurationText.Text = $"端口 {configuration.Settings.Port} · 认证配置 {configuration.Settings.Authentication.Mode} · 执行配置 {configuration.Policy.Mode}";
         }
         AddressText.Text = snapshot.Address is { } address
-            ? (snapshot.State == RuntimeState.Running ? "" : "上次绑定地址（需清理）：") + new Uri(address, "healthz").AbsoluteUri
+            ? (snapshot.State == RuntimeState.Running ? "" : "上次绑定地址（需清理）：\n")
+                + $"MCP：{new Uri(address, "mcp").AbsoluteUri}\n健康检查：{new Uri(address, "healthz").AbsoluteUri}"
             : "服务没有监听地址";
     }
 

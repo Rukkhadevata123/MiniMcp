@@ -8,12 +8,14 @@ using Microsoft.Extensions.Hosting;
 using MiniMcp.Configuration;
 using MiniMcp.Security;
 using MiniMcp.Services;
+using MiniMcp.Tools;
+using ModelContextProtocol.AspNetCore;
 
 namespace MiniMcp.Runtime;
 
 /// <summary>
 /// Caller-owned loopback HTTP lifetime started with validated configuration.
-/// The HTTP surface currently provides /healthz.
+/// Provides stateless MCP over HTTP and an anonymous health endpoint.
 /// </summary>
 public sealed class McpRuntime : IAsyncDisposable
 {
@@ -75,6 +77,14 @@ public sealed class McpRuntime : IAsyncDisposable
                 builder.Services.AddRouting();
                 builder.Services.AddSingleton<IHostLifetime>(new CallerControlledLifetime());
                 builder.Services.AddToolExecution(runId, configuration);
+                builder.Services.AddMcpServer()
+                    .WithHttpTransport(options =>
+                    {
+                        // Stateless disallows GET/DELETE; legacy SSE mapping stays at its disabled SDK default.
+                        options.SessionMode = HttpServerSessionMode.Stateless;
+                    })
+                    .WithTools<WorkspaceTools>()
+                    .AddAuthorizationFilters();
                 var authentication = configuration.Settings.Authentication;
                 List<string> allowedHosts = ["localhost", "127.0.0.1", "[::1]"];
                 switch (authentication.Mode)
@@ -108,6 +118,8 @@ public sealed class McpRuntime : IAsyncDisposable
                         application.UseAuthorization();
                     }
                     application.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+                    var mcp = application.MapMcp("/mcp");
+                    if (authentication.Mode == AuthenticationMode.CloudflareAccess) mcp.RequireAuthorization();
                     _configureEndpoints?.Invoke(application);
                     await application.StartAsync(cancellationToken).ConfigureAwait(false);
                     cancellationToken.ThrowIfCancellationRequested();

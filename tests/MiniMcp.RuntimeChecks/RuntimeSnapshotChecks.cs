@@ -55,8 +55,8 @@ internal static class RuntimeSnapshotChecks
                 Assert(snapshot.Address!.Port == configuration.Settings.Port && snapshot.Address.Host == "127.0.0.1");
                 Assert(runtime.Address == snapshot.Address);
                 await Healthy(runtime);
-                using var unavailable = await client.GetAsync(new Uri(snapshot.Address, "mcp"));
-                Assert(unavailable.StatusCode == HttpStatusCode.NotFound);
+                using var mcpGet = await client.GetAsync(new Uri(snapshot.Address, "mcp"));
+                Assert(mcpGet.StatusCode == HttpStatusCode.MethodNotAllowed);
             });
 
             await check("stopped sessions retain their configuration and restart with a new run ID and selected port", async () =>
