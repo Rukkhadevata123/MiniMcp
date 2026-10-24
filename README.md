@@ -95,12 +95,14 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
 | `read_file` | `path`、`start_line=1`、`end_line=null` | 读取 UTF-8 文本，行号从 1 开始，包含结束行 |
-| `apply_patch` | `patch`、`dry_run=false` | 新增、更新、移动、删除；预演不修改文件 |
-| `bash` | `command`、`workdir="."`、`timeout_seconds=30` | 独立 Bash 调用，超时范围 1–600 秒 |
+| `apply_patch` | `patch`、`dry_run=false` | 设置 `dry_run=true` 预演新增、更新、移动、删除；实际写入被拒绝 |
+| `bash` | `command`、`workdir="."`、`timeout_seconds=30` | 仅 FullAccess 允许执行，超时范围 1–600 秒 |
 
 文件路径和工作目录参数使用相对项目根的 `/` 分隔路径。文件工具拒绝越界、链接、私密目录和凭据文件；单文件最多 256 KiB，文本输出最多 16000 个 UTF-16 字符单元。
 
-补丁使用 `*** Begin Patch` / `*** End Patch` 格式，精确匹配上下文，保留既有 BOM、换行和 Unix 权限，先校验整批再提交。现有提交失败回滚不等于尚未实现的长期恢复记录。
+三个工具通过同一个执行服务使用固定的运行策略：所有模式允许读取和补丁预演；ReadOnly 拒绝实际补丁写入和 Bash，ProjectEdit 的 Bash 因需要本机审批而拒绝，FullAccess 允许 Bash。恢复记录支持完成前，ProjectEdit 和 FullAccess 的实际补丁写入也被拒绝。工具参数不能批准请求或修改模式。
+
+补丁使用 `*** Begin Patch` / `*** End Patch` 格式，精确匹配上下文。内部补丁引擎的写入、BOM/换行/Unix 权限保留和提交失败回滚由核心检查验证。
 
 Bash 使用运行账号的实际权限，项目根只是默认工作目录，不是沙箱；它可以访问账号能访问的其他路径和网络。每次调用的 shell 状态独立，普通子进程在结束、超时或取消后清理。
 
@@ -116,7 +118,7 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 运行检查需要 Bash，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
 
-核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流验证工具发现、参数、返回值和错误；它不验证 HTTP、OAuth 或公网 Tunnel。
+核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、格式保留、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具参数、读取、预演、写入拒绝及 Bash 权限；同时检查拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 
 Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、取消、停止后重用端口和释放后禁止启动；同时确认当前 `/mcp` 未开放。它不替代后续 MCP HTTP、WinUI 或 OAuth 的实际验证。
 

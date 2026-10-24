@@ -8,7 +8,7 @@ namespace MiniMcp.Services;
 public sealed record BashResult([property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] int? ExitCode,
     string Stdout, string Stderr, bool TimedOut, bool OutputTruncated);
 
-public sealed class BashRunner
+internal sealed class BashRunner
 {
     private readonly ProjectWorkspace _workspace;
     private readonly string _bashPath;

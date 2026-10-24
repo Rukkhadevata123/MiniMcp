@@ -7,7 +7,7 @@ public sealed record ReadResult(string Path, int StartLine, int EndLine, int Tot
 internal sealed record TextFile(byte[] Bytes, string Text, bool HasBom, UnixFileMode? Mode);
 internal sealed record TextLine(string Text, string Ending);
 
-public sealed class ProjectWorkspace
+internal sealed class ProjectWorkspace
 {
     public const int MaxFileBytes = 256 * 1024;
     public const int MaxOutputCharacters = 16_000;

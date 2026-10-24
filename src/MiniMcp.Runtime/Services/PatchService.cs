@@ -8,7 +8,7 @@ public sealed record PatchChange(string Action, string Path,
 public sealed record PatchResult(bool DryRun, PatchChange[] Changes);
 
 // Independent implementation of the Codex patch syntax; see README for references and differences.
-public sealed class PatchService(ProjectWorkspace workspace)
+internal sealed class PatchService(ProjectWorkspace workspace)
 {
     private sealed record Chunk(string? Anchor, string[] Lines, bool EndOfFile);
     private sealed record Operation(string Action, string Path, string? MoveTo, string? Content, List<Chunk> Chunks);
