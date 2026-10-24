@@ -39,9 +39,10 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
     var output = new Pipe();
     var services = new ServiceCollection();
     services.AddLogging();
-    services.AddSingleton(new ToolExecutionService(configuration));
+    services.AddToolExecution(Guid.NewGuid(), configuration);
     services.AddMcpServer().WithStreamServerTransport(input.Reader.AsStream(), output.Writer.AsStream()).WithTools<WorkspaceTools>();
     await using var provider = services.BuildServiceProvider();
+    _ = provider.GetRequiredService<ToolExecutionService>();
     var server = provider.GetRequiredService<McpServer>();
     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
     var running = server.RunAsync(timeout.Token);

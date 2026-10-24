@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MiniMcp.Configuration;
+using MiniMcp.Services;
 
 namespace MiniMcp.Runtime;
 
@@ -17,22 +18,26 @@ public sealed class McpRuntime : IAsyncDisposable
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(10);
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private readonly int? _testPortOverride;
+    private readonly Action<IServiceCollection>? _configureServices;
     private WebApplication? _application;
+    private ToolExecutionService? _execution;
     private RuntimeSnapshot _snapshot = new(RuntimeState.Stopped);
     private bool _disposed;
 
     public McpRuntime() { }
 
-    // In-process checks can request port zero without weakening the persisted port range.
-    internal McpRuntime(int testPort)
+    // In-process checks can use port zero and inject service failures without changing public startup.
+    internal McpRuntime(int testPort, Action<IServiceCollection>? configureServices = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(testPort);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(testPort, 65535);
         _testPortOverride = testPort;
+        _configureServices = configureServices;
     }
 
     public RuntimeSnapshot Snapshot => Volatile.Read(ref _snapshot);
     public Uri? Address => Snapshot.Address;
+    internal ToolExecutionService? Execution => Volatile.Read(ref _execution);
 
     public async Task StartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {
@@ -44,7 +49,8 @@ public sealed class McpRuntime : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_application is not null) throw new InvalidOperationException("The runtime already owns an HTTP host. Stop it before starting again.");
 
-            Publish(new RuntimeSnapshot(RuntimeState.Starting, Guid.NewGuid(), configuration));
+            var runId = Guid.NewGuid();
+            Publish(new RuntimeSnapshot(RuntimeState.Starting, runId, configuration));
             try
             {
                 var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions
@@ -57,15 +63,21 @@ public sealed class McpRuntime : IAsyncDisposable
                 builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
                 builder.Services.AddRouting();
                 builder.Services.AddSingleton<IHostLifetime>(new CallerControlledLifetime());
+                builder.Services.AddToolExecution(runId, configuration);
+                _configureServices?.Invoke(builder.Services);
                 var application = builder.Build();
-                application.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+                ToolExecutionService? execution = null;
 
                 try
                 {
+                    // Resolve before listening, so workspace initialization cannot fail on the first tool request.
+                    execution = application.Services.GetRequiredService<ToolExecutionService>();
+                    application.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
                     await application.StartAsync(cancellationToken).ConfigureAwait(false);
                     cancellationToken.ThrowIfCancellationRequested();
                     var running = Snapshot with { State = RuntimeState.Running, Address = new Uri(application.Urls.Single()) };
                     _application = application;
+                    Volatile.Write(ref _execution, execution);
                     Publish(running);
                 }
                 catch (Exception startupError)
@@ -75,6 +87,7 @@ public sealed class McpRuntime : IAsyncDisposable
                     {
                         // Retain ownership so a caller can retry cleanup rather than create a second host.
                         _application = application;
+                        Volatile.Write(ref _execution, execution);
                         throw new AggregateException("Startup failed and HTTP host cleanup did not complete.", startupError, cleanupError);
                     }
                     throw;
@@ -126,6 +139,7 @@ public sealed class McpRuntime : IAsyncDisposable
             await _application.StopAsync(deadline.Token).ConfigureAwait(false);
             await _application.DisposeAsync().AsTask().WaitAsync(deadline.Token).ConfigureAwait(false);
             _application = null;
+            Volatile.Write(ref _execution, null);
             Publish(Snapshot with { State = RuntimeState.Stopped, Address = null });
         }
         catch (Exception error)
