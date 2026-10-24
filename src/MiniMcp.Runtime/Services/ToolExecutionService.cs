@@ -40,7 +40,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _workspace.ReadFileAsync(path, startLine, endLine, token), cancellationToken);
 
-    public Task<PatchResult> ApplyPatchAsync(string patch, bool dryRun = false,
+    public Task<PatchPreviewResult> ApplyPatchAsync(string patch, bool dryRun = false,
         CancellationToken cancellationToken = default) => ExecuteAsync(async token =>
         {
             if (!dryRun)
@@ -48,7 +48,9 @@ internal sealed class ToolExecutionService : IAsyncDisposable
                     ? "ReadOnly mode does not allow patch writes. Use dry_run=true to preview changes."
                     : "Patch writes are unavailable until recovery records are supported. Use dry_run=true to preview changes.");
             var plan = await _patches.PrepareAsync(patch, token).ConfigureAwait(false);
-            return plan.ToResult(dryRun: true);
+            // Await the actual computation: cancellation must finish before the call leaves in-flight tracking.
+            var preview = await Task.Run(() => PatchDiffBuilder.Create(plan, token), token).ConfigureAwait(false);
+            return preview.ToResult();
         }, cancellationToken);
 
     public Task<BashResult> RunBashAsync(string command, string workdir = ".", int timeoutSeconds = 30,

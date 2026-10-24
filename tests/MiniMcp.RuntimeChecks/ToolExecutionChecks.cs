@@ -29,9 +29,11 @@ internal static class ToolExecutionChecks
                     await using var execution = new ToolExecutionService(Guid.NewGuid(), configuration);
                     if ((await execution.ReadFileAsync("sample.txt")).Content != "original\n") throw new Exception("Read failed.");
                     var preview = await execution.ApplyPatchAsync("*** Begin Patch\n*** Add File: preview/new.txt\n+new\n*** End Patch", dryRun: true);
-                    if (!preview.DryRun) throw new Exception("Preview failed.");
+                    if (!preview.DryRun || !preview.Diff.Contains("b/preview/new.txt") || preview.Statistics.AddedLines != 1 ||
+                        preview.Changes[0].Summary.Action != "add") throw new Exception("Complete preview failed.");
                     using var cancelled = new CancellationTokenSource();
                     cancelled.Cancel();
+                    await RejectAsync<OperationCanceledException>(() => execution.ApplyPatchAsync("invalid", dryRun: true, cancellationToken: cancelled.Token));
                     await RejectAsync<OperationCanceledException>(() => execution.RunBashAsync("exit 0", cancellationToken: cancelled.Token));
                     if (mode == ExecutionMode.ProjectEdit)
                         await RejectAsync<WorkspaceException>(() => execution.RunBashAsync("exit 0"));

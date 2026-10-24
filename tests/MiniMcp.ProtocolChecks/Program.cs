@@ -25,6 +25,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
     Directory.CreateDirectory(root);
     File.WriteAllText(Path.Combine(root, "sample.txt"), "first\nsecond\n");
     File.WriteAllText(Path.Combine(root, ".env"), "PRIVATE_TEST_VALUE=fixture\n");
+    File.WriteAllText(Path.Combine(root, "complex.txt"), string.Concat(Enumerable.Range(0, 1000).Select(i => $"old{i}\n")));
     var before = Snapshot(directory);
     var paths = new ConfigurationPaths(Path.Combine(directory, "user"), Path.Combine(directory, "state"));
     var configuration = new ConfigurationValidator(paths).Validate(new AppSettings
@@ -62,6 +63,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 _ => ["command", "timeout_seconds", "workdir"]
             };
             Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);
+            if (tool.Name == "apply_patch")
+                Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
+                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "diff", "dryRun", "statistics" }), "Public preview output schema");
         }
         Console.WriteLine($"PASS {mode}: MCP initialize, exact tool list and parameter schemas");
 
@@ -72,7 +76,19 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             if (message is not null)
                 Assert(result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains(message, StringComparison.Ordinal)),
                     "Expected tool error message: " + message);
-            return result.StructuredContent is null ? default : JsonSerializer.SerializeToElement(result.StructuredContent);
+            var payload = result.StructuredContent is null ? default : JsonSerializer.SerializeToElement(result.StructuredContent);
+            if (name == "apply_patch")
+            {
+                if (error)
+                    Assert(result.StructuredContent is null && !result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains("# Review diff")), "Errors expose no partial preview");
+                else
+                {
+                    Assert(payload.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "diff", "dryRun", "statistics" }), "Only public preview fields are exported");
+                    using var textPayload = JsonDocument.Parse(result.Content.OfType<TextContentBlock>().Single().Text);
+                    Assert(textPayload.RootElement.GetProperty("diff").GetString() == payload.GetProperty("diff").GetString(), "Text and structured content contain the same complete diff");
+                }
+            }
+            return payload;
         }
 
         var read = await Call("read_file", new() { ["path"] = "sample.txt", ["start_line"] = 2, ["end_line"] = 2 });
@@ -93,11 +109,17 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             "*** Begin Patch\n*** Delete File: sample.txt\n*** End Patch"
         ];
         var actions = new[] { "add", "update", "move", "delete" };
+        var expectedStatistics = new[] { new PatchStatistics(1, 0, 6, 0), new PatchStatistics(1, 1, 8, 6),
+            new PatchStatistics(0, 0, 0, 0), new PatchStatistics(0, 2, 0, 13) };
         for (var i = 0; i < patches.Length; i++)
         {
             var preview = await Call("apply_patch", new() { ["patch"] = patches[i], ["dry_run"] = true });
             Assert(preview.GetProperty("dryRun").GetBoolean() &&
-                preview.GetProperty("changes")[0].GetProperty("action").GetString() == actions[i], "Patch preview: " + actions[i]);
+                preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("action").GetString() == actions[i], "Patch preview: " + actions[i]);
+            Assert(preview.GetProperty("diff").GetString()!.Contains("# action: " + actions[i]), "Complete diff action");
+            var expected = JsonSerializer.SerializeToElement(expectedStatistics[i], new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert(JsonElement.DeepEquals(preview.GetProperty("statistics"), expected) &&
+                JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total statistics");
             await Call("apply_patch", new() { ["patch"] = patches[i] }, error: true,
                 message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "recovery records");
         }
@@ -107,6 +129,22 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             ["patch"] = patches[0], ["approved"] = true, ["mode"] = "FullAccess"
         }, error: true);
         Console.WriteLine($"PASS {mode}: read boundaries, patch previews and denied add/update/move/delete");
+
+        var longLine = new string('x', 180_000) + "TAIL中👋\t\u001b";
+        var large = await Call("apply_patch", new() { ["patch"] = "*** Begin Patch\n*** Add File: large.txt\n+" + longLine + "\n*** End Patch", ["dry_run"] = true });
+        var largeDiff = large.GetProperty("diff").GetString()!;
+        Assert(largeDiff.Length > 16_000 && largeDiff.Contains("TAIL中👋\\t\\u001b\\n\""), "Large preview remains complete and escaped");
+        Assert(large.GetProperty("statistics").GetProperty("addedBytes").GetInt64() == System.Text.Encoding.UTF8.GetByteCount(longLine + "\n"), "Statistics use unescaped UTF-8 bytes");
+        Console.WriteLine($"PASS {mode}: complete large escaped diff survives structured and text serialization");
+
+        await Call("apply_patch", new()
+        {
+            ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["dry_run"] = true
+        }, error: true, message: "display limit");
+        var complex = "*** Begin Patch\n*** Update File: complex.txt\n@@\n" +
+            string.Concat(Enumerable.Range(0, 1000).Select(i => $"-old{i}\n")) + string.Concat(Enumerable.Range(0, 1000).Select(i => $"+new{i}\n")) + "*** End Patch";
+        await Call("apply_patch", new() { ["patch"] = complex, ["dry_run"] = true }, error: true, message: "computation limit");
+        Console.WriteLine($"PASS {mode}: oversized and complex previews return tool errors without partial content");
 
         if (mode != ExecutionMode.FullAccess)
         {

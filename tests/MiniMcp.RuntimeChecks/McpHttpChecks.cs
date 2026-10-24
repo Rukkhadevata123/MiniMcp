@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Runtime;
+using MiniMcp.Services;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -14,6 +15,33 @@ internal static class McpHttpChecks
     {
         foreach (var mode in Enum.GetValues<ExecutionMode>())
             await check($"MCP HTTP {mode}: exact schemas, reads, previews, write denials and Bash policy", () => CheckModeAsync(mode));
+
+        await check("MCP HTTP exports complete bounded previews without plan data, files or recovery records", async () =>
+        {
+            await using var fixture = new HttpSecurityFixture(AuthenticationMode.Local, mapProbes: false);
+            File.WriteAllText(Path.Combine(fixture.Root, "complex.txt"), string.Concat(Enumerable.Range(0, 1000).Select(i => $"old{i}\n")));
+            var storage = Directory.GetParent(fixture.Root)!.FullName;
+            var before = Snapshot(storage);
+            await fixture.Runtime.StartAsync(fixture.Configuration);
+            await using var client = await ConnectAsync(fixture.Runtime.Address!, fixture.Client);
+            var line = new string('x', 180_000) + "TAIL中👋\t\u001b";
+            var patch = Patch("*** Add File: preview/large.txt\n+" + line);
+            var preview = FullPreview(await Call(client, "apply_patch", new() { ["patch"] = patch, ["dry_run"] = true }));
+            var diff = preview.GetProperty("diff").GetString()!;
+            Assert(diff.Length > 16_000 && diff.Contains("TAIL中👋\\t\\u001b\\n\""), "Complete escaped response exceeds the read-file clipping size");
+            Assert(preview.GetProperty("statistics").GetProperty("addedBytes").GetInt64() == Encoding.UTF8.GetByteCount(line + "\n"), "Raw UTF-8 statistics");
+            Error(await Call(client, "apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
+            Error(await Call(client, "apply_patch", new()
+            {
+                ["patch"] = Patch("*** Add File: oversized.txt\n+" + new string('\u001b', 50_000)), ["dry_run"] = true
+            }), "display limit");
+            var complex = Patch("*** Update File: complex.txt\n@@\n" + string.Join('\n', Enumerable.Range(0, 1000).Select(i => $"-old{i}")) + "\n" +
+                string.Join('\n', Enumerable.Range(0, 1000).Select(i => $"+new{i}")));
+            Error(await Call(client, "apply_patch", new() { ["patch"] = complex, ["dry_run"] = true }), "computation limit");
+            Assert(Structured(await Call(client, "read_file", new() { ["path"] = "sample.txt" })).GetProperty("content").GetString() == "read-only fixture\n", "Service remains usable after preview rejection");
+            Assert(before.SequenceEqual(Snapshot(storage)) && fixture.Runtime.Execution!.ActiveCalls == 0 && fixture.Runtime.Snapshot.State == RuntimeState.Running,
+                "Preview success and failure create no workspace, configuration or recovery artifacts");
+        });
 
         await check("MCP HTTP is stateless, omits session headers and disables GET, DELETE and legacy SSE", async () =>
         {
@@ -129,6 +157,35 @@ internal static class McpHttpChecks
             finally { RuntimeCallChecks.KillIfRunning(child); }
         });
 
+        await check("MCP HTTP cancelling a queued preview releases only that call before runtime stop", async () =>
+        {
+            await using var fixture = new HttpSecurityFixture(AuthenticationMode.Local, ExecutionMode.FullAccess, mapProbes: false);
+            fixture.Client.Timeout = Timeout.InfiniteTimeSpan;
+            await fixture.Runtime.StartAsync(fixture.Configuration);
+            var execution = fixture.Runtime.Execution!;
+            await using var first = await ConnectAsync(fixture.Runtime.Address!, fixture.Client);
+            await using var second = await ConnectAsync(fixture.Runtime.Address!, fixture.Client);
+            using var cancel = new CancellationTokenSource();
+            var marker = Path.Combine(fixture.Root, "preview-cancel-child.pid");
+            var running = first.CallToolAsync("bash", new Dictionary<string, object?> { ["command"] = RuntimeCallChecks.ChildCommand(marker) }).AsTask();
+            using var child = await RuntimeCallChecks.ObserveChildAsync(marker, running);
+            try
+            {
+                var preview = second.CallToolAsync("apply_patch", new Dictionary<string, object?>
+                { ["patch"] = Patch("*** Add File: pending/new.txt\n+new"), ["dry_run"] = true }, cancellationToken: cancel.Token).AsTask();
+                await Until(() => execution.ActiveCalls == 2);
+                await cancel.CancelAsync();
+                await Reject<OperationCanceledException>(() => preview).WaitAsync(TimeSpan.FromSeconds(5));
+                await Until(() => execution.ActiveCalls == 1);
+                Assert(!child.HasExited && !Directory.Exists(Path.Combine(fixture.Root, "pending")), "Preview cancellation does not stop another client's Bash");
+                await fixture.Runtime.StopAsync().WaitAsync(TimeSpan.FromSeconds(15));
+                await Interrupted(running);
+                await RuntimeCallChecks.AssertStoppedAsync(child);
+                Assert(execution.IsDisposed && execution.ActiveCalls == 0, "Cancelled preview does not obstruct draining or disposal");
+            }
+            finally { cancel.Cancel(); RuntimeCallChecks.KillIfRunning(child); }
+        });
+
         await check("MCP HTTP restart changes project, mode and run identity without stale client state", async () =>
         {
             await using var fixture = new HttpSecurityFixture(AuthenticationMode.Local, ExecutionMode.FullAccess, mapProbes: false);
@@ -171,17 +228,27 @@ internal static class McpHttpChecks
                 _ => ["command", "timeout_seconds", "workdir"]
             };
             Assert(properties.SequenceEqual(expected), "Schema: " + tool.Name);
+            if (tool.Name == "apply_patch")
+                Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
+                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "diff", "dryRun", "statistics" }), "Public preview output schema");
         }
         var read = Structured(await Call(client, "read_file", new() { ["path"] = "sample.txt", ["start_line"] = 1, ["end_line"] = 1 }));
         Assert(read.GetProperty("content").GetString() == "read-only fixture\n", "Read range");
         Error(await Call(client, "read_file", new() { ["path"] = "../outside" }), "outside");
         Error(await Call(client, "read_file", new() { ["path"] = ".env" }), "private");
-        foreach (var body in new[] { "*** Add File: preview/new.txt\n+new", "*** Update File: sample.txt\n@@\n-read-only fixture\n+updated",
-            "*** Update File: sample.txt\n*** Move to: moved/new.txt", "*** Delete File: sample.txt" })
+        var patches = new[] { "*** Add File: preview/new.txt\n+new", "*** Update File: sample.txt\n@@\n-read-only fixture\n+updated",
+            "*** Update File: sample.txt\n*** Move to: moved/new.txt", "*** Delete File: sample.txt" };
+        var expectedStatistics = new[] { new PatchStatistics(1, 0, 4, 0), new PatchStatistics(1, 1, 8, 18),
+            new PatchStatistics(0, 0, 0, 0), new PatchStatistics(0, 1, 0, 18) };
+        for (var i = 0; i < patches.Length; i++)
         {
-            var preview = Structured(await Call(client, "apply_patch", new() { ["patch"] = Patch(body), ["dry_run"] = true }));
+            var preview = FullPreview(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["dry_run"] = true }));
             Assert(preview.GetProperty("dryRun").GetBoolean(), "Patch preview");
-            Error(await Call(client, "apply_patch", new() { ["patch"] = Patch(body), ["approved"] = true, ["mode"] = "FullAccess" }),
+            var expected = JsonSerializer.SerializeToElement(expectedStatistics[i], new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            Assert(JsonElement.DeepEquals(preview.GetProperty("statistics"), expected) &&
+                JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total preview statistics");
+            Assert(preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("path").GetString() == (i == 0 ? "preview/new.txt" : "sample.txt"), "Preview summary paths");
+            Error(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["approved"] = true, ["mode"] = "FullAccess" }),
                 mode == ExecutionMode.ReadOnly ? "ReadOnly" : "recovery records");
         }
         if (mode == ExecutionMode.FullAccess)
@@ -217,9 +284,24 @@ internal static class McpHttpChecks
         return await client.CallToolAsync(name, arguments, cancellationToken: deadline.Token);
     }
 
-    private static void Error(CallToolResult result, string message) => Assert(result.IsError == true &&
-        result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains(message, StringComparison.Ordinal)), "Tool error: " + message);
+    private static JsonElement FullPreview(CallToolResult result)
+    {
+        var preview = Structured(result);
+        Assert(preview.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "diff", "dryRun", "statistics" }), "Preview contains no plan, owner or original file snapshots");
+        foreach (var change in preview.GetProperty("changes").EnumerateArray())
+            Assert(change.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "statistics", "summary" }), "Public per-file preview shape");
+        using var text = JsonDocument.Parse(result.Content.OfType<TextContentBlock>().Single().Text);
+        Assert(text.RootElement.GetProperty("diff").GetString() == preview.GetProperty("diff").GetString(), "Text and structured preview stay complete and consistent");
+        return preview;
+    }
+
+    private static void Error(CallToolResult result, string message) => Assert(result.IsError == true && result.StructuredContent is null &&
+        result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains(message, StringComparison.Ordinal)) &&
+        !result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains("# Review diff")), "Tool error without partial preview: " + message);
     private static string Patch(string body) => "*** Begin Patch\n" + body + "\n*** End Patch";
+    private static string[] Snapshot(string directory) => Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories)
+        .Order(StringComparer.Ordinal).Select(path => Path.GetRelativePath(directory, path) +
+            (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
 
     private static HttpRequestMessage RpcRequest(HttpSecurityFixture fixture, string padding = "")
     {
