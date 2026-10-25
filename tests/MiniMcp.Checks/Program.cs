@@ -265,6 +265,7 @@ try
         });
     }
     await PatchPlanChecks.RunAsync(Check);
+    await PatchCommitOutcomeChecks.RunAsync(Check);
     await PatchDiffChecks.RunAsync(Check);
     await PatchRiskChecks.RunAsync(Check);
     await PatchBatchChecks.RunAsync(Check);

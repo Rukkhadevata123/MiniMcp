@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json.Serialization;
 
@@ -9,7 +10,7 @@ public sealed record PatchChange(string Action, string Path,
 public sealed record PatchResult(bool DryRun, PatchChange[] Changes);
 
 // Independent implementation of the Codex patch syntax; see README for references and differences.
-internal sealed class PatchService(ProjectWorkspace workspace)
+internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitStage, int, Task>? checkpoint = null)
 {
     internal string ProjectRoot => workspace.Root;
 
@@ -75,6 +76,17 @@ internal sealed class PatchService(ProjectWorkspace workspace)
 
     public async Task<PatchResult> CommitAsync(PatchPlan plan, CancellationToken cancellationToken = default)
     {
+        var outcome = await CommitWithOutcomeAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (outcome.State == PatchCommitState.Incomplete)
+            throw new WorkspaceException("Patch failed and rollback or staging cleanup was incomplete. Stop editing and inspect .minimcp-* files beside the affected paths; original files may remain in .minimcp-*.bak.");
+        if (outcome.Failure is { } failure) ExceptionDispatchInfo.Capture(failure).Throw();
+        return plan.ToResult(dryRun: false);
+    }
+
+    // Argument, ownership, lock-wait and initial validation failures still throw before engine work.
+    // Once staging begins, the returned outcome describes installation, rollback and cleanup separately.
+    internal async Task<PatchCommitOutcome> CommitWithOutcomeAsync(PatchPlan plan, CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(plan);
         if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
         await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -82,8 +94,7 @@ internal sealed class PatchService(ProjectWorkspace workspace)
         {
             // Reject stale plans before creating any directories, staging files or rollback backups.
             await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            await CommitCoreAsync(plan, cancellationToken).ConfigureAwait(false);
-            return plan.ToResult(dryRun: false);
+            return await CommitCoreAsync(plan, cancellationToken).ConfigureAwait(false);
         }
         finally { workspace.Mutations.Release(); }
     }
@@ -234,11 +245,14 @@ internal sealed class PatchService(ProjectWorkspace workspace)
         }
     }
 
-    private async Task CommitCoreAsync(PatchPlan plan, CancellationToken cancellationToken)
+    private async Task<PatchCommitOutcome> CommitCoreAsync(PatchPlan plan, CancellationToken cancellationToken)
     {
         var changes = plan.Changes.Select(change => new Change(change)).ToList();
         var directories = new List<string>();
         var committed = false;
+        Exception? failure = null;
+        var rollbackErrors = ImmutableArray.CreateBuilder<Exception>();
+        var cleanupErrors = ImmutableArray.CreateBuilder<Exception>();
         try
         {
             // Stage all new contents before changing any existing file.
@@ -259,11 +273,14 @@ internal sealed class PatchService(ProjectWorkspace workspace)
                 }
                 if (!OperatingSystem.IsWindows() && change.Before?.Mode is { } mode) File.SetUnixFileMode(change.Temporary, mode);
             }
+            await Checkpoint(PatchCommitStage.Staged, -1).ConfigureAwait(false);
             await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             // Once commit starts, finish or roll back instead of leaving half a patch on cancellation.
-            foreach (var change in changes)
+            for (var i = 0; i < changes.Count; i++)
             {
+                var change = changes[i];
+                await Checkpoint(PatchCommitStage.BeforeInstall, i).ConfigureAwait(false);
                 if (change.Before is not null)
                 {
                     var backup = Path.Combine(Path.GetDirectoryName(change.Source)!, $".minimcp-{Guid.NewGuid():N}.bak");
@@ -276,12 +293,13 @@ internal sealed class PatchService(ProjectWorkspace workspace)
                     change.Temporary = null;
                     change.Installed = true;
                 }
+                await Checkpoint(PatchCommitStage.Installed, i).ConfigureAwait(false);
             }
             committed = true;
         }
-        catch
+        catch (Exception error)
         {
-            var failed = false;
+            failure = error;
             foreach (var change in changes.AsEnumerable().Reverse())
             {
                 try
@@ -289,26 +307,31 @@ internal sealed class PatchService(ProjectWorkspace workspace)
                     if (change.Installed) File.Delete(change.Destination);
                     if (change.Backup is not null) { File.Move(change.Backup, change.Source); change.Backup = null; }
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failed = true; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { rollbackErrors.Add(ex); }
             }
-            if (failed) throw new WorkspaceException("Patch failed and rollback was incomplete. Stop editing and recover original files from .minimcp-*.bak beside their original paths.");
-            throw;
         }
         finally
         {
             foreach (var change in changes)
             {
-                if (change.Temporary is not null) TryDelete(change.Temporary);
-                if (committed && change.Backup is not null) TryDelete(change.Backup);
+                if (change.Temporary is not null) TryDelete(change.Temporary, cleanupErrors);
+                if (committed && change.Backup is not null) TryDelete(change.Backup, cleanupErrors);
             }
             if (!committed)
                 foreach (var directory in directories.AsEnumerable().Reverse())
-                    try { Directory.Delete(directory); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+                    try { Directory.Delete(directory); }
+                    catch (Exception error) when (error is IOException or UnauthorizedAccessException) { cleanupErrors.Add(error); }
         }
+        var state = committed ? PatchCommitState.Committed : rollbackErrors.Count == 0 && cleanupErrors.Count == 0
+            ? PatchCommitState.RolledBack : PatchCommitState.Incomplete;
+        return new PatchCommitOutcome(state, failure, rollbackErrors.ToImmutable(), cleanupErrors.ToImmutable());
     }
 
-    private static void TryDelete(string path)
+    private Task Checkpoint(PatchCommitStage stage, int index) => checkpoint?.Invoke(stage, index) ?? Task.CompletedTask;
+
+    private static void TryDelete(string path, ImmutableArray<Exception>.Builder errors)
     {
-        try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        try { File.Delete(path); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { errors.Add(error); }
     }
 }
