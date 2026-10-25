@@ -43,13 +43,16 @@ dotnet build src/MiniMcp.Cli/MiniMcp.Cli.csproj
 ```powershell
 dotnet build MiniMcp.slnx
 dotnet run --project src/MiniMcp.Cli -- --help
+dotnet run --project src/MiniMcp.Cli -- check --config ./settings.json
 dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json
 dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode ReadOnly
 ```
 
-无参数或 `run --help` 显示帮助。`run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]` 从 JSON 读取端口及项目；省略 `--config` 时使用默认用户配置，策略固定来自用户目录的 `policy.json`。`--mode` 只覆盖本次会话，不写文件。监听 `127.0.0.1`，访问输出的 `/healthz` 地址返回 `{"status":"ok"}`；Ctrl+C 或 Linux SIGTERM 正常停止并释放服务。
+无参数或 `--help` 显示根帮助，`run --help` 和 `check --help` 显示对应命令帮助；帮助不加载配置。`run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]` 从 JSON 读取端口及项目；省略 `--config` 时使用默认用户配置，策略固定来自用户目录的 `policy.json`。`--mode` 只覆盖 run 本次会话，不写文件。监听 `127.0.0.1`，访问输出的 `/healthz` 地址返回 `{"status":"ok"}`；Ctrl+C 或 Linux SIGTERM 正常停止并释放服务。
 
-正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。输出包含 MCP 连接地址、健康检查地址及运行模式；HTTP 认证与请求边界见下文，工具调用使用本机执行策略。配置启用受管隧道时，Runtime 在本机 MCP 就绪后自动启动 cloudflared。Linux 信号路径未实机验证。
+`check [--config <path>]` 校验所选 JSON、路径、认证字段、固定本机策略及已启用依赖，采用保存的执行模式，不接受 `--mode`。程序依赖只检查文件及适用的执行权限，token 文件只检查可读和非空；检查不执行程序、不启动 MCP/隧道、不写配置或创建审批/恢复目录。端口检查只在 `127.0.0.1` 短暂绑定后释放，不开始监听；当前占用或不可绑定会在标准错误输出提示，配置校验通过仍返回 `0`，也不保证后续启动一定能绑定。公网路由、Access 登录、OAuth 和程序实际运行结果需另行验证。
+
+成功或正常结束返回 `0`，运行、清理或输出失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/检查/启动取消且清理完成返回 `130`；清理失败优先返回 `1`。普通诊断共用 Runtime 的有界脱敏策略，终端动态文本额外转义控制字符。run 端口冲突返回 `1` 并保留已有服务；输出包含 MCP 连接地址、健康检查地址及运行模式，工具调用使用本机执行策略。配置启用受管隧道时，Runtime 在本机 MCP 就绪后自动启动 cloudflared。Linux 信号路径未实机验证。
 
 Local 模式下，MCP 客户端使用启动时输出的 `http://127.0.0.1:<port>/mcp`，传输方式选择 Streamable HTTP。CloudflareAccess 模式下，客户端通过配置的 `publicOrigin` 加 `/mcp` 访问外部 Cloudflare 网关，再由网关转发至本机服务。该端点按请求处理协议，不使用 MCP 会话 ID；通过鉴权的独立 GET/DELETE 返回 405，legacy `/sse`、`/message` 路由不开放。浏览器直接 GET 不能验证 MCP 调用，健康诊断使用 `/healthz`。
 

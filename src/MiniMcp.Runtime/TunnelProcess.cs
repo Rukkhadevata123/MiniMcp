@@ -133,7 +133,7 @@ internal sealed class TunnelProcess
         lock (_gate)
         {
             Interlocked.Exchange(ref _stopRequested, 1);
-            if (_stopping is null || (retry && _stopping.IsFaulted))
+            if (_stopping is null || (retry && (_stopping.IsFaulted || _stopping.IsCanceled)))
                 _stopping = Task.Run(CleanupAsync);
             return _stopping;
         }

@@ -317,6 +317,7 @@ await HttpSecurityChecks.RunAsync(Check);
 await McpHttpChecks.RunAsync(Check);
 await RecordedToolHttpChecks.RunAsync(Check);
 await CliChecks.RunAsync(Check);
+await CliCheckCommandChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;
