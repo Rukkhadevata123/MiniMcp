@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using MiniMcp.Configuration;
 using MiniMcp.Services;
+using MiniMcp.Recovery;
 using MiniMcp.Tools;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -47,7 +48,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
     services.AddToolExecution(Guid.NewGuid(), configuration);
     services.AddMcpServer().WithStreamServerTransport(input.Reader.AsStream(), output.Writer.AsStream()).WithTools<WorkspaceTools>();
     await using var provider = services.BuildServiceProvider();
-    _ = provider.GetRequiredService<ToolExecutionService>();
+    var execution = provider.GetRequiredService<ToolExecutionService>();
     var server = provider.GetRequiredService<McpServer>();
     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
     var running = server.RunAsync(timeout.Token);
@@ -69,7 +70,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);
             if (tool.Name == "apply_patch")
                 Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
-                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
+                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
         }
         Console.WriteLine($"PASS {mode}: MCP initialize, exact tool list and parameter schemas");
 
@@ -87,7 +88,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                     Assert(result.StructuredContent is null && !result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains("# Review diff")), "Errors expose no partial preview");
                 else
                 {
-                    Assert(payload.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "decision", "diff", "dryRun", "risk", "statistics" }), "Only public preview fields are exported");
+                    Assert(payload.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Only public preview fields are exported");
                     using var textPayload = JsonDocument.Parse(result.Content.OfType<TextContentBlock>().Single().Text);
                     Assert(JsonElement.DeepEquals(textPayload.RootElement, payload), "Text and structured content contain the same complete preview and decision");
                 }
@@ -126,15 +127,18 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total statistics");
             CheckReview(preview, mode, actions[i] is "move" ? ["Move"] : actions[i] is "delete" ? ["Delete"] : []);
             Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("kind").GetString() == "Ordinary", "File kind is a string");
-            await Call("apply_patch", new() { ["patch"] = patches[i] }, error: true,
-                message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "recovery records");
+            Assert(preview.GetProperty("commit").ValueKind == JsonValueKind.Null, "Preview has no commit record or authorization");
+            if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
+                await Call("apply_patch", new() { ["patch"] = patches[i] }, error: true,
+                    message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
         }
         // Agent-supplied approval or mode fields cannot grant write permissions.
-        await Call("apply_patch", new()
-        {
-            ["patch"] = patches[0], ["approved"] = true, ["mode"] = "FullAccess"
-        }, error: true);
-        Console.WriteLine($"PASS {mode}: read boundaries, patch previews and denied add/update/move/delete");
+        if (mode != ExecutionMode.FullAccess)
+            await Call("apply_patch", new()
+            {
+                ["patch"] = patches[2], ["approved"] = true, ["mode"] = "FullAccess"
+            }, error: true);
+        Console.WriteLine($"PASS {mode}: read boundaries, patch previews and locally denied writes");
 
         var riskCases = new (string Body, string[] Reasons)[]
         {
@@ -157,8 +161,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             Assert(preview.GetProperty("risk").GetProperty("limits").GetProperty("maxPaths").GetInt32() == 10, "Only local limits apply");
             if (body.StartsWith("*** Update File: custom.md", StringComparison.Ordinal))
                 Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("kind").GetString() == "Critical", "Actual selected settings source is critical");
-            await Call("apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true },
-                error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : mode == ExecutionMode.ProjectEdit ? "local approval" : "recovery records");
+            if (mode != ExecutionMode.FullAccess)
+                await Call("apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true },
+                    error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
         }
         Console.WriteLine($"PASS {mode}: risk causes, batch thresholds, selected settings and mode decisions cannot be overridden by tool arguments");
 
@@ -213,6 +218,38 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             "Read after tool errors");
         Assert(before.SequenceEqual(Snapshot(directory)), "Tools changed files, directories, private data or recovery storage");
         Console.WriteLine($"PASS {mode}: tool errors preserve service availability and leave files/directories unchanged");
+
+        var writes = new[] { "*** Add File: written.md\n+first", "*** Update File: written.md\n@@\n-first\n+second",
+            "*** Update File: written.md\n*** Move to: committed/moved.md", "*** Delete File: committed/moved.md" };
+        var ids = new HashSet<Guid>();
+        for (var i = 0; i < writes.Length; i++)
+        {
+            var patch = "*** Begin Patch\n" + writes[i] + "\n*** End Patch";
+            var arguments = new Dictionary<string, object?> { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess",
+                ["requiresRecoveryRecord"] = false, ["recoveryReady"] = false, ["disableRecovery"] = true };
+            if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
+            {
+                // ReadOnly has no written.md, so use a valid fresh add for each denial.
+                if (mode == ExecutionMode.ReadOnly) arguments["patch"] = patches[0];
+                await Call("apply_patch", arguments, error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                if (mode == ExecutionMode.ProjectEdit) break;
+                continue;
+            }
+            var written = await Call("apply_patch", arguments);
+            var commit = written.GetProperty("commit");
+            var id = commit.GetProperty("changeId").GetGuid();
+            Assert(!written.GetProperty("dryRun").GetBoolean() && commit.GetProperty("state").GetString() == "Committed" &&
+                commit.GetProperty("runId").GetGuid() == execution.RunId && !commit.GetProperty("cleanupIncomplete").GetBoolean() && ids.Add(id), "Bound public commit identity and successful final state");
+            var record = await new RecoveryStore(execution.RunId, configuration).LoadAsync(id);
+            Assert(record.Manifest.State == RecoveryRecordState.Committed && record.Manifest.RunId == execution.RunId &&
+                record.Manifest.Operations.Single().Action == (i == 0 ? "add" : i == 1 ? "update" : i == 2 ? "move" : "delete"), "Actual durable record exists despite forged recovery parameters");
+            if (i > 0) Assert(System.Text.Encoding.UTF8.GetString(record.Backups.Single().Bytes.AsSpan()) == (i == 1 ? "first\n" : "second\n"), "Original content precedes each actual write");
+        }
+        Assert(ids.Count == (mode == ExecutionMode.ReadOnly ? 0 : mode == ExecutionMode.ProjectEdit ? 2 : 4), "Only locally allowed writes get records");
+        Assert(mode == ExecutionMode.ReadOnly ? !Directory.Exists(configuration.Policy.RecoveryDirectory) :
+            Directory.EnumerateDirectories(configuration.Policy.RecoveryDirectory).Count() == ids.Count, "No unrecorded fallback or extra records");
+        if (mode == ExecutionMode.ProjectEdit) Assert(File.ReadAllText(Path.Combine(root, "written.md")) == "second\n", "Approval denial preserves existing local output");
+        Console.WriteLine($"PASS {mode}: real recorded writes, original backups and unforgeable local policy");
     }
     finally
     {
@@ -237,10 +274,10 @@ static void CheckReview(JsonElement preview, ExecutionMode mode, params string[]
     var review = mode == ExecutionMode.ProjectEdit && reasons.Length != 0;
     Assert(decision.GetProperty("mode").GetString() == mode.ToString() &&
         decision.GetProperty("disposition").GetString() == (mode == ExecutionMode.ReadOnly ? "Denied" : review ? "RequiresApproval" : "Automatic"), "Local mode decision");
-    string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["RecoveryUnavailable", "ApprovalUnavailable"] : ["RecoveryUnavailable"];
+    string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["ApprovalUnavailable"] : [];
     Assert(decision.GetProperty("blockers").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal)
         .SequenceEqual(blockers.Order(StringComparer.Ordinal)), "Current blocking causes");
-    Assert(!decision.GetProperty("canCommit").GetBoolean() && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "No preview grants commit permission");
+    Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "Local blockers determine eligibility; every writable mode requires a real recovery record");
 }
 
 static void Assert(bool condition, string message)

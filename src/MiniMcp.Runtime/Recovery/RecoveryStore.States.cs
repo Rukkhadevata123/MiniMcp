@@ -3,7 +3,7 @@ using MiniMcp.Services;
 namespace MiniMcp.Recovery;
 
 internal sealed class RecoveryFinalizationException(RecoveryStore.PreparedRecord record, PatchCommitOutcome outcome, Exception failure)
-    : IOException($"The patch engine reported {outcome.State} (verified result: {outcome.VerifiedState}), but its final recovery record could not be saved. Inspect the record locally; no additional workspace rollback was attempted.", failure)
+    : IOException($"Patch engine result: {outcome.State}; verified result: {outcome.VerifiedState}. Final recovery record {record.Manifest.ChangeId:N}, run {record.Manifest.RunId:N}, could not be saved and verified. Inspect the record locally; no additional workspace rollback was attempted.", failure)
 {
     public RecoveryStore.PreparedRecord Record { get; } = record;
     public PatchCommitOutcome Outcome { get; } = outcome;

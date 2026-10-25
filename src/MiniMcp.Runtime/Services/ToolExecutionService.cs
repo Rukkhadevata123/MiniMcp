@@ -1,4 +1,5 @@
 using MiniMcp.Configuration;
+using MiniMcp.Recovery;
 
 namespace MiniMcp.Services;
 
@@ -13,6 +14,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ProjectWorkspace _workspace;
     private readonly PatchService _patches;
+    private readonly RecoveryStore _recovery;
     private readonly Lazy<BashRunner> _bash;
     private bool _accepting = true;
     private int _activeCalls;
@@ -20,14 +22,21 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     private Task? _disposeTask;
     private int _disposed;
 
-    public ToolExecutionService(Guid runId, RuntimeConfiguration configuration)
+    public ToolExecutionService(Guid runId, RuntimeConfiguration configuration) : this(runId, configuration, null) { }
+
+    // Checks observe/inject failures in the real engine and storage; no alternate commit or backup implementation.
+    internal ToolExecutionService(Guid runId, RuntimeConfiguration configuration,
+        Func<PatchCommitStage, int, Task>? patchCheckpoint,
+        Func<RecoveryPreparationStage, RecoveryDraft, Task>? preparationCheckpoint = null,
+        Func<RecoveryManifestReplacementStage, string, Task>? replacementCheckpoint = null)
     {
         if (runId == Guid.Empty) throw new ArgumentException("A run ID is required.", nameof(runId));
         ArgumentNullException.ThrowIfNull(configuration);
         RunId = runId;
         Configuration = configuration;
         _workspace = new ProjectWorkspace(configuration.Settings.ProjectRoot);
-        _patches = new PatchService(_workspace);
+        _patches = new PatchService(_workspace, patchCheckpoint);
+        _recovery = new RecoveryStore(runId, configuration, preparationCheckpoint, null, replacementCheckpoint);
         _bash = new Lazy<BashRunner>(() => new BashRunner(_workspace, configuration.Settings.BashPath));
     }
 
@@ -40,7 +49,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _workspace.ReadFileAsync(path, startLine, endLine, token), cancellationToken);
 
-    public Task<PatchPreviewResult> ApplyPatchAsync(string patch, bool dryRun = false,
+    public Task<PatchApplyResult> ApplyPatchAsync(string patch, bool dryRun = false,
         CancellationToken cancellationToken = default) => ExecuteAsync(async token =>
         {
             var plan = await _patches.PrepareAsync(patch, token).ConfigureAwait(false);
@@ -51,9 +60,17 @@ internal sealed class ToolExecutionService : IAsyncDisposable
                 var assessment = PatchRiskClassifier.Classify(preview, Configuration.SettingsFilePath, Configuration.Policy.PatchApprovalLimits, token);
                 return PatchWritePolicy.Decide(assessment, Configuration.Policy.Mode, token);
             }, token).ConfigureAwait(false);
-            if (!dryRun) throw new WorkspaceException(decision.RejectionMessage);
-            return PatchPreviewResult.FromDecision(decision);
-        }, cancellationToken);
+            if (dryRun)
+            {
+                token.ThrowIfCancellationRequested();
+                return PatchApplyResult.FromDecision(decision);
+            }
+            if (!decision.CanCommit) throw new WorkspaceException(decision.RejectionMessage);
+            var committed = await _patches.CommitWithRecoveryAsync(plan, _recovery, token).ConfigureAwait(false);
+            if (committed.Outcome.VerifiedState != PatchCommitState.Committed)
+                throw new RecordedPatchExecutionException(committed);
+            return PatchApplyResult.FromDecision(decision, committed);
+        }, cancellationToken, checkCancellationAfterCompletion: false);
 
     public Task<BashResult> RunBashAsync(string command, string workdir = ".", int timeoutSeconds = 30,
         CancellationToken cancellationToken = default) => ExecuteAsync(token =>
@@ -68,7 +85,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
             return _bash.Value.RunAsync(command, workdir, timeoutSeconds, token);
         }, cancellationToken);
 
-    private async Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    private async Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken,
+        bool checkCancellationAfterCompletion = true)
     {
         CancellationTokenSource linked;
         lock (_callsGate)
@@ -83,7 +101,9 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         {
             linked.Token.ThrowIfCancellationRequested();
             var result = await operation(linked.Token).ConfigureAwait(false);
-            linked.Token.ThrowIfCancellationRequested();
+            // Patch writes own their completion boundary: an installed/finalized result must not
+            // become cancellation here. Their preview/preparation paths still observe the token.
+            if (checkCancellationAfterCompletion) linked.Token.ThrowIfCancellationRequested();
             return result;
         }
         finally

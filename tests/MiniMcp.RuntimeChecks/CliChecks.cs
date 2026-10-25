@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using MiniMcp.Cli;
 using MiniMcp.Configuration;
+using MiniMcp.Recovery;
 
 internal static class CliChecks
 {
@@ -63,6 +64,25 @@ internal static class CliChecks
                     Assert((await mcp.ListToolsAsync(cancellationToken: stop.Token)).Count == 3);
                     var read = await mcp.CallToolAsync("read_file", new Dictionary<string, object?> { ["path"] = "cli.txt" }, cancellationToken: stop.Token);
                     Assert(McpHttpChecks.Structured(read).GetProperty("content").GetString() == "CLI MCP fixture\n");
+                    var file = $"cli-{mode}.md";
+                    var arguments = new Dictionary<string, object?> { ["patch"] = PatchExecutionFixture.Patch($"*** Add File: {file}\n+first"),
+                        ["approved"] = true, ["mode"] = "FullAccess", ["disableRecovery"] = true };
+                    var write = await mcp.CallToolAsync("apply_patch", arguments, cancellationToken: stop.Token);
+                    if (mode == ExecutionMode.ReadOnly) Assert(write.IsError == true && !File.Exists(Path.Combine(root, file)));
+                    else
+                    {
+                        var committed = McpHttpChecks.Structured(write).GetProperty("commit");
+                        var id = committed.GetProperty("changeId").GetGuid();
+                        var manifest = RecoveryManifestJson.Parse(await File.ReadAllBytesAsync(Path.Combine(paths.RecoveryDirectory, id.ToString("N"), RecoveryStore.ManifestFileName)));
+                        Assert(manifest.State == RecoveryRecordState.Committed && manifest.RunId == committed.GetProperty("runId").GetGuid() && File.ReadAllText(Path.Combine(root, file)) == "first\n");
+                        var update = await mcp.CallToolAsync("apply_patch", new Dictionary<string, object?>
+                        { ["patch"] = PatchExecutionFixture.Patch($"*** Update File: {file}\n@@\n-first\n+second") }, cancellationToken: stop.Token);
+                        var updateId = McpHttpChecks.Structured(update).GetProperty("commit").GetProperty("changeId").GetGuid();
+                        var recordPath = Path.Combine(paths.RecoveryDirectory, updateId.ToString("N"));
+                        Assert(updateId != id && File.ReadAllText(Path.Combine(root, file)) == "second\n" &&
+                            File.ReadAllText(Path.Combine(recordPath, "before-0000.bin")) == "first\n" &&
+                            RecoveryManifestJson.Parse(await File.ReadAllBytesAsync(Path.Combine(recordPath, RecoveryStore.ManifestFileName))).State == RecoveryRecordState.Committed);
+                    }
                 }
                 stop.Cancel();
                 Assert(await running.WaitAsync(TimeSpan.FromSeconds(15)) == 0);

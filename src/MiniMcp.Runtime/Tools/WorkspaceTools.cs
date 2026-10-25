@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Text.Json;
 using MiniMcp.Services;
+using MiniMcp.Recovery;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
@@ -14,8 +16,8 @@ internal sealed class WorkspaceTools(ToolExecutionService execution)
         Run(() => execution.ReadFileAsync(path, start_line, end_line, cancellationToken));
 
     [McpServerTool(Name = "apply_patch", ReadOnly = false, Destructive = true, OpenWorld = false, UseStructuredContent = true)]
-    [Description("Preview a text patch inside the project root with dry_run=true. Actual patch writes are disabled. Read existing files first. Format: *** Begin Patch, then *** Add File: path with +lines; *** Delete File: path; or *** Update File: path with optional *** Move to: path and @@ chunks (space=context, -=remove, +=insert). Optional @@ exact anchor and *** End of File. Finish with *** End Patch. Context must match exactly and uniquely; no fuzzy matching or unified-diff line numbers. New/moved destinations must not exist. UTF-8 files <=256 KiB; patch <=1 MiB, <=64 operations. Returns dryRun=true, a complete review diff, changes with summary/statistics/risk, total statistics, risk with batch size/local limits/reasons, and decision with mode/disposition/blockers/requiresRecoveryRecord/canCommit. File risk kinds are Ordinary, Critical or Unknown; reason and blocker names are string arrays. Decision dispositions Denied, Automatic and RequiresApproval describe policy; Automatic is not permission to write, and canCommit is currently false in every mode. ReadOnly denies writes; ProjectEdit reviews any high-risk member or exceeded batch limit; FullAccess skips approval but requires recovery records. Batch size counts distinct paths (both ends of moves) and sums added/removed lines and bytes; only exceeding a limit triggers review. Diff lines are quoted with escaped controls and original line endings; metadata shows BOM, endings and applicable modes. Statistics count full added/removed UTF-8 lines plus BOM changes, excluding context and display escapes. The complete diff is limited to 256 KiB UTF-8 and bounded comparison work; oversized/complex previews are rejected with a request to split the patch, never truncated. Previewing creates no files or approvals and grants no write permission.")]
-    public Task<PatchPreviewResult> ApplyPatch(string patch, CancellationToken cancellationToken, bool dry_run = false) =>
+    [Description("Preview a text patch with dry_run=true or apply it with dry_run=false (default). Read existing files first. ReadOnly denies writes; ProjectEdit permits ordinary source/document changes but rejects the entire batch if any member or exceeded size limit requires unavailable local approval; FullAccess skips approval. Every actual write requires a complete recovery record outside the project; backup/storage failure denies installation, with no unrecorded fallback. Format: *** Begin Patch, then *** Add File: path with +lines; *** Delete File: path; or *** Update File: path with optional *** Move to: path and @@ chunks (space=context, -=remove, +=insert). Optional @@ exact anchor and *** End of File. Finish with *** End Patch. Context must match exactly and uniquely; no fuzzy matching or unified-diff line numbers. New/moved destinations must not exist. UTF-8 files <=256 KiB; patch <=1 MiB, <=64 operations. Returns dryRun, complete diff, changes with summary/statistics/risk, total statistics, risk with batch size/local limits/reasons, decision with mode/disposition/blockers/requiresRecoveryRecord/canCommit, and commit. Preview commit is null; successful writes have dryRun=false and commit with runId/changeId/state=Committed/cleanupIncomplete. Cleanup warnings do not imply rollback. Errors after installation report its actual result and record identity; a failed final record save cannot be treated as no write. File risk kinds are Ordinary, Critical or Unknown; reason/blocker names are string arrays. canCommit allows a recorded attempt, not proof of backup readiness or an approval. Batch size counts distinct paths (both ends of moves) and added/removed lines and bytes; only exceeding a limit requires review. Diff lines are quoted with escaped controls and original line endings; metadata shows BOM, endings and applicable modes. Statistics count complete changed UTF-8 lines plus BOM changes, excluding context and display escapes. Diff is limited to 256 KiB UTF-8 and bounded computation; oversized/complex patches are rejected, never truncated. Previewing creates no files or approvals and grants no write permission.")]
+    public Task<PatchApplyResult> ApplyPatch(string patch, CancellationToken cancellationToken, bool dry_run = false) =>
         Run(() => execution.ApplyPatchAsync(patch, dry_run, cancellationToken));
 
     [McpServerTool(Name = "bash", ReadOnly = false, Destructive = true, OpenWorld = true, UseStructuredContent = true)]
@@ -26,6 +28,10 @@ internal sealed class WorkspaceTools(ToolExecutionService execution)
     private static async Task<T> Run<T>(Func<Task<T>> action)
     {
         try { return await action(); }
+        catch (RecoveryFinalizationException ex) { throw new McpException(ex.Message); }
+        catch (RecordedPatchExecutionException ex) { throw new McpException(ex.Message); }
+        catch (InvalidDataException) { throw new McpException("Recovery data is invalid; patch installation was not started."); }
+        catch (JsonException) { throw new McpException("Recovery data validation failed; patch installation was not started."); }
         catch (WorkspaceException ex) { throw new McpException(ex.Message); }
         catch (UnauthorizedAccessException) { throw new McpException("Access denied by the operating system."); }
         catch (IOException) { throw new McpException("The filesystem operation failed; check the path and service account permissions."); }

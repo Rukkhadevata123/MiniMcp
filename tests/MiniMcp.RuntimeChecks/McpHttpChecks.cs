@@ -239,7 +239,7 @@ internal static class McpHttpChecks
             Assert(properties.SequenceEqual(expected), "Schema: " + tool.Name);
             if (tool.Name == "apply_patch")
                 Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
-                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
+                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
         }
         var read = Structured(await Call(client, "read_file", new() { ["path"] = "sample.txt", ["start_line"] = 1, ["end_line"] = 1 }));
         Assert(read.GetProperty("content").GetString() == "read-only fixture\n", "Read range");
@@ -258,8 +258,9 @@ internal static class McpHttpChecks
                 JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total preview statistics");
             CheckReview(preview, mode, i == 2 ? ["Move"] : i == 3 ? ["Delete"] : []);
             Assert(preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("path").GetString() == (i == 0 ? "preview/new.txt" : "sample.txt"), "Preview summary paths");
-            Error(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["approved"] = true, ["mode"] = "FullAccess" }),
-                mode == ExecutionMode.ReadOnly ? "ReadOnly" : "recovery records");
+            if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
+                Error(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["approved"] = true, ["mode"] = "FullAccess" }),
+                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
         }
         if (mode == ExecutionMode.FullAccess)
         {
@@ -320,8 +321,9 @@ internal static class McpHttpChecks
                 Assert(preview.GetProperty("risk").GetProperty("size").GetProperty("paths").GetInt32() == 6, "Move contributes both distinct paths");
                 Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("reasons").GetArrayLength() == 0, "Ordinary member remains ordinary in a reviewed batch");
             }
-            Error(await Call(client, "apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["recoveryReady"] = true }),
-                mode == ExecutionMode.ReadOnly ? "ReadOnly" : mode == ExecutionMode.ProjectEdit && reasons.Length != 0 ? "local approval" : "recovery records");
+            if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && reasons.Length != 0))
+                Error(await Call(client, "apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["recoveryReady"] = true }),
+                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
         }
         Assert(before.SequenceEqual(Snapshot(storage)) && fixture.Runtime.Execution!.ActiveCalls == 0, "No writes, recovery records, pending approvals or retained calls");
     }
@@ -348,7 +350,8 @@ internal static class McpHttpChecks
     private static JsonElement FullPreview(CallToolResult result)
     {
         var preview = Structured(result);
-        Assert(preview.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "decision", "diff", "dryRun", "risk", "statistics" }), "Preview contains no plan, owner or original file snapshots");
+        Assert(preview.GetProperty("commit").ValueKind == JsonValueKind.Null, "Preview has no commit record");
+        Assert(preview.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Preview contains no plan, owner or original file snapshots");
         foreach (var change in preview.GetProperty("changes").EnumerateArray())
         {
             Assert(change.EnumerateObject().Select(property => property.Name).Order().SequenceEqual(new[] { "risk", "statistics", "summary" }), "Public per-file preview shape");
@@ -379,10 +382,10 @@ internal static class McpHttpChecks
         var review = mode == ExecutionMode.ProjectEdit && reasons.Length != 0;
         Assert(decision.GetProperty("mode").GetString() == mode.ToString() && decision.GetProperty("disposition").GetString() ==
             (mode == ExecutionMode.ReadOnly ? "Denied" : review ? "RequiresApproval" : "Automatic"), "Mode determines disposition");
-        string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["RecoveryUnavailable", "ApprovalUnavailable"] : ["RecoveryUnavailable"];
+        string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["ApprovalUnavailable"] : [];
         Assert(decision.GetProperty("blockers").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal)
             .SequenceEqual(blockers.Order(StringComparer.Ordinal)), "Actual execution blockers");
-        Assert(!decision.GetProperty("canCommit").GetBoolean() && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "All writes remain blocked");
+        Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "Local blockers determine eligibility and every writable mode requires recovery");
     }
 
     private static void Error(CallToolResult result, string message) => Assert(result.IsError == true && result.StructuredContent is null &&

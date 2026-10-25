@@ -6,7 +6,7 @@ internal static class PatchWritePolicyChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        await check("ordinary patch policy distinguishes read-only denial from automatic processing blocked by recovery", async () =>
+        await check("ordinary patch policy distinguishes read-only denial from attempts requiring real recovery preparation", async () =>
         {
             using var fixture = new Fixture();
             var before = fixture.Snapshot();
@@ -17,7 +17,7 @@ internal static class PatchWritePolicyChecks
                 var decision = PatchWritePolicy.Decide(risk, mode);
                 Assert(ReferenceEquals(decision.Assessment, risk) && decision.Mode == mode, "Exact assessment and local mode");
                 AssertDecision(decision, mode == ExecutionMode.ReadOnly ? PatchWriteDisposition.Denied : PatchWriteDisposition.Automatic,
-                    mode == ExecutionMode.ReadOnly ? PatchWriteBlocker.ReadOnlyMode : PatchWriteBlocker.RecoveryUnavailable);
+                    mode == ExecutionMode.ReadOnly ? PatchWriteBlocker.ReadOnlyMode : PatchWriteBlocker.None);
                 Assert(decision.RequiresRecoveryRecord == (mode != ExecutionMode.ReadOnly), "Every eligible write needs recovery");
             }
             Assert(before.SequenceEqual(fixture.Snapshot()), "No ordinary member executed");
@@ -42,9 +42,9 @@ internal static class PatchWritePolicyChecks
                 var risk = await fixture.Assess(body, limits);
                 Assert(risk.Reasons == reason && risk.RequiresApproval, "Expected trigger: " + reason);
                 var edit = PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit);
-                AssertDecision(edit, PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable | PatchWriteBlocker.RecoveryUnavailable);
+                AssertDecision(edit, PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable);
                 var full = PatchWritePolicy.Decide(risk, ExecutionMode.FullAccess);
-                AssertDecision(full, PatchWriteDisposition.Automatic, PatchWriteBlocker.RecoveryUnavailable);
+                AssertDecision(full, PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
                 Assert(edit.RequiresRecoveryRecord && full.RequiresRecoveryRecord && full.Assessment.Reasons == reason, "Mode does not erase risk or recovery");
                 AssertDecision(PatchWritePolicy.Decide(risk, ExecutionMode.ReadOnly), PatchWriteDisposition.Denied, PatchWriteBlocker.ReadOnlyMode);
             }
@@ -62,7 +62,7 @@ internal static class PatchWritePolicyChecks
                 PatchRiskReason.PathLimitExceeded | PatchRiskReason.ChangedLineLimitExceeded | PatchRiskReason.ChangedByteLimitExceeded;
             Assert(risk.Reasons == expectedReasons && risk.Changes[0].Reasons == PatchRiskReason.None, "All review causes retained");
             var decision = PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit);
-            AssertDecision(decision, PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable | PatchWriteBlocker.RecoveryUnavailable);
+            AssertDecision(decision, PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable);
             Assert(ReferenceEquals(decision.Assessment.Preview, risk.Preview) && ReferenceEquals(decision.Assessment.Plan, risk.Plan), "Exact complete preview");
             Assert(decision.Assessment.Reasons == expectedReasons && before.SequenceEqual(fixture.Snapshot()), "Whole batch remains unchanged");
         });
@@ -74,7 +74,7 @@ internal static class PatchWritePolicyChecks
             var exact = new PatchApprovalLimits { MaxPaths = 2, MaxChangedLines = 3, MaxChangedBytes = 14 };
             var risk = await fixture.Assess(body, exact);
             Assert(risk.Size == new PatchBatchSize(2, 3, 14), "Known change size");
-            AssertDecision(PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit), PatchWriteDisposition.Automatic, PatchWriteBlocker.RecoveryUnavailable);
+            AssertDecision(PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit), PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
             foreach (var (limits, reason) in new[]
             {
                 (exact with { MaxPaths = 1 }, PatchRiskReason.PathLimitExceeded),
@@ -85,11 +85,11 @@ internal static class PatchWritePolicyChecks
                 var exceeded = PatchRiskClassifier.Classify(risk.Preview, fixture.SettingsPath, limits);
                 Assert(exceeded.Reasons == reason, "Single lowered dimension");
                 AssertDecision(PatchWritePolicy.Decide(exceeded, ExecutionMode.ProjectEdit), PatchWriteDisposition.RequiresApproval,
-                    PatchWriteBlocker.ApprovalUnavailable | PatchWriteBlocker.RecoveryUnavailable);
-                AssertDecision(PatchWritePolicy.Decide(exceeded, ExecutionMode.FullAccess), PatchWriteDisposition.Automatic, PatchWriteBlocker.RecoveryUnavailable);
+                    PatchWriteBlocker.ApprovalUnavailable);
+                AssertDecision(PatchWritePolicy.Decide(exceeded, ExecutionMode.FullAccess), PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
             }
             var empty = await fixture.Assess("*** Add File: empty.md", new() { MaxPaths = 1, MaxChangedLines = 0, MaxChangedBytes = 0 });
-            AssertDecision(PatchWritePolicy.Decide(empty, ExecutionMode.ProjectEdit), PatchWriteDisposition.Automatic, PatchWriteBlocker.RecoveryUnavailable);
+            AssertDecision(PatchWritePolicy.Decide(empty, ExecutionMode.ProjectEdit), PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
         });
 
         await check("unknown local execution modes fail closed for ordinary and high-risk patch assessments", async () =>
@@ -115,7 +115,7 @@ internal static class PatchWritePolicyChecks
             foreach (var mode in Enum.GetValues<ExecutionMode>())
             {
                 var result = PatchWritePolicy.Decide(risk, mode);
-                Assert(!result.CanCommit && ReferenceEquals(result.Assessment, risk), "No live workspace or approval lookup");
+                Assert(result.CanCommit == (mode != ExecutionMode.ReadOnly) && ReferenceEquals(result.Assessment, risk), "No live workspace or backup readiness lookup");
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
                 try { PatchWritePolicy.Decide(risk, mode, cancelled.Token); throw new Exception("Expected cancellation"); }
@@ -128,7 +128,7 @@ internal static class PatchWritePolicyChecks
     private static void AssertDecision(PatchWriteDecision decision, PatchWriteDisposition disposition, PatchWriteBlocker blockers)
     {
         Assert(decision.Disposition == disposition && decision.Blockers == blockers, "Disposition and blocking causes");
-        Assert(!decision.CanCommit, "Unavailable recovery or approval cannot grant commit permission");
+        Assert(decision.CanCommit == (blockers == PatchWriteBlocker.None), "Only unblocked policy allows a recorded attempt");
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch write policy: " + message); }
 

@@ -10,7 +10,6 @@ internal enum PatchWriteBlocker
     None = 0,
     ReadOnlyMode = 1,
     UnknownMode = 2,
-    RecoveryUnavailable = 4,
     ApprovalUnavailable = 8
 }
 
@@ -24,9 +23,8 @@ internal sealed record PatchWriteDecision(PatchRiskAssessment Assessment, Execut
     {
         PatchWriteBlocker.ReadOnlyMode => "ReadOnly mode does not allow patch writes. Use dry_run=true to preview changes.",
         PatchWriteBlocker.UnknownMode => "Unknown execution mode; patch writes are denied. Use dry_run=true to preview changes.",
-        PatchWriteBlocker.RecoveryUnavailable => "Patch writes are unavailable until recovery records are supported. Use dry_run=true to preview changes.",
-        PatchWriteBlocker.ApprovalUnavailable | PatchWriteBlocker.RecoveryUnavailable =>
-            "Patch writes require local approval and recovery records, which are unavailable. Use dry_run=true to preview changes.",
+        PatchWriteBlocker.ApprovalUnavailable =>
+            "Patch writes require local approval, which is unavailable. Use dry_run=true to preview changes.",
         _ => "Patch writes are unavailable. Use dry_run=true to preview changes."
     };
 }
@@ -38,14 +36,15 @@ internal static class PatchWritePolicy
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(assessment);
-        // Missing services remain blockers. There are no caller-provided approval or recovery-ready switches.
+        // Eligible attempts always go through real recovery preparation in ToolExecutionService.
+        // This pure decision performs no storage preflight and grants no approval or backup capability.
         return mode switch
         {
             ExecutionMode.ReadOnly => new(assessment, mode, PatchWriteDisposition.Denied, PatchWriteBlocker.ReadOnlyMode),
             ExecutionMode.ProjectEdit when assessment.RequiresApproval => new(assessment, mode,
-                PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable | PatchWriteBlocker.RecoveryUnavailable),
+                PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable),
             ExecutionMode.ProjectEdit or ExecutionMode.FullAccess => new(assessment, mode,
-                PatchWriteDisposition.Automatic, PatchWriteBlocker.RecoveryUnavailable),
+                PatchWriteDisposition.Automatic, PatchWriteBlocker.None),
             _ => new(assessment, mode, PatchWriteDisposition.Denied, PatchWriteBlocker.UnknownMode)
         };
     }

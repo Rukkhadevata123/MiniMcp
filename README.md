@@ -4,7 +4,7 @@ MiniMcp 由 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口组成，HTTP
 
 CLI 与桌面窗口直接控制 Runtime 的启动和停止。`/mcp` 提供 stateless Streamable HTTP，`/healthz` 提供本机健康检查。
 
-MCP 提供 `read_file`、`apply_patch` 和 `bash`，三个工具使用同一个会话执行入口。所有模式允许读取和补丁预演，实际补丁写入关闭；Bash 仅 FullAccess 允许执行。
+MCP 提供 `read_file`、`apply_patch` 和 `bash`，三个工具使用同一个会话执行入口。所有模式允许读取和补丁预演；ProjectEdit 允许普通补丁，FullAccess 允许全部通过基础检查的补丁，每次实际提交均保存恢复记录。Bash 仅 FullAccess 允许执行。
 
 ## 项目结构
 
@@ -66,7 +66,7 @@ CloudflareAccess 的 `/mcp` 要求认证，每个请求由认证/授权中间件
 
 `examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限、恢复目录和补丁审批阈值。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。执行权限在共用工具入口检查。
 
-`policy.json` 的 `patchApprovalLimits` 保存 ProjectEdit 普通补丁自动放行的上限：`maxPaths` 默认 10，`maxChangedLines` 默认 500，`maxChangedBytes` 默认 65536。口径为整批不同路径数、增删行之和、增删真实字节之和，移动包含源和目标两个路径；超过任一上限需要确认。各项接受 0 至 2147483647 的整数，0 表示该维度的非零变更需要确认；省略对象或字段使用默认值，负值、空值和错误类型报错。这组阈值用于补丁预演的整批评估，实际补丁写入关闭。
+`policy.json` 的 `patchApprovalLimits` 保存 ProjectEdit 普通补丁自动放行的上限：`maxPaths` 默认 10，`maxChangedLines` 默认 500，`maxChangedBytes` 默认 65536。口径为整批不同路径数、增删行之和、增删真实字节之和，移动包含源和目标两个路径；超过任一上限需要确认。各项接受 0 至 2147483647 的整数，0 表示该维度的非零变更需要确认；省略对象或字段使用默认值，负值、空值和错误类型报错。ProjectEdit 需确认的补丁因无本机审批入口而整批拒绝，FullAccess 免审批但遵守基础限制与强制恢复记录要求。
 
 Runtime 的 `ConfigurationPaths` 提供共用路径规则：Windows 配置位于 `%LOCALAPPDATA%/MiniMcp/`，Linux 位于 `$XDG_CONFIG_HOME/minimcp/`（默认 `~/.config/minimcp/`）；其中分别存放 `settings.json`、`policy.json`。恢复目录在 Windows 默认为配置目录下的 `recovery/`，Linux 为 `$XDG_STATE_HOME/minimcp/recovery/`（默认 `~/.local/state/minimcp/recovery/`），相对 XDG 值忽略。配置文件选择相对调用者工作目录，JSON 内路径相对所属文件目录；路径计算不创建文件，不展开环境变量或 `~`。这些规则供后续配置加载器使用。
 
@@ -108,24 +108,28 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
 | `read_file` | `path`、`start_line=1`、`end_line=null` | 读取 UTF-8 文本，行号从 1 开始，包含结束行 |
-| `apply_patch` | `patch`、`dry_run=false` | 设置 `dry_run=true` 返回新增、更新、移动、删除的完整 diff 和统计；实际写入被拒绝 |
+| `apply_patch` | `patch`、`dry_run=false` | 预演返回完整 diff、统计和策略决定；实际提交按本机模式执行并强制保存恢复记录 |
 | `bash` | `command`、`workdir="."`、`timeout_seconds=30` | 仅 FullAccess 允许执行，超时范围 1–600 秒 |
 
 文件路径和工作目录参数使用相对项目根的 `/` 分隔路径。文件工具拒绝越界、链接、私密目录和凭据文件；单文件最多 256 KiB。`read_file` 的内容和 Bash 的每个输出流分别最多 16000 个 UTF-16 字符单元；补丁 diff 使用下述独立限制。
 
-三个工具通过同一个执行服务使用固定的运行策略：所有模式允许读取和补丁预演；ReadOnly 拒绝实际补丁写入和 Bash，ProjectEdit 的 Bash 因需要本机审批而拒绝，FullAccess 允许 Bash。实际补丁写入在全部模式下关闭，预演会展示策略决定与当前阻塞原因。工具参数不能批准请求、声明恢复就绪或修改模式和阈值。
+三个工具通过同一个执行服务使用固定的运行策略：所有模式允许读取和补丁预演；ReadOnly 拒绝实际补丁写入和 Bash。ProjectEdit 自动执行通过风险评估的普通源码/文档补丁，删除、移动、关键文件、未知类型及超出批量阈值的整批补丁要求本机确认，当前因无审批入口而拒绝；Bash 同样拒绝。FullAccess 允许通过基础检查的补丁和 Bash。工具参数不能批准请求、关闭备份、声明恢复就绪或修改模式和阈值。
 
 补丁使用 `*** Begin Patch` / `*** End Patch` 格式，精确匹配上下文。内部补丁引擎的写入、BOM/换行/Unix 权限保留和提交失败回滚由核心检查验证。
 
-内部 `CommitWithRecoveryAsync` 在同一工作区修改锁内完成计划复查、原字节备份、`Applying` 持久化、实际提交或回滚、结果核验及最终记录保存。备份失败不创建工作区目录或暂存文件；准备后、暂存后和每个操作安装前复查外部修改。`Applying` 完成核验后，即使调用取消也会核验实际结果并等待最终清单保存；保存失败保留对应记录与引擎结果，不额外回滚工作区。该入口仅供内部流程检查，MCP 工具的实际写入仍按上述规则拒绝。
+实际补丁经共享执行入口调用 `CommitWithRecoveryAsync`，在同一工作区修改锁内完成计划复查、原字节备份、`Applying` 持久化、实际提交或回滚、结果核验及最终记录保存。备份失败不创建工作区目录或暂存文件；准备后、暂存后和每个操作安装前复查外部修改。`Applying` 完成核验后，即使调用取消也会核验实际结果并等待最终清单保存；保存失败保留对应记录与引擎结果，不额外回滚工作区。恢复目录固定限制为 1000 个顶层记录槽和 1 GiB 文件字节，未知或部分记录也计入；满额或无法可靠写入时拒绝新提交，不自动清除旧记录或回退为无记录写入。
 
-`dry_run=true` 成功返回 `dryRun=true`、完整 `diff`、逐文件 `changes`、合计 `statistics`、整批 `risk` 和 `decision`。每个 `changes` 元素包含 `summary`（`action`、`path`、`moveTo`、`beforeBytes`、`afterBytes`）、该文件的 `statistics` 与 `risk`；统计字段为 `addedLines`、`removedLines`、`addedBytes`、`removedBytes`。MCP 的结构化结果和文本 JSON 包含一致的完整预览和决定，不返回内部计划、原始快照对象、绝对配置路径或批准凭证。
+`dry_run=true` 成功返回 `dryRun=true`、完整 `diff`、逐文件 `changes`、合计 `statistics`、整批 `risk`、`decision` 和 `commit=null`。每个 `changes` 元素包含 `summary`（`action`、`path`、`moveTo`、`beforeBytes`、`afterBytes`）、该文件的 `statistics` 与 `risk`；统计字段为 `addedLines`、`removedLines`、`addedBytes`、`removedBytes`。MCP 的结构化结果和文本 JSON 包含一致的完整预览和决定，不返回内部计划、原始快照对象、绝对配置路径或批准凭证。
+
+`dry_run=false` 成功返回同一组评估字段、`dryRun=false` 以及 `commit`：包含本次 `runId`、恢复记录 `changeId`、`state="Committed"` 和 `cleanupIncomplete`。只有实际结果核验及最终清单保存完成后才返回成功；`cleanupIncomplete=true` 表示安装成功后的引擎暂存/旧备份清理有错误，不表示补丁已回滚。恢复目录中的记录按 `changeId` 命名，`manifest.json` 记录操作、状态和哈希，`before-*.bin` 保存完整原字节，包括提交前尚未提交到 Git 的内容。
 
 逐文件 `risk` 包含 `kind`（`Ordinary`、`Critical`、`Unknown`）和字符串数组 `reasons`。关键规则优先于普通源码/文档扩展名，覆盖脚本、构建文件、CI/自动化目录和实际选定的配置文件；未知类型、删除与移动列入需确认原因。整批 `risk` 包含 `size`（`paths`、`changedLines`、`changedBytes`）、本机 `limits` 和所有 `reasons`。原因包括 `CriticalFile`、`UnknownFileType`、`Delete`、`Move`、`PathLimitExceeded`、`ChangedLineLimitExceeded`、`ChangedByteLimitExceeded`，不把 `None` 放入数组。
 
-`decision` 包含本机 `mode`、策略意向 `disposition`、当前 `blockers`、`requiresRecoveryRecord` 和 `canCommit`。ReadOnly 的意向为 `Denied`；ProjectEdit 的普通补丁为 `Automatic`，含任一需确认原因时整批为 `RequiresApproval`；FullAccess 为 `Automatic`。`Automatic` 表示免人工确认，实际能否提交由阻塞条件决定。当前 `canCommit` 在所有模式下均为 `false`：ReadOnly 的阻塞原因为 `ReadOnlyMode`，其余模式均有 `RecoveryUnavailable`，ProjectEdit 的需确认补丁还包含 `ApprovalUnavailable`。需要写入的两种策略意向均要求恢复记录；普通文件不会从混合补丁中被单独执行。
+`decision` 包含本机 `mode`、策略意向 `disposition`、当前 `blockers`、`requiresRecoveryRecord` 和 `canCommit`。ReadOnly 的意向为 `Denied`，阻塞原因为 `ReadOnlyMode`；ProjectEdit 的普通补丁为 `Automatic`，含任一需确认原因时整批为 `RequiresApproval` 并由 `ApprovalUnavailable` 阻塞；FullAccess 为 `Automatic`。无阻塞时 `canCommit=true` 仅表示允许尝试带记录提交，预演不会创建或检查备份是否就绪，实际提交仍须通过恢复存储、容量和工作区重检。所有允许写入的补丁都要求恢复记录；普通文件不会从需确认的混合补丁中被单独执行。
 
-预演和实际提交请求都先完成基础校验、完整 diff 和整批评估；实际提交按上述原因返回工具错误，不执行写入。超过固定预览大小或计算上限时返回要求拆小补丁的错误，FullAccess 也遵守这些限制。
+预演和实际提交请求都先完成基础校验、完整 diff 和整批评估。被策略拒绝的请求不会准备记录或执行写入；超过固定预览大小或计算上限时返回要求拆小补丁的错误，FullAccess 也遵守这些限制。提交或回滚不完整、结果核验失败及最终清单保存失败会返回工具错误，包含实际引擎/核验状态及对应记录、会话 ID，不导出原始 IO 异常或绝对存储路径；最终保存失败可能发生在工作区已成功修改之后，不能按“工具错误”等同于“未写入”或直接重放补丁。
+
+停止 Runtime 会拒绝新调用，取消并等待已拥有的请求，包括真实提交、回滚和最终记录保存，再释放 Host。超时后保留故障状态及资源所有权，清理完成前不允许新 Host。客户端取消 HTTP 等待可能丢失响应，服务端仍完成已开始安装的整批操作和记录；重连后应先检查实际内容及对应记录。
 
 diff 展示全部改动和三行上下文，正文每行用 JSON 字符串表示，包含原行尾并转义控制字符；文件头展示路径、BOM、换行类型、末尾换行和适用的 Unix 权限。新增文件的 Unix 模式表示创建请求，实际权限受 umask 影响。增删字节按完整变更行的真实 UTF-8 字节计算，包含行尾，BOM 变化另计；上下文、展示转义和纯路径移动不计入修改量。
 
@@ -145,13 +149,13 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 运行检查需要 Bash，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
 
-核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、提交结果及回滚/清理错误、提交取消边界、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、三模式整批决定和执行阻塞原因、内存恢复草稿的原字节/前后路径状态/权限/哈希、恢复清单的严格 JSON/必需字段/大小边界、记录归属与操作/路径/备份引用对应关系、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、写入拒绝及 Bash 权限；检查大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
+核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、提交结果及回滚/清理错误、提交取消边界、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、三模式整批决定和执行阻塞原因、内存恢复草稿的原字节/前后路径状态/权限/哈希、恢复清单的严格 JSON/必需字段/大小边界、记录归属与操作/路径/备份引用对应关系、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、带记录写入、策略拒绝及 Bash 权限；交叉核对公开会话/记录 ID、真实持久化状态与原字节备份，伪造关闭恢复等参数不能绕过记录。大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 
 Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发启动、会话隔离、真实 Bash 子进程的客户端/运行时取消、等待修改锁的调用取消、停止期限及释放任务复用、停止后重用端口和释放后禁止启动；同时验证恢复目录的范围/链接/类型与容量预检、准备记录真实落盘和读回校验、准备记录归属与目录/文件身份重检、清单替换的临时容量/身份核对/刷新/读回与不确定结果、Prepared→Applying 转换及内存版本同步/失效/后续清单容量预检、执行结果与一次性上下文绑定、持锁核对实际文件及最终清单候选、最终状态可靠更新/失败重试/不确定结果及真实任务等待、取消/失败清理、并发最后一槽及跨进程占锁、记录有界加载与备份长度/哈希/UTF-8 校验、真实 JWT 签名/issuer/AUD/有效期/算法校验、单个断言头、公钥缓存与受限刷新、执行策略独立性、Host 白名单及固定长度/分块请求体上限。恢复检查使用独立临时目录，验证只读文件加载、备份存储期间工作区和旧记录保持原样、损坏/缺失/额外备份与链接拒绝、结果或回滚核验失败不能被记录为完整成功，以及取消和并发替换不会清理外部数据。加载和候选构造不授予提交或恢复权限，最终状态由绑定执行结果的内部更新入口持久化。认证检查只替换 JWKS 文档获取，密钥在内存中生成，不依赖公网或真实 Cloudflare 凭据。
 
 真实 MCP SDK HTTP 客户端检查覆盖工具发现/schema、三个模式的读取/预演/拒绝、逐文件风险与整批决定、阈值精确边界及逐项超限、自选配置文件识别、公开输出字段限制、大型完整 diff 及超限拒绝、FullAccess Bash 的结果与超时、跨请求鉴权、客户端取消后的子进程退出、跨客户端的修改互斥与停止排空、重启后的项目/模式/阈值隔离，以及 CLI 启动后的实际 MCP 调用。伪造模式、阈值、批准、恢复状态或决定参数不改变本机策略；取消排队中的预演不影响另一客户端正在运行的 Bash，预演和拒绝前后的存储快照一致。检查确认 stateless 响应不使用会话头，默认 Host 不暴露测试探针和 legacy SSE 路由；这些检查不替代 WinUI 交互或公网 OAuth/Tunnel 的实际验证。
 
-内部组合提交检查在混合补丁的每个安装位置注入失败或取消，交叉核对实际工作区、原字节备份、权限和持久化终态；覆盖额度增长、存储占锁、记录篡改、部分回滚、暂存清理、各终态清单保存失败及元数据重试。并发检查验证同一工作区多个提交在最终记录保存前持续互斥、排队取消和重复计划重检、不同工作区的独立执行，以及最终保存等待存储互斥时取消仍保留真实任务与工作区锁。公开 MCP/CLI 检查覆盖当前预演和写入拒绝行为。
+内部组合提交检查在混合补丁的每个安装位置注入失败或取消，交叉核对实际工作区、原字节备份、权限和持久化终态；覆盖额度增长、存储占锁、记录篡改、部分回滚、暂存清理、各终态清单保存失败及元数据重试。并发检查验证同一工作区多个提交在最终记录保存前持续互斥、排队取消和重复计划重检、不同工作区的独立执行，以及最终保存等待存储互斥时取消仍保留真实任务与工作区锁。共享入口、真实 HTTP 和 CLI 检查覆盖允许的真实写入、恢复失败零提前写入、错误输出边界、客户端取消及运行时停止期限、真实排空和重启隔离。
 
 <a id="references"></a>
 

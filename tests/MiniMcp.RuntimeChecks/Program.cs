@@ -290,12 +290,15 @@ await RecoveryFinalizationChecks.RunAsync(Check);
 await RecordedPatchCommitChecks.RunAsync(Check);
 await RecordedPatchFaultChecks.RunAsync(Check);
 await RecordedPatchConcurrencyChecks.RunAsync(Check);
+await RecordedToolExecutionChecks.RunAsync(Check);
+await RecordedToolLifetimeChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
 await RuntimeCallChecks.RunAsync(Check);
 await HttpSecurityChecks.RunAsync(Check);
 await McpHttpChecks.RunAsync(Check);
+await RecordedToolHttpChecks.RunAsync(Check);
 await CliChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");

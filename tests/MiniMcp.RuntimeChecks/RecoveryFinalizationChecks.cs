@@ -316,8 +316,21 @@ internal static class RecoveryFinalizationChecks
             .Select(path => Path.GetRelativePath(Storage, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))).ToArray();
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + ":" + (Directory.Exists(path) ? "directory" : Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public string[] ProjectSnapshot() => Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
-            .Select(path => Path.GetRelativePath(Root, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))).ToArray();
+        public string[] ProjectSnapshot()
+        {
+            // Enumeration and opening names are separate observations. Re-enumerate a bounded
+            // number of times if a rename leaves a stale name; never drop an unreadable entry.
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    return Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
+                        .Select(path => Path.GetRelativePath(Root, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))).ToArray();
+                }
+                catch (FileNotFoundException) when (attempt < 2) { }
+                catch (DirectoryNotFoundException) when (attempt < 2) { }
+            }
+        }
         public void Dispose() { Workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
     }
 }
