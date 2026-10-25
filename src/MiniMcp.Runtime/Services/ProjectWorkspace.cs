@@ -33,25 +33,36 @@ internal sealed class ProjectWorkspace
 
     public string Resolve(string path)
     {
+        var full = ResolvePath(Root, path);
+        CheckRoot(Root);
+        var current = Root;
+        foreach (var part in Path.GetRelativePath(Root, full).Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, part);
+            RejectLink(current);
+        }
+        return full;
+    }
+
+    // Pure syntax, containment and private-name checks shared with recovery metadata validation.
+    // File operations additionally call Resolve to inspect the live root and reject links.
+    internal static string ResolvePath(string root, string path)
+    {
         if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path) ||
             path.Contains('\\') || path.Contains(':') || path.Contains('\0'))
             throw new WorkspaceException("Use a relative project path with / separators.");
         string full;
-        try { full = Path.GetFullPath(Path.Combine(Root, path)); }
+        try { full = Path.GetFullPath(Path.Combine(root, path)); }
         catch (ArgumentException) { throw new WorkspaceException("Invalid project path."); }
-        var relative = Path.GetRelativePath(Root, full);
+        var relative = Path.GetRelativePath(root, full);
         if (relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
             Path.IsPathRooted(relative))
             throw new WorkspaceException("The path is outside the project root.");
 
-        CheckRoot(Root);
-        var current = Root;
         foreach (var part in relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
         {
             if (IsPrivateName(part))
                 throw new WorkspaceException("Credential files and private metadata directories are not exposed by file tools.");
-            current = Path.Combine(current, part);
-            RejectLink(current);
         }
         return full;
     }

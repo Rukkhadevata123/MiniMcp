@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 using MiniMcp.Services;
 
 namespace MiniMcp.Recovery;
@@ -16,8 +17,8 @@ internal sealed record RecoveryBackup(string FileName, ImmutableArray<byte> Byte
 internal sealed record RecoveryManifest(Guid ChangeId, Guid RunId, string ProjectRoot, DateTimeOffset CreatedAtUtc,
     ImmutableArray<RecoveryOperation> Operations, ImmutableArray<RecoveryPathState> Paths)
 {
-    public int SchemaVersion { get; init; } = 1;
-    public RecoveryRecordState State { get; init; } = RecoveryRecordState.Prepared;
+    [JsonRequired] public int SchemaVersion { get; init; } = 1;
+    [JsonRequired] public RecoveryRecordState State { get; init; } = RecoveryRecordState.Prepared;
 }
 
 // An in-memory draft is neither a stored backup nor permission to write. Only the manifest is persisted later.

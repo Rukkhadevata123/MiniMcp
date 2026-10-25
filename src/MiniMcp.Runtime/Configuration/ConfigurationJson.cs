@@ -1,7 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.Unicode;
+using MiniMcp.Serialization;
 
 namespace MiniMcp.Configuration;
 
@@ -58,21 +58,4 @@ public static class ConfigurationJson
             throw new JsonException($"Unsupported schemaVersion {version}; expected 1.", "$.schemaVersion", null, null);
     }
 
-    // The standard enum converter also accepts case variants and comma-separated names.
-    // Configuration uses only exact, individual enum names, including for execution permissions.
-    private sealed class NamedEnumConverter<T> : JsonConverter<T> where T : struct, Enum
-    {
-        public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        {
-            if (reader.TokenType == JsonTokenType.String)
-            {
-                var name = reader.GetString();
-                if (Enum.TryParse<T>(name, out var value) && Enum.GetName(value) == name) return value;
-            }
-            throw new JsonException($"Use an exact {typeof(T).Name} name: {string.Join(", ", Enum.GetNames<T>())}.");
-        }
-
-        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) =>
-            writer.WriteStringValue(Enum.GetName(value) ?? throw new JsonException($"Unknown {typeof(T).Name} value."));
-    }
 }

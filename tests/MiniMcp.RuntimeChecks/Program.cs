@@ -2,6 +2,17 @@ using System.Net;
 using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Runtime;
+using MiniMcp.Recovery;
+
+if (args is ["--recovery-lock-child", var lockPath, var lockMarker])
+{
+    using var held = RecoveryFileSystem.OpenFile(lockPath, FileMode.OpenOrCreate);
+    RecoveryFileSystem.Lock(held);
+    await File.WriteAllTextAsync(lockMarker + ".tmp", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    File.Move(lockMarker + ".tmp", lockMarker);
+    await Task.Delay(Timeout.InfiniteTimeSpan);
+    return 0;
+}
 
 // A real descendant process used to verify Bash cancellation and runtime shutdown containment.
 if (args is ["--execution-child", var marker])
@@ -268,6 +279,9 @@ await ConfigurationSerializationChecks.RunAsync(Check);
 await ConfigurationSaveChecks.RunAsync(Check);
 await ConfigurationPolicySaveChecks.RunAsync(Check);
 await ConfigurationPatchLimitChecks.RunAsync(Check);
+await RecoveryStorageGuardChecks.RunAsync(Check);
+await RecoveryStoreChecks.RunAsync(Check);
+await RecoveryLoadingChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
