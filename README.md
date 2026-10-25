@@ -13,6 +13,7 @@ MiniMcp.slnx
 src/
   MiniMcp.Runtime/           .NET 10 类库
     McpRuntime.cs            由调用者控制的进程内 HTTP 生命周期
+    Diagnostics/            有界脱敏日志、独立状态订阅与输出排空
     Configuration/          运行配置、认证和本机执行策略模型
     Security/               Cloudflare Access JWT 验证
     Services/               文件、补丁、Bash 与进程清理
@@ -55,6 +56,14 @@ Local 模式下，MCP 客户端使用启动时输出的 `http://127.0.0.1:<port>
 CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration)`、`StopAsync` 和 `DisposeAsync` 控制服务；公开启动接口必须提供完整校验生成的配置。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
 `McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动 MCP HTTP 和健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 与桌面都使用正式配置启动。
+
+Runtime 通过 `ILogger` 收集 Information 及以上的 Host、MCP 和生命周期诊断。`GetLogs()` 返回不可变日志快照，最多保留 1000 条、512 Ki 个 UTF-16 字符单元（消息和类别合计）；单条消息最多 4096、类别最多 256 个字符。`ClearLogs()` 清空保留缓冲，序号继续递增。日志保留跨会话历史，每条包含 `RunId`、递增序号、UTC 时间、级别、类别和事件编号；已结束会话的缓存 logger 拒绝新日志。
+
+`SubscribeLogs()` 和 `SubscribeState()` 原子捕获 `Initial`，各自的 `Reader` 只提供订阅后的变化。每个观察者独立消费：日志队列最多 128 条，满时丢弃最旧条目，可通过序号发现缺口并用 `GetLogs()` 重新加载；状态队列合并为最新快照，不依赖日志推断。消费者自行在终端或 UI 调度显示，不在生产者线程同步调用观察者。订阅需释放或绑定取消令牌；Runtime 成功释放后，读者可排空最后内容，后续订阅仍可读取终态及保留日志。
+
+凭据字段、认证头、Bearer/Basic、JWT 和 URL 用户凭据在进入日志缓冲及订阅前统一脱敏，故障快照的错误文本采用同一规则。包含敏感结构化字段的整条消息会省略，避免自定义格式化绕过替换；原始消息超过 64 Ki 字符也整条省略。这些规则不能识别任意无字段名的秘密，调用方不得记录 token 文件正文、工具正文或审批正文。复制和导出应直接使用已脱敏条目，终端展示还需转义控制字符。
+
+外部输出读取器每次读取最多 4096 字符，逻辑行最多保留 8192 字符；更长的行只输出一次省略标记，继续排空至换行后恢复，不发布截断的原始片段。stdout/stderr 可分别排空，读者取消或 IO 故障由所属进程生命周期处理。
 
 每次启动在监听前初始化独立的工具执行服务，绑定快照中的同一份配置和 `RunId`。该 Host 的请求共享执行服务、工作区和修改互斥，服务由 Host 的 DI 容器释放；停止后旧执行服务拒绝调用，重新启动使用新的会话。工作区初始化、启动或端口绑定失败会清理已创建的资源；清理失败保留所有权并阻止再次启动。
 

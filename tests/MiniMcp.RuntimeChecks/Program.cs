@@ -301,6 +301,8 @@ await RecoveryRestoreLifetimeChecks.RunAsync(Check);
 await RecordedToolLifetimeChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
+await RuntimeDiagnosticsChecks.RunAsync(Check);
+await ProcessOutputReaderChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
 await RuntimeCallChecks.RunAsync(Check);
 await HttpSecurityChecks.RunAsync(Check);

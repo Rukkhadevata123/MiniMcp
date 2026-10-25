@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using MiniMcp.Configuration;
 using MiniMcp.Security;
 using MiniMcp.Services;
@@ -29,7 +30,8 @@ public sealed class McpRuntime : IAsyncDisposable
     private ToolExecutionService? _execution;
     private Task? _hostStopTask;
     private Task? _hostDisposeTask;
-    private RuntimeSnapshot _snapshot = new(RuntimeState.Stopped);
+    private readonly RuntimeDiagnostics _diagnostics = new();
+    private ILogger? _runtimeLogger;
     private bool _disposed;
 
     public McpRuntime() { }
@@ -45,9 +47,21 @@ public sealed class McpRuntime : IAsyncDisposable
         _configureEndpoints = configureEndpoints;
     }
 
-    public RuntimeSnapshot Snapshot => Volatile.Read(ref _snapshot);
+    public RuntimeSnapshot Snapshot => _diagnostics.Snapshot;
     public Uri? Address => Snapshot.Address;
     internal ToolExecutionService? Execution => Volatile.Read(ref _execution);
+
+    /// <summary>Up to 1000 entries / 512 Ki UTF-16 characters; each message is at most 4096 characters.</summary>
+    public RuntimeLogSnapshot GetLogs() => _diagnostics.GetLogs();
+    public void ClearLogs() => _diagnostics.ClearLogs();
+
+    /// <summary>Atomically captures retained logs and subscribes to new entries (128 queued entries maximum).</summary>
+    public RuntimeSubscription<RuntimeLogEntry> SubscribeLogs(CancellationToken cancellationToken = default) =>
+        _diagnostics.SubscribeLogs(cancellationToken);
+
+    /// <summary>Captures the current state and subscribes to changes; a slow reader receives the latest state.</summary>
+    public RuntimeSubscription<RuntimeSnapshot> SubscribeState(CancellationToken cancellationToken = default) =>
+        _diagnostics.SubscribeState(cancellationToken);
 
     // In-process local entry; admission/cancellation belongs to the actual session, not the lifecycle lock.
     public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default)
@@ -68,7 +82,10 @@ public sealed class McpRuntime : IAsyncDisposable
             if (_application is not null) throw new InvalidOperationException("The runtime already owns an HTTP host. Stop it before starting again.");
 
             var runId = Guid.NewGuid();
-            Publish(new RuntimeSnapshot(RuntimeState.Starting, runId, configuration));
+            var logProvider = new RuntimeLoggerProvider(_diagnostics, runId);
+            _runtimeLogger = logProvider.CreateLogger(typeof(McpRuntime).FullName!);
+            _diagnostics.BeginRun(new RuntimeSnapshot(RuntimeState.Starting, runId, configuration));
+            LogState(Snapshot);
             try
             {
                 var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions
@@ -77,6 +94,7 @@ public sealed class McpRuntime : IAsyncDisposable
                     ApplicationName = typeof(McpRuntime).Assembly.GetName().Name,
                     ContentRootPath = AppContext.BaseDirectory
                 });
+                builder.Logging.ClearProviders().SetMinimumLevel(LogLevel.Information).AddProvider(logProvider);
                 var port = _testPortOverride ?? configuration.Settings.Port;
                 builder.WebHost.UseKestrel(options =>
                 {
@@ -160,6 +178,7 @@ public sealed class McpRuntime : IAsyncDisposable
             {
                 var cancelled = error is OperationCanceledException && cancellationToken.IsCancellationRequested && _application is null;
                 Publish(Snapshot with { State = cancelled ? RuntimeState.Stopped : RuntimeState.Faulted, Error = cancelled ? null : error.Message });
+                if (_application is null) _diagnostics.EndRun(runId);
                 throw;
             }
         }
@@ -182,6 +201,7 @@ public sealed class McpRuntime : IAsyncDisposable
             await StopCoreAsync(CancellationToken.None).ConfigureAwait(false);
             _disposed = true;
             Publish(Snapshot with { State = RuntimeState.Disposed });
+            _diagnostics.Complete();
         }
         finally { _lifecycle.Release(); }
         // Keep the managed semaphore usable for calls racing with disposal; it owns no wait handle.
@@ -214,6 +234,7 @@ public sealed class McpRuntime : IAsyncDisposable
             await DisposeHostAsync(application, token).ConfigureAwait(false);
             ReleaseHost();
             Publish(Snapshot with { State = RuntimeState.Stopped, Address = null });
+            _diagnostics.EndRun(Snapshot.RunId);
         }
         catch (Exception error)
         {
@@ -237,7 +258,18 @@ public sealed class McpRuntime : IAsyncDisposable
         _hostDisposeTask = null;
     }
 
-    private void Publish(RuntimeSnapshot snapshot) => Volatile.Write(ref _snapshot, snapshot);
+    private void Publish(RuntimeSnapshot snapshot)
+    {
+        if (snapshot.Error is { } error)
+            snapshot = snapshot with { Error = LogSanitizer.Sanitize(error, RuntimeDiagnostics.MaxEntryCharacters, out _) };
+        if (_diagnostics.Publish(snapshot)) LogState(snapshot);
+    }
+
+    private void LogState(RuntimeSnapshot snapshot)
+    {
+        if (snapshot.Error is { } error) _runtimeLogger?.LogError("Runtime state: {State}. {Error}", snapshot.State, error);
+        else _runtimeLogger?.LogInformation("Runtime state: {State}.", snapshot.State);
+    }
 
     private sealed class CallerControlledLifetime : IHostLifetime
     {
