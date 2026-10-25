@@ -38,15 +38,15 @@ public sealed class ConfigurationValidator
         if (policy.Mode != ExecutionMode.ReadOnly)
         {
             var bash = Field("bashPath", () => CheckProgram(_findBash(settings.BashPath, settingsFile), "Bash"));
-            if (OperatingSystem.IsLinux())
-                Field("setsid", () =>
-                {
-                    if (!File.Exists("/usr/bin/setsid"))
-                        throw new InvalidOperationException("Install util-linux: /usr/bin/setsid is required for Bash process cleanup.");
-                    return CheckProgram("/usr/bin/setsid", "setsid");
-                });
             settings = settings with { BashPath = bash };
         }
+        if (OperatingSystem.IsLinux() && (policy.Mode != ExecutionMode.ReadOnly || settings.Tunnel.Enabled))
+            Field("setsid", () =>
+            {
+                if (!File.Exists("/usr/bin/setsid"))
+                    throw new InvalidOperationException("Install util-linux: /usr/bin/setsid is required for managed process cleanup.");
+                return CheckProgram("/usr/bin/setsid", "setsid");
+            });
         if (settings.Tunnel.Enabled)
         {
             var cloudflared = Field("tunnel.executablePath", () =>

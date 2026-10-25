@@ -49,7 +49,7 @@ dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode Read
 
 无参数或 `run --help` 显示帮助。`run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]` 从 JSON 读取端口及项目；省略 `--config` 时使用默认用户配置，策略固定来自用户目录的 `policy.json`。`--mode` 只覆盖本次会话，不写文件。监听 `127.0.0.1`，访问输出的 `/healthz` 地址返回 `{"status":"ok"}`；Ctrl+C 或 Linux SIGTERM 正常停止并释放服务。
 
-正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。输出包含 MCP 连接地址、健康检查地址及运行模式；HTTP 认证与请求边界见下文，工具调用使用本机执行策略，当前入口不启动受管隧道。Linux 信号路径未实机验证。
+正常结束返回 `0`，启动/停止失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/启动阶段取消返回 `130`。端口冲突保留已有服务。输出包含 MCP 连接地址、健康检查地址及运行模式；HTTP 认证与请求边界见下文，工具调用使用本机执行策略。配置启用受管隧道时，Runtime 在本机 MCP 就绪后自动启动 cloudflared。Linux 信号路径未实机验证。
 
 Local 模式下，MCP 客户端使用启动时输出的 `http://127.0.0.1:<port>/mcp`，传输方式选择 Streamable HTTP。CloudflareAccess 模式下，客户端通过配置的 `publicOrigin` 加 `/mcp` 访问外部 Cloudflare 网关，再由网关转发至本机服务。该端点按请求处理协议，不使用 MCP 会话 ID；通过鉴权的独立 GET/DELETE 返回 405，legacy `/sse`、`/message` 路由不开放。浏览器直接 GET 不能验证 MCP 调用，健康诊断使用 `/healthz`。
 
@@ -67,7 +67,15 @@ Runtime 通过 `ILogger` 收集 Information 及以上的 Host、MCP 和生命周
 
 每次启动在监听前初始化独立的工具执行服务，绑定快照中的同一份配置和 `RunId`。该 Host 的请求共享执行服务、工作区和修改互斥，服务由 Host 的 DI 容器释放；停止后旧执行服务拒绝调用，重新启动使用新的会话。工作区初始化、启动或端口绑定失败会清理已创建的资源；清理失败保留所有权并阻止再次启动。
 
-每次工具调用登记在所属会话中，并同时响应客户端和会话取消。停止先拒绝新调用，再取消并等待在途调用清理，包括运行中的 Bash 及等待修改锁的预演，随后停止和释放 Host。整个流程共用 10 秒期限；超时或取消等待后保留故障状态与资源所有权，重试继续等待未完成的停止或释放任务，清理完成后才允许启动新会话。
+每次工具调用登记在所属会话中，并同时响应客户端和会话取消。停止先拒绝新调用，再取消在途调用并停止受管隧道，等待 Bash、排队工作、隧道后代、输出读取和退出观察完成，随后停止和释放 Host。整个流程共用 10 秒期限；超时或取消等待后保留故障状态与资源所有权，重试继续等待未完成的停止或释放任务，清理完成后才允许启动新会话。`RestartAsync(RuntimeConfiguration)` 在同一个生命周期锁内完整停止后，再使用调用方重新加载、校验的已保存配置启动新会话。
+
+`Snapshot.Tunnel` 独立提供 Disabled、Stopped、Starting、Running、Stopping、Faulted，以及隧道尝试的 `InstanceId`、进程 ID、退出码和脱敏错误。受管隧道使用固定参数 `tunnel --no-autoupdate run --token-file <path>`，不经过 shell，不读取或打印 token 正文，不继承 `TUNNEL_*` 等隐式配置。进程 Running 仅表示本机进程存活，不代表公网路由、Cloudflare Access 或 OAuth 已成功；公网验证需实际通过配置的域名和认证网关。
+
+初始隧道无法创建、初始化输出失败或在启动核验前退出，会清理整次启动的 Host、会话及子进程。运行中隧道退出或输出读取故障则将隧道标为 Faulted、清理其后代和输出资源，保留本机 MCP 供诊断，不自动重启。故障快照可保留最近进程 ID，不能仅凭 ID 推断进程仍存活。本机 `StopTunnelAsync()` 可以独立停止隧道；`StartTunnelAsync()` 要求 MCP 正常运行且当前会话配置已启用隧道，并在重试前完成旧隧道清理。一次 Runtime 会话内的多个隧道尝试也使用不同标识，旧退出通知不能覆盖新尝试。
+
+Windows 隧道通过隐藏、挂起的进程创建，在创建时用 Job List 纳入独占的 kill-on-close Job Object，仅继承三条标准流的句柄，取得进程句柄后才恢复执行；清理确认 Job 中无活动进程后再释放资源。入口进程被强制结束时，关闭 Job 也会终止其中的进程，已用真实父子进程验证。[进程创建属性](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)、[Job Object](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+
+Linux 使用 `/usr/bin/setsid -- <cloudflared> ...` 创建独立会话/进程组，正常停止终止自身创建的组，并等待仍能执行的成员退出；僵尸进程的最终回收由父进程或 init 负责。Linux SIGKILL/崩溃不会执行托管清理，隧道可能遗留；代码包含受控异常退出检查，但本次未实机运行 Linux。进程组和 Job Object 都不作为文件或网络安全沙盒。[setsid 行为](https://man7.org/linux/man-pages/man1/setsid.1.html)
 
 HTTP Host 白名单在 Local 模式包含 `localhost`、`127.0.0.1` 和 `[::1]`，CloudflareAccess 模式另外包含 `publicOrigin` 的主机名；空 Host、其他域名及子域名被拒绝，转发头不改变 Host 或协议判断。Kestrel 请求体上限为 2 MiB，HTTP/1.1 分块请求的分块头尾开销也计入上限；超限读取返回 413。[Kestrel 实现](https://github.com/dotnet/aspnetcore/blob/v10.0.13/src/Servers/Kestrel/Core/src/Internal/Http/Http1ChunkedEncodingMessageBody.cs#L313)
 
@@ -91,7 +99,7 @@ Runtime 的 `ConfigurationPaths` 提供共用路径规则：Windows 配置位于
 
 `ConfigurationValidator.ValidateValues` 检查配置版本、端口范围（1–65535）、认证和执行枚举，以及隧道开关组合。Cloudflare Access 要求 HTTPS origin（可带端口和末尾 `/`，不含凭据、其他路径、query 或 fragment）、团队名前缀和无空白的 AUD；Local 模式不要求 Cloudflare 字段，且不能启用受管隧道。启用隧道时必须填写 token 文件路径。此检查不访问网络、不读取 token，也不探测程序是否可用。
 
-`ConfigurationValidator.Validate` 组合配置值、路径和启用的外部依赖检查；`ConfigurationStore.LoadAsync` 从文件调用同一流程。ReadOnly 跳过 Bash 检查，ProjectEdit/FullAccess 要求 Bash，Linux 同时要求 `/usr/bin/setsid`；隧道启用时要求 cloudflared 以及可打开、非空的 token 文件。停用功能保留其配置，不检查对应程序或文件是否存在。程序仅检查文件存在、非目录及 Linux 执行位，token 不读取正文；不启动程序、不验证版本或公网认证，实际运行仍由启动结果判断。
+`ConfigurationValidator.Validate` 组合配置值、路径和启用的外部依赖检查；`ConfigurationStore.LoadAsync` 从文件调用同一流程。ReadOnly 跳过 Bash 检查，ProjectEdit/FullAccess 要求 Bash；Linux 在 Bash 或受管隧道启用时要求 `/usr/bin/setsid`。隧道启用时要求 cloudflared 以及可打开、非空的 token 文件。停用功能保留其配置，不检查对应程序或文件是否存在。程序仅检查文件存在、非目录及 Linux 执行位，token 不读取正文；不启动程序、不验证版本或公网认证，实际运行仍由启动结果判断。
 
 完整校验返回 `RuntimeConfiguration`，只读保存规范化后的 `AppSettings`、`ExecutionPolicy` 与 `SettingsFilePath`，作为运行入口的共用配置输入。`SettingsFilePath` 为实际配置来源的绝对路径；校验内存草稿时，它表示预期保存路径，用于识别自选文件名的关键配置。`ConfigurationStore.LoadAsync(..., mode: ExecutionMode.ReadOnly)` 可为本次加载选择执行模式；该选择在两份文件成功解析后应用，并参与完整校验，不写回 `policy.json`。已生成的配置快照不随文件或编辑草稿变化。
 

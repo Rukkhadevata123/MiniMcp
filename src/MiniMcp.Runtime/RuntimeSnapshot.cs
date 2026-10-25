@@ -18,4 +18,14 @@ public enum RuntimeState
 /// A fault may retain host ownership and its last bound address until cleanup succeeds.
 /// </summary>
 public sealed record RuntimeSnapshot(RuntimeState State, Guid? RunId = null,
-    RuntimeConfiguration? Configuration = null, Uri? Address = null, string? Error = null);
+    RuntimeConfiguration? Configuration = null, Uri? Address = null, string? Error = null)
+{
+    /// <summary>Local process status only; Running does not assert public routing or authentication.</summary>
+    public TunnelSnapshot Tunnel { get; init; } = new(TunnelState.Stopped);
+}
+
+public enum TunnelState { Disabled, Stopped, Starting, Running, Stopping, Faulted }
+
+/// <summary>InstanceId distinguishes independent tunnel attempts within the same Runtime run.</summary>
+public sealed record TunnelSnapshot(TunnelState State, Guid? InstanceId = null,
+    int? ProcessId = null, int? ExitCode = null, string? Error = null);

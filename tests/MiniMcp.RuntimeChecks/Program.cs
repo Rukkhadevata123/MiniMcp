@@ -4,6 +4,13 @@ using MiniMcp.Configuration;
 using MiniMcp.Runtime;
 using MiniMcp.Recovery;
 
+if (args is ["tunnel", "--no-autoupdate", "run", "--token-file", var tunnelTokenFile])
+    return await TunnelChild.RunAsync(tunnelTokenFile, args);
+if (args is ["--tunnel-descendant", var tunnelDescendantMarker])
+    return await TunnelChild.DescendantAsync(tunnelDescendantMarker);
+if (args is ["--tunnel-owner", var tunnelOwnerFile])
+    return await TunnelChild.OwnerAsync(tunnelOwnerFile);
+
 if (args is ["--recovery-lock-child", var lockPath, var lockMarker])
 {
     using var held = RecoveryFileSystem.OpenFile(lockPath, FileMode.OpenOrCreate);
@@ -303,6 +310,7 @@ await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeDiagnosticsChecks.RunAsync(Check);
 await ProcessOutputReaderChecks.RunAsync(Check);
+await TunnelChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);
 await RuntimeCallChecks.RunAsync(Check);
 await HttpSecurityChecks.RunAsync(Check);

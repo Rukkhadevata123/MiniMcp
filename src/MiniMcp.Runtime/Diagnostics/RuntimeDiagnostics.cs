@@ -80,6 +80,21 @@ internal sealed class RuntimeDiagnostics
         }
     }
 
+    // Process observation never waits for the lifecycle lock. The identity/state checks and update
+    // are atomic with lifecycle publication, and cannot overwrite a stop or replacement process.
+    public bool PublishTunnelFault(Guid runId, Guid instanceId, int? exitCode, string error)
+    {
+        lock (_gate)
+        {
+            var current = Snapshot;
+            if (_completed || current.RunId != runId || current.State != RuntimeState.Running ||
+                current.Tunnel.InstanceId != instanceId ||
+                current.Tunnel.State is not (TunnelState.Running or TunnelState.Faulted)) return false;
+            PublishCore(current with { Tunnel = current.Tunnel with { State = TunnelState.Faulted, ExitCode = exitCode, Error = error } });
+            return true;
+        }
+    }
+
     private void PublishCore(RuntimeSnapshot snapshot)
     {
         Volatile.Write(ref _snapshot, snapshot);
