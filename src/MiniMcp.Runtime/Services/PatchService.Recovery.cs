@@ -18,22 +18,28 @@ internal sealed partial class PatchService
         await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // No workspace directories or staging files are created until the complete backup and the
-            // Applying revision have both been flushed and checked. Preparation can take time;
-            // reject external changes again before advancing its record to Applying.
-            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            var record = await recovery.PrepareAsync(plan, cancellationToken).ConfigureAwait(false);
-            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            await recovery.BeginApplyingAsync(record, plan, cancellationToken).ConfigureAwait(false);
-
-            // Revalidates the whole plan after Applying, then reuses staging/install/rollback and
-            // observation under this same lock. Do not call an entry that acquires it a second time.
-            var outcome = await ExecuteAndVerifyCoreAsync(plan, record.ExecutionContext, cancellationToken).ConfigureAwait(false);
-            // Await the real metadata task without caller/session cancellation, retaining the lock.
-            // A failed final save carries the engine outcome; it never triggers another rollback.
-            await recovery.CompleteAsync(record, plan, outcome).ConfigureAwait(false);
-            return new(record, outcome);
+            return await CommitRecordedUnderLockAsync(plan, recovery, null, cancellationToken).ConfigureAwait(false);
         }
         finally { workspace.Mutations.Release(); }
+    }
+
+    // Trusted internal coordinator entry. Caller retains this service's actual workspace mutex;
+    // restoration uses this core so source validation and recorded mutation share one lock scope.
+    internal async Task<RecordedPatchCommit> CommitRecordedUnderLockAsync(PatchPlan plan, RecoveryStore recovery,
+        Func<CancellationToken, Task>? validateSourceRecord, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(recovery);
+        if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
+        await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+        var record = await recovery.PrepareAsync(plan, cancellationToken).ConfigureAwait(false);
+        await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+        await recovery.BeginApplyingAsync(record, plan, cancellationToken).ConfigureAwait(false);
+        var outcome = await ExecuteAndVerifyCoreAsync(plan, record.ExecutionContext, cancellationToken, validateSourceRecord).ConfigureAwait(false);
+        // Never drop real finalization or relabel installed files because of a late caller cancellation.
+        await recovery.CompleteAsync(record, plan, outcome).ConfigureAwait(false);
+        return new(record, outcome);
     }
 }

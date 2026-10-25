@@ -30,8 +30,12 @@ internal static class RecordedPatchFaultChecks
                 var original = fixture.ProjectSnapshot();
                 var store = fixture.Store();
                 var result = await fixture.Service.CommitWithRecoveryAsync(await fixture.Plan(MixedPatch), store, cancelled.Token);
+                var current = fixture.ProjectSnapshot();
                 Assert(result.Outcome.VerifiedState == PatchCommitState.RolledBack && ReferenceEquals(result.Outcome.Failure, failure) &&
-                    result.Outcome.RollbackErrors.IsEmpty && result.Outcome.CleanupErrors.IsEmpty && original.SequenceEqual(fixture.ProjectSnapshot()), "Every partial prefix restores exact original bytes, directories and modes");
+                    result.Outcome.RollbackErrors.IsEmpty && result.Outcome.CleanupErrors.IsEmpty && original.SequenceEqual(current),
+                    $"Every partial prefix restores exact original bytes, directories and modes ({boundary}; engine={result.Outcome.State}; verified={result.Outcome.VerifiedState}; " +
+                    $"failure={result.Outcome.Failure}; verification={result.Outcome.VerificationFailure}; rollback={string.Join(" | ", result.Outcome.RollbackErrors)}; " +
+                    $"cleanup={string.Join(" | ", result.Outcome.CleanupErrors)}; missing={string.Join(" | ", original.Except(current))}; extra={string.Join(" | ", current.Except(original))})");
                 await VerifyAsync(store, result);
                 Assert(!fixture.Artifacts().Any(), "All owned staging and rollback files cleaned");
             }

@@ -23,7 +23,8 @@ internal sealed partial class PatchService
                 else
                 {
                     if (change.Source != change.Destination) await ObserveAsync(change.Source, null, null, creation: false).ConfigureAwait(false);
-                    await ObserveAsync(change.Destination, change.After, change.Before?.Mode ?? plan.NewFileCreateMode, creation: change.Before is null).ConfigureAwait(false);
+                    await ObserveAsync(change.Destination, change.After, change.TargetMode(plan),
+                        creation: change.Before is null && change.ExactAfterMode is null).ConfigureAwait(false);
                 }
             }
             workspace.Resolve(".");

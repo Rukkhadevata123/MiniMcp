@@ -14,15 +14,18 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
 {
     private readonly object _outcomeIssuer = new();
     internal string ProjectRoot => workspace.Root;
+    internal bool OwnsWorkspace(ProjectWorkspace candidate) => ReferenceEquals(workspace, candidate);
 
     private sealed record Chunk(string? Anchor, string[] Lines, bool EndOfFile);
     private sealed record Operation(string Action, string Path, string? MoveTo, string? Content, List<Chunk> Chunks);
     private sealed class Change(PlannedPatchChange plan)
     {
+        public PlannedPatchChange Plan => plan;
         public string Source => plan.Source;
         public string Destination => plan.Destination;
         public TextFile? Before => plan.Before;
         public ImmutableArray<byte>? After => plan.After;
+        public UnixFileMode? ExactAfterMode => plan.ExactAfterMode;
         public string? Temporary { get; set; }
         public string? Backup { get; set; }
         public bool Installed { get; set; }
@@ -120,14 +123,19 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
     }
 
     // Caller retains the workspace mutation lock, including any surrounding recovery transaction.
-    private async Task<PatchCommitOutcome> ExecuteAndVerifyCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
+    private async Task<PatchCommitOutcome> ExecuteAndVerifyCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? validateSourceRecord = null)
     {
         // Reject stale plans before creating any directories, staging files or rollback backups.
         if (context is null) await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
         else
         {
             context.Start(plan);
-            try { await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false); }
+            try
+            {
+                await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+                if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+            }
             catch (Exception failure)
             {
                 // An Applying attempt that was refused before staging still needs truthful final
@@ -136,7 +144,7 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                 return await VerifyOutcomeCoreAsync(plan, declined).ConfigureAwait(false);
             }
         }
-        var outcome = await CommitCoreAsync(plan, context, cancellationToken).ConfigureAwait(false);
+        var outcome = await CommitCoreAsync(plan, context, cancellationToken, validateSourceRecord).ConfigureAwait(false);
         return await VerifyOutcomeCoreAsync(plan, outcome).ConfigureAwait(false);
     }
 
@@ -282,7 +290,7 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                 if (File.Exists(parent)) throw new WorkspaceException("A patch parent path became a file; prepare a new plan.");
         if (change.Before is not null)
         {
-            var current = await workspace.SnapshotAsync(change.Source, cancellationToken).ConfigureAwait(false);
+            var current = await workspace.SnapshotRegularAsync(change.Source, cancellationToken).ConfigureAwait(false);
             if (!current.Bytes.AsSpan().SequenceEqual(change.Before.Bytes.AsSpan()) || current.Mode != change.Before.Mode)
                 throw new WorkspaceException("A file changed since the patch was prepared; prepare a new plan.");
         }
@@ -290,7 +298,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             throw new WorkspaceException("A patch destination appeared since the patch was prepared.");
     }
 
-    private async Task<PatchCommitOutcome> CommitCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
+    private async Task<PatchCommitOutcome> CommitCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? validateSourceRecord)
     {
         var changes = plan.Changes.Select(change => new Change(change)).ToList();
         var directories = new List<string>();
@@ -316,16 +325,19 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                     await stream.WriteAsync(change.After!.Value.AsMemory(), cancellationToken);
                     await stream.FlushAsync(cancellationToken);
                 }
-                if (!OperatingSystem.IsWindows() && change.Before?.Mode is { } mode) File.SetUnixFileMode(change.Temporary, mode);
+                if (!OperatingSystem.IsWindows() && (change.ExactAfterMode ?? change.Before?.Mode) is { } mode)
+                    File.SetUnixFileMode(change.Temporary, mode);
             }
             await Checkpoint(PatchCommitStage.Staged, -1).ConfigureAwait(false);
             await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+            if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             // Once commit starts, finish or roll back instead of leaving half a patch on cancellation.
             for (var i = 0; i < changes.Count; i++)
             {
                 var change = changes[i];
                 await Checkpoint(PatchCommitStage.BeforeInstall, i).ConfigureAwait(false);
+                if (validateSourceRecord is not null) await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
                 // Earlier operations may already be installed, so recheck this untouched operation
                 // rather than the full original plan. Late cancellation must not split the batch.
                 await ValidateChangeAsync(plan.Changes[i], CancellationToken.None).ConfigureAwait(false);
@@ -343,6 +355,7 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                 }
                 await Checkpoint(PatchCommitStage.Installed, i).ConfigureAwait(false);
             }
+            if (validateSourceRecord is not null) await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
             committed = true;
         }
         catch (Exception error)
@@ -352,10 +365,18 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             {
                 try
                 {
-                    if (change.Installed) File.Delete(change.Destination);
+                    workspace.Resolve(workspace.Relative(change.Source));
+                    workspace.Resolve(workspace.Relative(change.Destination));
+                    if (change.Installed)
+                    {
+                        // Undo only the bytes/mode installed by this attempt. An external edit is
+                        // preserved with its rollback backup and an explicit Incomplete outcome.
+                        await VerifyInstalledForRollbackAsync(change.Plan, plan).ConfigureAwait(false);
+                        File.Delete(change.Destination);
+                    }
                     if (change.Backup is not null) { File.Move(change.Backup, change.Source); change.Backup = null; }
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { rollbackErrors.Add(ex); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or WorkspaceException) { rollbackErrors.Add(ex); }
             }
         }
         finally
@@ -373,6 +394,16 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         var state = committed ? PatchCommitState.Committed : rollbackErrors.Count == 0 && cleanupErrors.Count == 0
             ? PatchCommitState.RolledBack : PatchCommitState.Incomplete;
         return new PatchCommitOutcome(plan, _outcomeIssuer, context, state, failure, rollbackErrors.ToImmutable(), cleanupErrors.ToImmutable());
+    }
+
+    private async Task VerifyInstalledForRollbackAsync(PlannedPatchChange change, PatchPlan plan)
+    {
+        var current = await workspace.SnapshotRegularAsync(change.Destination, CancellationToken.None).ConfigureAwait(false);
+        var mode = change.TargetMode(plan);
+        var creation = change.Before is null && change.ExactAfterMode is null;
+        if (change.After is null || !current.Bytes.AsSpan().SequenceEqual(change.After.Value.AsSpan()) ||
+            (!creation && current.Mode != mode) || (creation && current.Mode is { } actual && mode is { } request && (actual & ~request) != 0))
+            throw new IOException("Rollback refused to overwrite a file changed after installation; the original backup was preserved.");
     }
 
     private Task Checkpoint(PatchCommitStage stage, int index) => checkpoint?.Invoke(stage, index) ?? Task.CompletedTask;

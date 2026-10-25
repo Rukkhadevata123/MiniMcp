@@ -6,6 +6,7 @@ using MiniMcp.Services;
 namespace MiniMcp.Recovery;
 
 internal enum RecoveryPreviewStage { RecordLoaded, PathRead, BeforeReturn }
+internal sealed record RecoveryInspection(RecoveryPreviewResult Preview, RecoveryRecordSnapshot Record, ImmutableArray<PatchDiffChange> Changes);
 
 internal sealed class RecoveryPreviewService
 {
@@ -31,35 +32,58 @@ internal sealed class RecoveryPreviewService
         await _workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
-            var record = await _store.LoadAsync(changeId, cancellationToken).ConfigureAwait(false);
-            await Checkpoint(RecoveryPreviewStage.RecordLoaded, null).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            var conflicts = new List<RecoveryConflict>();
-            PatchDiff? diff = null;
-            if (record.Manifest.State == RecoveryRecordState.Committed)
-            {
-                var files = await ObserveAsync(record.Manifest, conflicts, reportCheckpoints: true, cancellationToken).ConfigureAwait(false);
-                if (conflicts.Count == 0)
-                    diff = await Task.Run(() => ReverseDiff(record, files, cancellationToken), cancellationToken).ConfigureAwait(false);
-            }
-            await Checkpoint(RecoveryPreviewStage.BeforeReturn, null).ConfigureAwait(false);
-            // Do not publish a clean preview from data changed while another path/diff was inspected.
-            var latest = await _store.LoadAsync(changeId, cancellationToken).ConfigureAwait(false);
-            if (!SameRecord(record, latest)) conflicts.Add(new(null, "RecordChanged", "The recovery record changed during preview; reload it before continuing."));
-            if (record.Manifest.State == RecoveryRecordState.Committed)
-                _ = await ObserveAsync(record.Manifest, conflicts, reportCheckpoints: false, cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var blockers = ImmutableArray.CreateBuilder<string>();
-            if (_store.Mode == ExecutionMode.ReadOnly) blockers.Add("ReadOnlyMode");
-            else if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess)) blockers.Add("UnknownMode");
-            if (record.Manifest.State != RecoveryRecordState.Committed) blockers.Add("RecordNotCommitted");
-            if (conflicts.Count != 0) { blockers.Add("Conflicts"); diff = null; }
-            return new(_store.RunId, changeId, record.Manifest.RunId, record.Manifest.State.ToString(), _store.Mode.ToString(),
-                diff?.Diff, diff?.Files.Select(file => new RecoveryFilePreview(file.Summary, file.Statistics)).ToImmutableArray() ?? [], diff?.Statistics,
-                conflicts.DistinctBy(conflict => (conflict.Path, conflict.Reason)).ToImmutableArray(), blockers.ToImmutable());
+            return (await InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false)).Preview;
         }
         finally { _workspace.Mutations.Release(); }
+    }
+
+    internal bool IsFor(ProjectWorkspace workspace, RecoveryStore store) => ReferenceEquals(_workspace, workspace) && ReferenceEquals(_store, store);
+
+    // The local preview or restore coordinator owns this exact workspace's mutation lock.
+    internal async Task<RecoveryInspection> InspectUnderLockAsync(Guid changeId, CancellationToken cancellationToken)
+    {
+        var record = await _store.LoadAsync(changeId, cancellationToken).ConfigureAwait(false);
+        await Checkpoint(RecoveryPreviewStage.RecordLoaded, null).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var conflicts = new List<RecoveryConflict>();
+        PatchDiff? diff = null;
+        ImmutableArray<PatchDiffChange> changes = [];
+        if (record.Manifest.State == RecoveryRecordState.Committed)
+        {
+            var files = await ObserveAsync(record.Manifest, conflicts, reportCheckpoints: true, cancellationToken).ConfigureAwait(false);
+            if (conflicts.Count == 0)
+            {
+                var rendered = await Task.Run(() =>
+                {
+                    var inverse = ReverseChanges(record, files, cancellationToken);
+                    return (Changes: inverse, Diff: PatchDiffBuilder.Create(inverse, cancellationToken, forRecovery: true));
+                }, cancellationToken).ConfigureAwait(false);
+                changes = rendered.Changes; diff = rendered.Diff;
+            }
+        }
+        await Checkpoint(RecoveryPreviewStage.BeforeReturn, null).ConfigureAwait(false);
+        // Do not publish a clean preview from data changed while another path/diff was inspected.
+        var latest = await _store.LoadAsync(changeId, cancellationToken).ConfigureAwait(false);
+        if (!SameRecord(record, latest)) conflicts.Add(new(null, "RecordChanged", "The recovery record changed during preview; reload it before continuing."));
+        if (record.Manifest.State == RecoveryRecordState.Committed)
+            _ = await ObserveAsync(record.Manifest, conflicts, reportCheckpoints: false, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var blockers = ImmutableArray.CreateBuilder<string>();
+        if (_store.Mode == ExecutionMode.ReadOnly) blockers.Add("ReadOnlyMode");
+        else if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess)) blockers.Add("UnknownMode");
+        if (record.Manifest.State != RecoveryRecordState.Committed) blockers.Add("RecordNotCommitted");
+        if (conflicts.Count != 0) { blockers.Add("Conflicts"); diff = null; changes = []; }
+        var preview = new RecoveryPreviewResult(_store.RunId, changeId, record.Manifest.RunId, record.Manifest.State.ToString(), _store.Mode.ToString(),
+            diff?.Diff, diff?.Files.Select(file => new RecoveryFilePreview(file.Summary, file.Statistics)).ToImmutableArray() ?? [], diff?.Statistics,
+            conflicts.DistinctBy(conflict => (conflict.Path, conflict.Reason)).ToImmutableArray(), blockers.ToImmutable());
+        return new(preview, record, changes);
+    }
+
+    internal async Task ValidateRecordAsync(RecoveryRecordSnapshot expected, CancellationToken cancellationToken)
+    {
+        var current = await _store.LoadAsync(expected.Manifest.ChangeId, cancellationToken).ConfigureAwait(false);
+        if (!SameRecord(expected, current)) throw new WorkspaceException("The recovery source record changed since preview; obtain a new preview before restoring.");
     }
 
     private async Task<Dictionary<string, TextFile>> ObserveAsync(RecoveryManifest manifest, List<RecoveryConflict> conflicts,
@@ -122,7 +146,7 @@ internal sealed class RecoveryPreviewService
         catch (DirectoryNotFoundException) { return null; }
     }
 
-    private static PatchDiff ReverseDiff(RecoveryRecordSnapshot record, Dictionary<string, TextFile> files, CancellationToken cancellationToken)
+    private static ImmutableArray<PatchDiffChange> ReverseChanges(RecoveryRecordSnapshot record, Dictionary<string, TextFile> files, CancellationToken cancellationToken)
     {
         var paths = record.Manifest.Paths.ToDictionary(path => path.Path, StringComparer.Ordinal);
         var backups = record.Backups.ToDictionary(backup => backup.FileName, StringComparer.Ordinal);
@@ -138,7 +162,7 @@ internal sealed class RecoveryPreviewService
             changes.Add(new(new(action, source, operation.MoveTo is null ? null : operation.Path, before?.Bytes.Length ?? 0, after?.Length ?? 0),
                 before, after, original.Before?.UnixMode, AfterModeIsCreateRequest: false));
         }
-        return PatchDiffBuilder.Create(changes.MoveToImmutable(), cancellationToken, forRecovery: true);
+        return changes.MoveToImmutable();
     }
 
     private static bool SameRecord(RecoveryRecordSnapshot left, RecoveryRecordSnapshot right) =>

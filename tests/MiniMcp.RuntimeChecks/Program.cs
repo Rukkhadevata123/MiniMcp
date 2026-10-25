@@ -29,11 +29,13 @@ using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Allo
 };
 var passed = 0;
 var failed = 0;
+var checkFilter = args is ["--filter", var requestedFilter] ? requestedFilter : null;
 using var lifetimeFixture = new RuntimeLifetimeFixture();
 var configuration = lifetimeFixture.Configuration;
 
 async Task Check(string name, Func<Task> action)
 {
+    if (checkFilter is not null && !name.Contains(checkFilter, StringComparison.OrdinalIgnoreCase)) return;
     try { await action(); passed++; Console.WriteLine($"PASS {name}"); }
     catch (Exception exception) { failed++; Console.WriteLine($"FAIL {name}: {exception}"); }
 }
@@ -293,6 +295,9 @@ await RecordedPatchConcurrencyChecks.RunAsync(Check);
 await RecordedToolExecutionChecks.RunAsync(Check);
 await RecoveryPreviewChecks.RunAsync(Check);
 await RecoveryPreviewLifetimeChecks.RunAsync(Check);
+await RecoveryRestoreChecks.RunAsync(Check);
+await RecoveryRestoreFaultChecks.RunAsync(Check);
+await RecoveryRestoreLifetimeChecks.RunAsync(Check);
 await RecordedToolLifetimeChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);

@@ -20,7 +20,7 @@ internal static class PatchDiffBuilder
     {
         ArgumentNullException.ThrowIfNull(plan);
         var diff = Create(plan.Changes.Select(change => new PatchDiffChange(change.Summary, change.Before, change.After,
-            change.Before is null ? plan.NewFileCreateMode : change.Before.Mode, change.Before is null && plan.NewFileCreateMode is not null)).ToImmutableArray(), cancellationToken);
+            change.TargetMode(plan), change.Before is null && change.ExactAfterMode is null && plan.NewFileCreateMode is not null)).ToImmutableArray(), cancellationToken);
         return new(plan, diff.Diff, diff.Files, diff.Statistics);
     }
 

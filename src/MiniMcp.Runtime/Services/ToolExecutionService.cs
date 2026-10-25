@@ -16,6 +16,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     private readonly PatchService _patches;
     private readonly RecoveryStore _recovery;
     private readonly RecoveryPreviewService _recoveryPreviews;
+    private readonly RecoveryRestoreService _recoveryRestores;
     private readonly Lazy<BashRunner> _bash;
     private bool _accepting = true;
     private int _activeCalls;
@@ -40,6 +41,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         _patches = new PatchService(_workspace, patchCheckpoint);
         _recovery = new RecoveryStore(runId, configuration, preparationCheckpoint, null, replacementCheckpoint);
         _recoveryPreviews = new RecoveryPreviewService(_workspace, _recovery, recoveryPreviewCheckpoint);
+        _recoveryRestores = new RecoveryRestoreService(_workspace, _patches, _recovery, _recoveryPreviews);
         _bash = new Lazy<BashRunner>(() => new BashRunner(_workspace, configuration.Settings.BashPath));
     }
 
@@ -55,6 +57,13 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     // Local only. WorkspaceTools does not map record IDs, previews or restoration to MCP tools.
     public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _recoveryPreviews.PreviewAsync(changeId, token), cancellationToken);
+
+    // Internal primitives only; local human confirmation will be integrated by the CLI/WinUI stages.
+    internal Task<RecoveryRestorePlan> PrepareRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(token => _recoveryRestores.PrepareAsync(changeId, token), cancellationToken);
+
+    internal Task<RecoveryRestoreCommit> CommitRecoveryAsync(RecoveryRestorePlan plan, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(token => _recoveryRestores.CommitAsync(plan, token), cancellationToken, checkCancellationAfterCompletion: false);
 
     public Task<PatchApplyResult> ApplyPatchAsync(string patch, bool dryRun = false,
         CancellationToken cancellationToken = default) => ExecuteAsync(async token =>

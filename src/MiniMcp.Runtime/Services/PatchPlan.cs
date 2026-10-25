@@ -13,4 +13,9 @@ internal sealed class PatchPlan(PatchService owner, ImmutableArray<PlannedPatchC
 }
 
 internal sealed record PlannedPatchChange(string Source, string Destination, TextFile? Before,
-    ImmutableArray<byte>? After, PatchChange Summary);
+    ImmutableArray<byte>? After, PatchChange Summary, UnixFileMode? ExactAfterMode = null)
+{
+    // Ordinary adds request the plan's restrictive creation mode. Restoration may require an exact
+    // recorded mode; installation and verification must both honor it, including restored additions.
+    internal UnixFileMode? TargetMode(PatchPlan plan) => After is null ? null : ExactAfterMode ?? Before?.Mode ?? plan.NewFileCreateMode;
+}

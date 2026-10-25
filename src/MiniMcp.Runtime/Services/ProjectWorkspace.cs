@@ -131,6 +131,7 @@ internal sealed class ProjectWorkspace
         var relative = Relative(file);
         Resolve(relative);
         if (!Directory.Exists(Root)) throw new WorkspaceException("The project root no longer exists.");
+        if (!File.Exists(file)) throw new WorkspaceException("File does not exist.");
         using var stream = RecoveryFileSystem.OpenSharedRead(file);
         var identity = RecoveryFileSystem.FileIdentity(stream);
         var length = stream.Length;

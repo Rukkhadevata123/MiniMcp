@@ -29,8 +29,10 @@ internal static class RecoveryDraftBuilder
                 before = Image(original.Bytes, original.Mode);
             }
             var after = change.After is { } bytes ? Image(bytes,
-                change.Before is null ? plan.NewFileCreateMode : change.Before.Mode,
-                createRequest: change.Before is null && plan.NewFileCreateMode is not null) : null;
+                change.TargetMode(plan),
+                // Until installation is observed, an add's permissions remain a requested target.
+                // Exact restoration semantics live in the signed plan and verified engine outcome.
+                createRequest: change.Before is null && change.TargetMode(plan) is not null) : null;
             if (summary.MoveTo is { } destination)
             {
                 paths.Add(new(summary.Path, before, null, backupFile));
