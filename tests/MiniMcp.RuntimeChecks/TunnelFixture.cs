@@ -4,6 +4,7 @@ using System.Net;
 using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Runtime;
+using Microsoft.Extensions.DependencyInjection;
 
 internal sealed class TunnelFixture : IAsyncDisposable
 {
@@ -15,7 +16,8 @@ internal sealed class TunnelFixture : IAsyncDisposable
     private readonly List<Process> _observed = [];
 
     internal TunnelFixture(string behavior = "wait", TunnelCheckpoints? checks = null,
-        bool enabled = true, string? executable = null, bool healthProbe = false)
+        bool enabled = true, string? executable = null, bool healthProbe = false,
+        Action<IServiceCollection>? configureServices = null)
     {
         Directory.CreateDirectory(DirectoryPath);
         var root = Path.Combine(DirectoryPath, "project");
@@ -46,7 +48,7 @@ internal sealed class TunnelFixture : IAsyncDisposable
                 TokenFilePath = TokenFile
             }
         }, settingsFile, new ExecutionPolicy());
-        Runtime = new McpRuntime(port, tunnelChecks: checks);
+        Runtime = new McpRuntime(port, configureServices, tunnelChecks: checks);
     }
 
     internal async Task<TunnelChildReport> ReportAsync()

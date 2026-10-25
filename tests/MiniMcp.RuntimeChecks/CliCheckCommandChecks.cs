@@ -282,7 +282,7 @@ internal static class CliCheckCommandChecks
             var checkpoints = new TunnelCheckpoints
             {
                 AfterStart = () => { cancellation.Cancel(); return Task.CompletedTask; },
-                BeforeRelease = () => ++releases <= 2
+                BeforeRelease = () => ++releases == 1
                     ? Task.FromException(new OperationCanceledException("fixture cleanup cancelled")) : Task.CompletedTask
             };
             await using var fixture = new TunnelFixture(checks: checkpoints);
@@ -295,12 +295,12 @@ internal static class CliCheckCommandChecks
             {
                 var code = await CliApplication.RunAsync(["run", "--config", fixture.Configuration.SettingsFilePath], output, error,
                     cancellation.Token, store, directory, () => fixture.Runtime);
-                Assert(code == 1 && fixture.Runtime.Snapshot.State == RuntimeState.Faulted && releases == 2 &&
+                Assert(code == 1 && fixture.Runtime.Snapshot.State == RuntimeState.Faulted && releases == 1 &&
                     error.ToString().Contains("启动或停止失败") && !error.ToString().Contains("启动已取消") &&
                     !output.ToString().Contains("已停止"), "Cleanup cancellation must not be mislabeled 130");
             }
             finally { await fixture.Runtime.StopAsync(); }
-            Assert(releases == 3 && fixture.Runtime.Snapshot.State == RuntimeState.Stopped, "Explicit retry releases the actual cancelled cleanup");
+            Assert(releases == 2 && fixture.Runtime.Snapshot.State == RuntimeState.Stopped, "Explicit retry releases the actual cancelled cleanup");
         });
     }
 

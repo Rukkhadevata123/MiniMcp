@@ -1,4 +1,3 @@
-using System.Text;
 using MiniMcp.Configuration;
 using MiniMcp.Runtime;
 
@@ -73,7 +72,7 @@ internal static class CliApplication
             WriteCheck(check, output, error);
             return CliExitCodes.Success;
         }
-        return await RunSessionAsync(configuration, output, error, cancellationToken, runtimeFactory).ConfigureAwait(false);
+        return await CliRunSession.RunAsync(configuration, output, error, cancellationToken, runtimeFactory).ConfigureAwait(false);
     }
 
     private static void WriteCheck(ConfigurationCheckResult check, TextWriter output, TextWriter error)
@@ -95,44 +94,6 @@ internal static class CliApplication
                 (check.PortStatus == PortCheckStatus.InUse ? "当前被占用" : "当前不可绑定") +
                 $"（{check.PortError}）；配置校验已通过，启动前需解决端口问题。");
         output.WriteLine("仅检查本机配置与依赖；公网路由、Access 登录和 OAuth 未验证。");
-    }
-
-    private static async Task<int> RunSessionAsync(RuntimeConfiguration configuration, TextWriter output, TextWriter error,
-        CancellationToken cancellationToken, Func<McpRuntime>? runtimeFactory)
-    {
-        var started = false;
-        McpRuntime? runtime = null;
-        try
-        {
-            await using (runtime = runtimeFactory is null ? new McpRuntime() : runtimeFactory())
-            {
-                await runtime.StartAsync(configuration, cancellationToken).ConfigureAwait(false);
-                started = true;
-                var snapshot = runtime.Snapshot;
-                output.WriteLine($"本机健康检查：{new Uri(snapshot.Address!, "healthz").AbsoluteUri}");
-                output.WriteLine($"MCP：{new Uri(snapshot.Address!, "mcp").AbsoluteUri}");
-                output.WriteLine($"认证模式：{configuration.Settings.Authentication.Mode}");
-                output.WriteLine($"项目：{Visible(configuration.Settings.ProjectRoot)}");
-                output.WriteLine($"配置执行模式：{configuration.Policy.Mode}");
-                output.WriteLine("按 Ctrl+C 停止。");
-                try { await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false); }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-            }
-            output.WriteLine("已停止。");
-            return CliExitCodes.Success;
-        }
-        catch (OperationCanceledException) when (!started && cancellationToken.IsCancellationRequested &&
-            runtime?.Snapshot.State == RuntimeState.Disposed)
-        {
-            // A failed cleanup can also throw cancellation. It must remain a failure, not 130.
-            error.WriteLine("启动已取消。");
-            return CliExitCodes.Cancelled;
-        }
-        catch (Exception exception)
-        {
-            error.WriteLine($"启动或停止失败：{Visible(exception.Message)}");
-            return CliExitCodes.Failure;
-        }
     }
 
     private enum Command { Root, Run, Check }
@@ -204,18 +165,11 @@ internal static class CliApplication
             output.WriteLine("run 端口取自 JSON，仅监听本机。/mcp 提供 stateless Streamable HTTP，/healthz 用于本机健康检查。");
             output.WriteLine("所有模式允许读取和预演；ProjectEdit 允许普通补丁，FullAccess 允许通过基础检查的补丁和 Bash；实际补丁强制保存恢复记录。");
             output.WriteLine("配置启用 cloudflared 时，在本机 MCP 就绪后启动隧道；按 Ctrl+C 停止，Linux 支持 SIGTERM。");
+            output.WriteLine("run 在前台显示脱敏日志与 MCP/隧道状态；隧道意外退出保留本机诊断，停止后返回故障码 1。");
         }
         output.WriteLine("配置字段和本机进程状态不验证公网路由、Access 登录或 OAuth。");
         output.WriteLine("退出码：0 成功/正常结束，1 运行/清理故障，2 参数/配置/依赖错误，130 加载/启动取消且清理完成。");
     }
 
-    private static string Visible(string value)
-    {
-        value = RuntimeDiagnosticText.Sanitize(value);
-        var result = new StringBuilder(value.Length);
-        foreach (var character in value)
-            if (char.IsControl(character)) result.Append($"\\u{(int)character:x4}");
-            else result.Append(character);
-        return result.ToString();
-    }
+    private static string Visible(string value) => CliText.Visible(value);
 }

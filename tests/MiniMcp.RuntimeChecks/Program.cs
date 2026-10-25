@@ -4,6 +4,12 @@ using MiniMcp.Configuration;
 using MiniMcp.Runtime;
 using MiniMcp.Recovery;
 
+if (args is ["--cli-process", var cliControl])
+    return await CliProcessChecks.ChildAsync(cliControl);
+if (args is ["--cli-console-signal", var cliTarget, var cliSignalCount])
+    return await CliProcessChecks.SignalAsync(int.Parse(cliTarget, System.Globalization.CultureInfo.InvariantCulture),
+        int.Parse(cliSignalCount, System.Globalization.CultureInfo.InvariantCulture));
+
 if (args is ["tunnel", "--no-autoupdate", "run", "--token-file", var tunnelTokenFile])
     return await TunnelChild.RunAsync(tunnelTokenFile, args);
 if (args is ["--tunnel-descendant", var tunnelDescendantMarker])
@@ -318,6 +324,8 @@ await McpHttpChecks.RunAsync(Check);
 await RecordedToolHttpChecks.RunAsync(Check);
 await CliChecks.RunAsync(Check);
 await CliCheckCommandChecks.RunAsync(Check);
+await CliRunChecks.RunAsync(Check);
+await CliProcessChecks.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;

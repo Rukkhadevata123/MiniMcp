@@ -75,6 +75,13 @@ internal sealed class RuntimeDiagnostics
         lock (_gate)
         {
             if (_completed || snapshot.RunId != Snapshot.RunId) return false;
+            var current = Snapshot;
+            var faults = current.FaultCount;
+            if ((snapshot.State == RuntimeState.Faulted &&
+                (current.State != RuntimeState.Faulted || current.Error != snapshot.Error)) ||
+                (snapshot.State == RuntimeState.Running && snapshot.Tunnel.State == TunnelState.Faulted &&
+                (current.Tunnel.State != TunnelState.Faulted || current.Tunnel.Error != snapshot.Tunnel.Error))) faults++;
+            if (snapshot.FaultCount != faults) snapshot = snapshot with { FaultCount = faults };
             PublishCore(snapshot);
             return true;
         }
@@ -90,7 +97,11 @@ internal sealed class RuntimeDiagnostics
             if (_completed || current.RunId != runId || current.State != RuntimeState.Running ||
                 current.Tunnel.InstanceId != instanceId ||
                 current.Tunnel.State is not (TunnelState.Running or TunnelState.Faulted)) return false;
-            PublishCore(current with { Tunnel = current.Tunnel with { State = TunnelState.Faulted, ExitCode = exitCode, Error = error } });
+            PublishCore(current with
+            {
+                FaultCount = current.FaultCount + (current.Tunnel.State != TunnelState.Faulted || current.Tunnel.Error != error ? 1 : 0),
+                Tunnel = current.Tunnel with { State = TunnelState.Faulted, ExitCode = exitCode, Error = error }
+            });
             return true;
         }
     }

@@ -54,11 +54,17 @@ dotnet run --project src/MiniMcp.Cli -- run --config ./settings.json --mode Read
 
 成功或正常结束返回 `0`，运行、清理或输出失败返回 `1`，参数、配置或依赖错误返回 `2`，配置加载/检查/启动取消且清理完成返回 `130`；清理失败优先返回 `1`。普通诊断共用 Runtime 的有界脱敏策略，终端动态文本额外转义控制字符。run 端口冲突返回 `1` 并保留已有服务；输出包含 MCP 连接地址、健康检查地址及运行模式，工具调用使用本机执行策略。配置启用受管隧道时，Runtime 在本机 MCP 就绪后自动启动 cloudflared。Linux 信号路径未实机验证。
 
+`run` 在前台连续显示 Runtime/Host/MCP/隧道日志，包含 UTC 时间（`Z`）、级别和类别，控制字符可见转义。普通日志和连接信息写到标准输出，实际状态故障与结束错误写到标准错误；日志级别或文本不会决定服务状态及退出码。日志队列满时省略旧条目并显示缺口，状态使用独立订阅；显示由单独后台写入器串行执行，慢终端不会阻塞子进程排空或停机。
+
+Ctrl+C/SIGTERM 通过同一条退出路径取消会话并清理 MCP、Bash、隧道及其后代。CLI 共用十秒退出预算，给最后的显示留出最多 500 毫秒；已失败或未完成的启动清理不会隐式再等一轮完整停止。只有实际释放成功才报告“已停止”；清理未完成保留所有权并返回 `1`。输出断管会主动清理运行资源；写入器不响应时仅作有界等待，撤销订阅并返回 `1`，不强制结束调用方进程。
+
+运行中隧道意外退出后，CLI 显示故障并保留本机 MCP 供诊断，等待用户停止；此次运行即使后续清理成功也返回 `1`。显示的公网 MCP 地址来自配置，进程 Running 不代表路由或认证成功。Windows 已用独立隐藏控制台中的真实 Ctrl+C 验证正常停止、重复信号和启动取消；Linux SIGINT/SIGTERM 检查已编写，未实机验证。
+
 Local 模式下，MCP 客户端使用启动时输出的 `http://127.0.0.1:<port>/mcp`，传输方式选择 Streamable HTTP。CloudflareAccess 模式下，客户端通过配置的 `publicOrigin` 加 `/mcp` 访问外部 Cloudflare 网关，再由网关转发至本机服务。该端点按请求处理协议，不使用 MCP 会话 ID；通过鉴权的独立 GET/DELETE 返回 405，legacy `/sse`、`/message` 路由不开放。浏览器直接 GET 不能验证 MCP 调用，健康诊断使用 `/healthz`。
 
 CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration)`、`StopAsync` 和 `DisposeAsync` 控制服务；公开启动接口必须提供完整校验生成的配置。内部 Host 使用空配置构建器，监听地址不取自 `ASPNETCORE_URLS`，也不安装控制终端信号的默认 Host lifetime。
 
-`McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动 MCP HTTP 和健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。快照通过实际启停结果更新，不轮询健康端点。CLI 与桌面都使用正式配置启动。
+`McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动 MCP HTTP 和健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。`HasOwnedResources` 表示仍保留 Host/会话/进程所有权，尚未结束的启动仍须等待其真实任务；`FaultCount` 在一次运行内累计实际生命周期/隧道故障，停止和状态合并不会清除，启动新会话时重置。快照通过实际启停结果更新，不轮询健康端点。`DisposeAsync(CancellationToken)` 支持调用方传入剩余退出预算，失败保留资源供显式重试。CLI 与桌面都使用正式配置启动。
 
 Runtime 通过 `ILogger` 收集 Information 及以上的 Host、MCP 和生命周期诊断。`GetLogs()` 返回不可变日志快照，最多保留 1000 条、512 Ki 个 UTF-16 字符单元（消息和类别合计）；单条消息最多 4096、类别最多 256 个字符。`ClearLogs()` 清空保留缓冲，序号继续递增。日志保留跨会话历史，每条包含 `RunId`、递增序号、UTC 时间、级别、类别和事件编号；已结束会话的缓存 logger 拒绝新日志。
 

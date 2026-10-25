@@ -48,7 +48,8 @@ internal sealed partial class ProcessLifetime
                 Information = new StartupInformation
                 {
                     Size = Marshal.SizeOf<StartupInformationEx>(),
-                    Flags = 0x100, // STARTF_USESTDHANDLES
+                    Flags = 0x100 | (!start.CreateNoWindow ? 0x1u : 0u), // Standard handles; hidden new console for controlled checks.
+                    ShowWindow = 0,
                     StandardInput = inherited[0], StandardOutput = inherited[1], StandardError = inherited[2]
                 },
                 Attributes = attributes
@@ -59,7 +60,8 @@ internal sealed partial class ProcessLifetime
             foreach (var argument in start.ArgumentList) arguments.Append(' ').Append(QuoteArgument(argument));
             if (arguments.Length >= 32767) throw new IOException("The managed process command line is too long.");
             if (!CreateProcess(start.FileName, arguments, IntPtr.Zero, IntPtr.Zero, true,
-                0x80000 | 0x4 | 0x8000000 | 0x400, environment, start.WorkingDirectory, ref startup, out created))
+                0x80000 | 0x4 | (start.CreateNoWindow ? 0x8000000u : 0x10u) | 0x400,
+                environment, start.WorkingDirectory, ref startup, out created))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             process = Process.GetProcessById(created.ProcessId);
             _ = process.Handle; // Keep its process identity alive independently of the PID.

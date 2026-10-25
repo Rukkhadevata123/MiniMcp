@@ -55,6 +55,7 @@ public sealed class McpRuntime : IAsyncDisposable
     public RuntimeSnapshot Snapshot => _diagnostics.Snapshot;
     public Uri? Address => Snapshot.Address;
     internal ToolExecutionService? Execution => Volatile.Read(ref _execution);
+    internal (int Logs, int States) DiagnosticSubscriberCounts => _diagnostics.SubscriberCounts;
 
     /// <summary>Up to 1000 entries / 512 Ki UTF-16 characters; each message is at most 4096 characters.</summary>
     public RuntimeLogSnapshot GetLogs() => _diagnostics.GetLogs();
@@ -213,6 +214,7 @@ public sealed class McpRuntime : IAsyncDisposable
             var application = builder.Build();
             ToolExecutionService? execution = null;
             _application = application;
+            Publish(Snapshot);
 
             try
             {
@@ -251,7 +253,13 @@ public sealed class McpRuntime : IAsyncDisposable
                 try
                 {
                     using var deadline = new CancellationTokenSource(ShutdownTimeout);
-                    await StopOwnedResourcesAsync(deadline.Token).ConfigureAwait(false);
+                    var draining = execution?.StopAsync(deadline.Token) ?? Task.CompletedTask;
+                    Publish(Snapshot with
+                    {
+                        State = RuntimeState.Stopping,
+                        Error = startupError is OperationCanceledException && cancellationToken.IsCancellationRequested ? null : startupError.Message
+                    });
+                    await StopOwnedResourcesAsync(deadline.Token, draining).ConfigureAwait(false);
                     ReleaseHost();
                 }
                 catch (Exception cleanupError)
@@ -282,13 +290,16 @@ public sealed class McpRuntime : IAsyncDisposable
         finally { _lifecycle.Release(); }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync() => DisposeAsync(CancellationToken.None);
+
+    /// <summary>Disposes within the caller's remaining shutdown budget, retaining ownership on failure.</summary>
+    public async ValueTask DisposeAsync(CancellationToken cancellationToken)
     {
-        await _lifecycle.WaitAsync().ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
             if (_disposed) return;
-            await StopCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
             _disposed = true;
             Publish(Snapshot with { State = RuntimeState.Disposed });
             _diagnostics.Complete();
@@ -411,6 +422,7 @@ public sealed class McpRuntime : IAsyncDisposable
 
     private void Publish(RuntimeSnapshot snapshot)
     {
+        snapshot = snapshot with { HasOwnedResources = _application is not null };
         var previousTunnelState = Snapshot.Tunnel.State;
         if (snapshot.Error is { } error)
             snapshot = snapshot with { Error = LogSanitizer.Sanitize(error, RuntimeDiagnostics.MaxEntryCharacters, out _) };
