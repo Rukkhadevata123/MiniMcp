@@ -288,6 +288,8 @@ await RecoveryApplyingStateChecks.RunAsync(Check);
 await RecoveryCompletionChecks.RunAsync(Check);
 await RecoveryFinalizationChecks.RunAsync(Check);
 await RecordedPatchCommitChecks.RunAsync(Check);
+await RecordedPatchFaultChecks.RunAsync(Check);
+await RecordedPatchConcurrencyChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);

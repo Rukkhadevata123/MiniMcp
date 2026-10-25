@@ -329,7 +329,7 @@ internal static class RecordedPatchCommitChecks
     private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
     { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         public string DirectoryPath { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-recorded-commit-{Guid.NewGuid():N}");
         public Guid RunId { get; } = Guid.NewGuid();
@@ -358,7 +358,10 @@ internal static class RecordedPatchCommitChecks
         public string Path(string path) => System.IO.Path.Combine(Root, path);
         public void Put(string path, string text) => File.WriteAllText(Path(path), text, new UTF8Encoding(false));
         public string Get(string path) => File.ReadAllText(Path(path));
-        public RecoveryManifest ReadManifest() => RecoveryManifestJson.Parse(File.ReadAllBytes(System.IO.Path.Combine(Directory.EnumerateDirectories(Storage).Single(), RecoveryStore.ManifestFileName)));
+        public IEnumerable<string> RecordDirectories() => Directory.Exists(Storage) ? Directory.EnumerateDirectories(Storage)
+            .Where(path => Guid.TryParseExact(System.IO.Path.GetFileName(path), "N", out _)) : [];
+        public string ManifestPath => System.IO.Path.Combine(RecordDirectories().Single(), RecoveryStore.ManifestFileName);
+        public RecoveryManifest ReadManifest() => RecoveryManifestJson.Parse(File.ReadAllBytes(ManifestPath));
         public IEnumerable<string> Artifacts() => Directory.EnumerateFileSystemEntries(Root, ".minimcp-*", SearchOption.AllDirectories);
         public string[] ProjectSnapshot() => Directory.EnumerateFileSystemEntries(Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => System.IO.Path.GetRelativePath(Root, path) + ":" + (Directory.Exists(path) ? "directory" : Convert.ToBase64String(File.ReadAllBytes(path)) + ":" +
