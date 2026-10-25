@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using MiniMcp.Recovery;
 
 namespace MiniMcp.Services;
 
@@ -47,28 +46,11 @@ internal sealed partial class PatchService
                 }
                 // Reuse the native non-following/nonblocking regular-file check. Verification never
                 // opens FIFOs/devices or silently reads a hard-linked replacement outside the plan.
-                TextFile snapshot;
-                using (var stream = RecoveryFileSystem.OpenSharedRead(path))
-                {
-                    var identity = RecoveryFileSystem.FileIdentity(stream);
-                    if (stream.Length != expected.Value.Length) throw new WorkspaceException("Patch outcome file length does not match its plan.");
-                    var bytes = new byte[expected.Value.Length + 1];
-                    var count = 0;
-                    while (count < bytes.Length)
-                    {
-                        var read = await stream.ReadAsync(bytes.AsMemory(count), CancellationToken.None).ConfigureAwait(false);
-                        if (read == 0) break;
-                        count += read;
-                    }
-                    if (count != expected.Value.Length || !bytes.AsSpan(0, count).SequenceEqual(expected.Value.AsSpan()) ||
-                        RecoveryFileSystem.FileIdentity(stream) != identity)
-                        throw new WorkspaceException("Patch outcome bytes or identity changed during verification.");
-                    UnixFileMode? actualMode = OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(stream.SafeFileHandle);
-                    if ((!creation && actualMode != mode) || (creation && actualMode is { } actual && mode is { } request && (actual & ~request) != 0))
-                        throw new WorkspaceException("Patch outcome permissions do not match the plan or its creation request.");
-                    var bom = count >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf;
-                    snapshot = new(ImmutableArray.Create(bytes, 0, count), ProjectWorkspace.Utf8.GetString(bytes, bom ? 3 : 0, count - (bom ? 3 : 0)), bom, actualMode);
-                }
+                var snapshot = await workspace.SnapshotRegularAsync(path, CancellationToken.None).ConfigureAwait(false);
+                if (!snapshot.Bytes.AsSpan().SequenceEqual(expected.Value.AsSpan()))
+                    throw new WorkspaceException("Patch outcome bytes do not match its plan.");
+                if ((!creation && snapshot.Mode != mode) || (creation && snapshot.Mode is { } actual && mode is { } request && (actual & ~request) != 0))
+                    throw new WorkspaceException("Patch outcome permissions do not match the plan or its creation request.");
                 workspace.Resolve(relative);
                 paths.Add(new(relative, snapshot));
             }

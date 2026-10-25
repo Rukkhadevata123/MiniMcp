@@ -9,6 +9,7 @@ using MiniMcp.Configuration;
 using MiniMcp.Security;
 using MiniMcp.Services;
 using MiniMcp.Tools;
+using MiniMcp.Recovery;
 using ModelContextProtocol.AspNetCore;
 
 namespace MiniMcp.Runtime;
@@ -47,6 +48,14 @@ public sealed class McpRuntime : IAsyncDisposable
     public RuntimeSnapshot Snapshot => Volatile.Read(ref _snapshot);
     public Uri? Address => Snapshot.Address;
     internal ToolExecutionService? Execution => Volatile.Read(ref _execution);
+
+    // In-process local entry; admission/cancellation belongs to the actual session, not the lifecycle lock.
+    public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Snapshot.State == RuntimeState.Disposed, this);
+        var execution = Execution ?? throw new InvalidOperationException("Start a runtime session before previewing a recovery record.");
+        return execution.PreviewRecoveryAsync(changeId, cancellationToken);
+    }
 
     public async Task StartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {

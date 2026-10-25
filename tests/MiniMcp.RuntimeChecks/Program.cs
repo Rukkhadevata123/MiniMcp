@@ -291,6 +291,8 @@ await RecordedPatchCommitChecks.RunAsync(Check);
 await RecordedPatchFaultChecks.RunAsync(Check);
 await RecordedPatchConcurrencyChecks.RunAsync(Check);
 await RecordedToolExecutionChecks.RunAsync(Check);
+await RecoveryPreviewChecks.RunAsync(Check);
+await RecoveryPreviewLifetimeChecks.RunAsync(Check);
 await RecordedToolLifetimeChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);

@@ -17,6 +17,10 @@ internal sealed partial class RecoveryStore
     private readonly RecoveryStorageGuard _guard;
     private readonly Func<RecoveryPreparationStage, RecoveryDraft, Task>? _checkpoint;
 
+    internal Guid RunId => _runId;
+    internal string ProjectRoot => _configuration.Settings.ProjectRoot;
+    internal ExecutionMode Mode => _configuration.Policy.Mode;
+
     public RecoveryStore(Guid runId, RuntimeConfiguration configuration) : this(runId, configuration, null) { }
     internal RecoveryStore(Guid runId, RuntimeConfiguration configuration, Func<RecoveryPreparationStage, RecoveryDraft, Task>? checkpoint,
         Func<RecoveryLoadingStage, Task>? loadCheckpoint = null,

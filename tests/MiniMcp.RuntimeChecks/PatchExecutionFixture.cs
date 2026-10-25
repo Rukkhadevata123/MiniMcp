@@ -29,17 +29,22 @@ internal sealed class PatchExecutionFixture : IDisposable
 
     public ToolExecutionService Execution(Func<PatchCommitStage, int, Task>? patch = null,
         Func<RecoveryPreparationStage, RecoveryDraft, Task>? prepare = null,
-        Func<RecoveryManifestReplacementStage, string, Task>? replace = null) => new(RunId, Configuration, patch, prepare, replace);
+        Func<RecoveryManifestReplacementStage, string, Task>? replace = null,
+        Func<RecoveryPreviewStage, string?, Task>? preview = null) => new(RunId, Configuration, patch, prepare, replace, preview);
 
     public McpRuntime Runtime(Func<PatchCommitStage, int, Task>? patch = null,
         Func<RecoveryPreparationStage, RecoveryDraft, Task>? prepare = null,
-        Func<RecoveryManifestReplacementStage, string, Task>? replace = null)
+        Func<RecoveryManifestReplacementStage, string, Task>? replace = null,
+        Func<RecoveryPreviewStage, string?, Task>? preview = null)
     {
         McpRuntime? runtime = null;
         runtime = new McpRuntime(0, services => services.Replace(ServiceDescriptor.Singleton(_ =>
-            new ToolExecutionService(runtime!.Snapshot.RunId!.Value, runtime.Snapshot.Configuration!, patch, prepare, replace))));
+            new ToolExecutionService(runtime!.Snapshot.RunId!.Value, runtime.Snapshot.Configuration!, patch, prepare, replace, preview))));
         return runtime;
     }
+
+    public RuntimeConfiguration ConfigurationFor(ExecutionMode mode) => new ConfigurationValidator(new ConfigurationPaths(
+        Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"))).Validate(Configuration.Settings, Configuration.SettingsFilePath, Configuration.Policy with { Mode = mode });
 
     public string PathOf(string path) => Path.Combine(Root, path);
     public void Put(string path, string content) => File.WriteAllText(PathOf(path), content, new UTF8Encoding(false));

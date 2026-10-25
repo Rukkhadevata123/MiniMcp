@@ -15,6 +15,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     private readonly ProjectWorkspace _workspace;
     private readonly PatchService _patches;
     private readonly RecoveryStore _recovery;
+    private readonly RecoveryPreviewService _recoveryPreviews;
     private readonly Lazy<BashRunner> _bash;
     private bool _accepting = true;
     private int _activeCalls;
@@ -28,7 +29,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     internal ToolExecutionService(Guid runId, RuntimeConfiguration configuration,
         Func<PatchCommitStage, int, Task>? patchCheckpoint,
         Func<RecoveryPreparationStage, RecoveryDraft, Task>? preparationCheckpoint = null,
-        Func<RecoveryManifestReplacementStage, string, Task>? replacementCheckpoint = null)
+        Func<RecoveryManifestReplacementStage, string, Task>? replacementCheckpoint = null,
+        Func<RecoveryPreviewStage, string?, Task>? recoveryPreviewCheckpoint = null)
     {
         if (runId == Guid.Empty) throw new ArgumentException("A run ID is required.", nameof(runId));
         ArgumentNullException.ThrowIfNull(configuration);
@@ -37,6 +39,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         _workspace = new ProjectWorkspace(configuration.Settings.ProjectRoot);
         _patches = new PatchService(_workspace, patchCheckpoint);
         _recovery = new RecoveryStore(runId, configuration, preparationCheckpoint, null, replacementCheckpoint);
+        _recoveryPreviews = new RecoveryPreviewService(_workspace, _recovery, recoveryPreviewCheckpoint);
         _bash = new Lazy<BashRunner>(() => new BashRunner(_workspace, configuration.Settings.BashPath));
     }
 
@@ -48,6 +51,10 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     public Task<ReadResult> ReadFileAsync(string path, int startLine = 1, int? endLine = null,
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _workspace.ReadFileAsync(path, startLine, endLine, token), cancellationToken);
+
+    // Local only. WorkspaceTools does not map record IDs, previews or restoration to MCP tools.
+    public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(token => _recoveryPreviews.PreviewAsync(changeId, token), cancellationToken);
 
     public Task<PatchApplyResult> ApplyPatchAsync(string patch, bool dryRun = false,
         CancellationToken cancellationToken = default) => ExecuteAsync(async token =>

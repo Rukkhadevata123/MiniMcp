@@ -4,6 +4,11 @@ using System.Text;
 
 namespace MiniMcp.Services;
 
+// Display-only inputs. Exact target permissions can describe restoration without manufacturing a PatchPlan.
+internal sealed record PatchDiffChange(PatchChange Summary, TextFile? Before, ImmutableArray<byte>? After,
+    UnixFileMode? AfterMode, bool AfterModeIsCreateRequest);
+internal sealed record PatchDiff(string Diff, ImmutableArray<PatchFileDiff> Files, PatchStatistics Statistics);
+
 internal static class PatchDiffBuilder
 {
     internal const int MaxDiffUtf8Bytes = 256 * 1024;
@@ -14,12 +19,19 @@ internal static class PatchDiffBuilder
     public static PatchPreview Create(PatchPlan plan, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        var budget = new Budget(cancellationToken);
+        var diff = Create(plan.Changes.Select(change => new PatchDiffChange(change.Summary, change.Before, change.After,
+            change.Before is null ? plan.NewFileCreateMode : change.Before.Mode, change.Before is null && plan.NewFileCreateMode is not null)).ToImmutableArray(), cancellationToken);
+        return new(plan, diff.Diff, diff.Files, diff.Statistics);
+    }
+
+    internal static PatchDiff Create(ImmutableArray<PatchDiffChange> changes, CancellationToken cancellationToken = default, bool forRecovery = false)
+    {
+        var budget = new Budget(cancellationToken, forRecovery);
         var output = new Output(budget);
         var files = ImmutableArray.CreateBuilder<PatchFileDiff>();
         var total = new PatchStatistics(0, 0, 0, 0);
         output.Append("# Review diff: quoted lines escape controls and include their original line endings.\n");
-        foreach (var change in plan.Changes)
+        foreach (var change in changes)
         {
             budget.Spend((change.Before?.Bytes.Length ?? 0) + (change.After?.Length ?? 0) + 1);
             var beforeText = change.Before?.Text ?? "";
@@ -38,7 +50,7 @@ internal static class PatchDiffBuilder
             Metadata(output, "before", change.Before is not null, change.Before?.HasBom ?? false,
                 beforeLines, change.Before?.Mode, creation: false);
             Metadata(output, "after", change.After is not null, afterBom, afterLines,
-                change.Before is null ? plan.NewFileCreateMode : change.Before.Mode, creation: change.Before is null);
+                change.AfterMode, creation: change.AfterModeIsCreateRequest);
 
             var edits = Compare(beforeLines, afterLines, budget);
             int addedLines = 0, removedLines = 0;
@@ -55,7 +67,7 @@ internal static class PatchDiffBuilder
             files.Add(new PatchFileDiff(change.Summary, statistics));
             total += statistics;
         }
-        return new PatchPreview(plan, output.ToString(), files.ToImmutable(), total);
+        return new(output.ToString(), files.ToImmutable(), total);
     }
 
     private static void Metadata(Output output, string label, bool exists, bool bom,
@@ -170,7 +182,7 @@ internal static class PatchDiffBuilder
         }
     }
 
-    private sealed class Budget(CancellationToken cancellationToken)
+    private sealed class Budget(CancellationToken cancellationToken, bool forRecovery)
     {
         private long _work = MaxWorkUnits;
         private long _cells = MaxMatrixCells;
@@ -189,7 +201,12 @@ internal static class PatchDiffBuilder
             _cells -= size;
             return (int)size;
         }
-        private static WorkspaceException TooComplex() => new("Patch diff exceeds the computation limit; split the patch into smaller changes.");
+        private WorkspaceException TooComplex() => new(forRecovery
+            ? "Complete recovery preview exceeds the computation limit; inspect this record locally."
+            : "Patch diff exceeds the computation limit; split the patch into smaller changes.");
+        public WorkspaceException DisplayLimit() => new(forRecovery
+            ? "Complete recovery preview exceeds the 256 KiB UTF-8 display limit; inspect this record locally."
+            : "Complete patch diff exceeds the 256 KiB UTF-8 display limit; split the patch into smaller changes.");
     }
 
     private sealed class Output(Budget budget)
@@ -201,7 +218,7 @@ internal static class PatchDiffBuilder
             budget.Spend(text.Length);
             var bytes = ProjectWorkspace.Utf8.GetByteCount(text);
             if (bytes > MaxDiffUtf8Bytes - _bytes)
-                throw new WorkspaceException("Complete patch diff exceeds the 256 KiB UTF-8 display limit; split the patch into smaller changes.");
+                throw budget.DisplayLimit();
             _text.Append(text);
             _bytes += bytes;
         }

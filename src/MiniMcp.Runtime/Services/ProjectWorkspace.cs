@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text;
+using MiniMcp.Recovery;
 
 namespace MiniMcp.Services;
 
@@ -119,6 +120,45 @@ internal sealed class ProjectWorkspace
             var offset = bom ? 3 : 0;
             return new TextFile(ImmutableArray.Create(bytes, 0, count), Utf8.GetString(bytes, offset, count - offset), bom,
                 OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(file));
+        }
+        catch (DecoderFallbackException) { throw new WorkspaceException("The file is not valid UTF-8 text."); }
+    }
+
+    // Observation for outcome/recovery checks. Native opening rejects hard links, final links and
+    // special files before any read; no FIFO/device may block a preview or verification.
+    internal async Task<TextFile> SnapshotRegularAsync(string file, CancellationToken cancellationToken)
+    {
+        var relative = Relative(file);
+        Resolve(relative);
+        if (!Directory.Exists(Root)) throw new WorkspaceException("The project root no longer exists.");
+        using var stream = RecoveryFileSystem.OpenSharedRead(file);
+        var identity = RecoveryFileSystem.FileIdentity(stream);
+        var length = stream.Length;
+        if (length < 0) throw new IOException("The project file has an invalid length.");
+        if (length > MaxFileBytes) throw new WorkspaceException("File exceeds the 256 KiB limit.");
+        var buffer = new byte[(int)length + 1];
+        var count = 0;
+        while (count < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(count), cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            count += read;
+        }
+        if (count > MaxFileBytes) throw new WorkspaceException("File exceeds the 256 KiB limit.");
+        if (count != length || stream.Length != length || RecoveryFileSystem.FileIdentity(stream) != identity)
+            throw new IOException("The project file changed during observation.");
+        if (buffer.AsSpan(0, count).Contains((byte)0)) throw new WorkspaceException("Only UTF-8 text files are supported.");
+        UnixFileMode? mode = OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(stream.SafeFileHandle);
+        Resolve(relative);
+        using var current = RecoveryFileSystem.OpenSharedRead(file);
+        if (RecoveryFileSystem.FileIdentity(current) != identity || current.Length != length ||
+            (!OperatingSystem.IsWindows() && File.GetUnixFileMode(current.SafeFileHandle) != mode))
+            throw new IOException("The project file was replaced or changed during observation.");
+        try
+        {
+            var bom = count >= 3 && buffer[0] == 0xef && buffer[1] == 0xbb && buffer[2] == 0xbf;
+            var offset = bom ? 3 : 0;
+            return new(ImmutableArray.Create(buffer, 0, count), Utf8.GetString(buffer, offset, count - offset), bom, mode);
         }
         catch (DecoderFallbackException) { throw new WorkspaceException("The file is not valid UTF-8 text."); }
     }

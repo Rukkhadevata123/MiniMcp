@@ -123,6 +123,10 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 
 `dry_run=false` 成功返回同一组评估字段、`dryRun=false` 以及 `commit`：包含本次 `runId`、恢复记录 `changeId`、`state="Committed"` 和 `cleanupIncomplete`。只有实际结果核验及最终清单保存完成后才返回成功；`cleanupIncomplete=true` 表示安装成功后的引擎暂存/旧备份清理有错误，不表示补丁已回滚。恢复目录中的记录按 `changeId` 命名，`manifest.json` 记录操作、状态和哈希，`before-*.bin` 保存完整原字节，包括提交前尚未提交到 Git 的内容。
 
+本机代码可在运行会话中调用 `McpRuntime.PreviewRecoveryAsync(changeId)` 查看历史记录的恢复预览，ReadOnly 也允许查看。结果区分当前 `runId` 和原记录的 `recordRunId`，包含 `recordState`、模式、完整反向 `diff`、逐文件 `changes`、统计、`conflicts` 和 `blockers`；`requiresConfirmation=true` 表示实际恢复仍需本机确认，预览不授予恢复权限。只有 Committed 记录生成反向 diff；Prepared、Applying、RolledBack、Incomplete 返回 `RecordNotCommitted` 阻塞，ReadOnly 另外带 `ReadOnlyMode`。损坏或无法读取的记录报错，不自动修复或清除。
+
+恢复预览核对当前文件的完整字节哈希、存在性、适用权限及路径安全，诊断外部修改、路径占用、缺失、目录/链接/特殊文件等冲突。发现冲突或预览期间记录变化时，返回具体路径/原因，整份 `diff` 和统计为 null、`changes` 为空，不返回部分可确认内容。反向操作覆盖移回原路径、恢复修改/删除及移除原新增文件，保留原始 BOM、行尾、空文件和记录的目标权限；恢复目标权限为原记录值，普通补丁新增文件的创建请求规则另按下文说明。预览复用完整 diff 的大小与计算预算，超限报错，不截断；不创建目录、暂存或备份，不修改文件/权限/记录，也不执行恢复写入。该接口只在本机进程内提供，MCP 仍只暴露三个工具。
+
 逐文件 `risk` 包含 `kind`（`Ordinary`、`Critical`、`Unknown`）和字符串数组 `reasons`。关键规则优先于普通源码/文档扩展名，覆盖脚本、构建文件、CI/自动化目录和实际选定的配置文件；未知类型、删除与移动列入需确认原因。整批 `risk` 包含 `size`（`paths`、`changedLines`、`changedBytes`）、本机 `limits` 和所有 `reasons`。原因包括 `CriticalFile`、`UnknownFileType`、`Delete`、`Move`、`PathLimitExceeded`、`ChangedLineLimitExceeded`、`ChangedByteLimitExceeded`，不把 `None` 放入数组。
 
 `decision` 包含本机 `mode`、策略意向 `disposition`、当前 `blockers`、`requiresRecoveryRecord` 和 `canCommit`。ReadOnly 的意向为 `Denied`，阻塞原因为 `ReadOnlyMode`；ProjectEdit 的普通补丁为 `Automatic`，含任一需确认原因时整批为 `RequiresApproval` 并由 `ApprovalUnavailable` 阻塞；FullAccess 为 `Automatic`。无阻塞时 `canCommit=true` 仅表示允许尝试带记录提交，预演不会创建或检查备份是否就绪，实际提交仍须通过恢复存储、容量和工作区重检。所有允许写入的补丁都要求恢复记录；普通文件不会从需确认的混合补丁中被单独执行。
@@ -156,6 +160,8 @@ Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发
 真实 MCP SDK HTTP 客户端检查覆盖工具发现/schema、三个模式的读取/预演/拒绝、逐文件风险与整批决定、阈值精确边界及逐项超限、自选配置文件识别、公开输出字段限制、大型完整 diff 及超限拒绝、FullAccess Bash 的结果与超时、跨请求鉴权、客户端取消后的子进程退出、跨客户端的修改互斥与停止排空、重启后的项目/模式/阈值隔离，以及 CLI 启动后的实际 MCP 调用。伪造模式、阈值、批准、恢复状态或决定参数不改变本机策略；取消排队中的预演不影响另一客户端正在运行的 Bash，预演和拒绝前后的存储快照一致。检查确认 stateless 响应不使用会话头，默认 Host 不暴露测试探针和 legacy SSE 路由；这些检查不替代 WinUI 交互或公网 OAuth/Tunnel 的实际验证。
 
 内部组合提交检查在混合补丁的每个安装位置注入失败或取消，交叉核对实际工作区、原字节备份、权限和持久化终态；覆盖额度增长、存储占锁、记录篡改、部分回滚、暂存清理、各终态清单保存失败及元数据重试。并发检查验证同一工作区多个提交在最终记录保存前持续互斥、排队取消和重复计划重检、不同工作区的独立执行，以及最终保存等待存储互斥时取消仍保留真实任务与工作区锁。共享入口、真实 HTTP 和 CLI 检查覆盖允许的真实写入、恢复失败零提前写入、错误输出边界、客户端取消及运行时停止期限、真实排空和重启隔离。
+
+恢复预览检查使用实际提交记录和原字节备份，覆盖混合反向操作、格式/权限、空文件、完整大文本、64 次移动/128 路径边界、全部不确定状态、损坏记录、当前路径/内容冲突、真实链接/硬链接、只读存储、观察期间变化及显示/计算超限。取消、工作区/存储互斥和实际 Runtime 停止/重启检查验证只读观察也受会话跟踪，旧预览不能冻结文件或充当恢复授权；所有场景核对工作区及记录保持原样。
 
 <a id="references"></a>
 
