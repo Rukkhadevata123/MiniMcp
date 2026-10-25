@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Security.Cryptography;
 using MiniMcp.Configuration;
 using MiniMcp.Services;
@@ -6,7 +7,7 @@ namespace MiniMcp.Recovery;
 
 internal enum RecoveryPreparationStage { BeforeDirectory, BackupWritten, BeforeManifest, ManifestWritten, BeforeReturn }
 
-// Persists and inspects backups. Workspace mutation, approval and commit-state transitions are separate.
+// Persists and inspects recovery records. Workspace mutation and approval are separate.
 internal sealed partial class RecoveryStore
 {
     public const string ManifestFileName = "manifest.json";
@@ -18,7 +19,8 @@ internal sealed partial class RecoveryStore
 
     public RecoveryStore(Guid runId, RuntimeConfiguration configuration) : this(runId, configuration, null) { }
     internal RecoveryStore(Guid runId, RuntimeConfiguration configuration, Func<RecoveryPreparationStage, RecoveryDraft, Task>? checkpoint,
-        Func<RecoveryLoadingStage, Task>? loadCheckpoint = null)
+        Func<RecoveryLoadingStage, Task>? loadCheckpoint = null,
+        Func<RecoveryManifestReplacementStage, string, Task>? replacementCheckpoint = null)
     {
         if (runId == Guid.Empty) throw new ArgumentException("A run ID is required.", nameof(runId));
         ArgumentNullException.ThrowIfNull(configuration);
@@ -27,6 +29,7 @@ internal sealed partial class RecoveryStore
         _guard = new(configuration);
         _checkpoint = checkpoint;
         _loadCheckpoint = loadCheckpoint;
+        _replacementCheckpoint = replacementCheckpoint;
     }
 
     public async Task<PreparedRecord> PrepareAsync(PatchPlan plan, CancellationToken cancellationToken = default)
@@ -58,8 +61,11 @@ internal sealed partial class RecoveryStore
     public void ValidateOwnership(PreparedRecord record, PatchPlan plan)
     {
         ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(plan);
         if (!ReferenceEquals(record.Owner, this) || !ReferenceEquals(record.Plan, plan))
             throw new InvalidOperationException("The prepared recovery record belongs to a different store or patch plan.");
+        if (record.IsInvalidated)
+            throw new InvalidOperationException("The live recovery record was invalidated after an uncertain update; inspect it locally and prepare a new record.");
     }
 
     private async Task<PreparedRecord> WriteRecordAsync(RecoveryDraft draft, byte[] manifest, long recordBytes,
@@ -103,7 +109,9 @@ internal sealed partial class RecoveryStore
                 throw new IOException("Recovery storage changed during preparation; no prepared handle was returned.");
             CheckDirectory(directory, directoryIdentity.Value, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            return new PreparedRecord(this, draft, directory, directoryIdentity.Value);
+            return new PreparedRecord(this, draft, directory, directoryIdentity.Value,
+                RecoveryFileSystem.DirectoryIdentity(_configuration.Policy.RecoveryDirectory),
+                files.ToImmutableDictionary(file => Path.GetFileName(file.Path), file => file.Identity, StringComparer.Ordinal));
         }
         catch (Exception failure)
         {
@@ -200,12 +208,48 @@ internal sealed partial class RecoveryStore
     // Later commit must still revalidate the record and current workspace state under its mutation lock.
     internal sealed class PreparedRecord
     {
-        internal PreparedRecord(RecoveryStore owner, RecoveryDraft draft, string path, RecoveryFileIdentity identity)
-        { Owner = owner; Plan = draft.Plan; Manifest = draft.Manifest; DirectoryPath = path; Identity = identity; }
+        internal PreparedRecord(RecoveryStore owner, RecoveryDraft draft, string path, RecoveryFileIdentity identity,
+            RecoveryFileIdentity storageIdentity, ImmutableDictionary<string, RecoveryFileIdentity> fileIdentities)
+        {
+            Owner = owner; Plan = draft.Plan; DirectoryPath = path; Identity = identity;
+            StorageIdentity = storageIdentity; _revision = new(draft.Manifest, fileIdentities);
+        }
+        private sealed record Revision(RecoveryManifest Manifest, ImmutableDictionary<string, RecoveryFileIdentity> FileIdentities,
+            PatchExecutionContext? Context = null);
+        private Revision _revision;
+        private int _invalidated;
         internal RecoveryStore Owner { get; }
         internal PatchPlan Plan { get; }
         internal RecoveryFileIdentity Identity { get; }
-        public RecoveryManifest Manifest { get; }
+        internal RecoveryFileIdentity StorageIdentity { get; }
+        internal ImmutableDictionary<string, RecoveryFileIdentity> FileIdentities => Volatile.Read(ref _revision).FileIdentities;
+        internal bool IsInvalidated => Volatile.Read(ref _invalidated) != 0;
+        internal PatchExecutionContext ExecutionContext
+        {
+            get
+            {
+                var current = Volatile.Read(ref _revision);
+                if (IsInvalidated || current.Manifest.State != RecoveryRecordState.Applying || current.Context is null)
+                    throw new InvalidOperationException("A valid Applying record is required for an execution context.");
+                return current.Context;
+            }
+        }
+        public RecoveryManifest Manifest => Volatile.Read(ref _revision).Manifest;
         public string DirectoryPath { get; }
+
+        // Only the owning store advances a verified revision while retaining its process/file locks.
+        // Publish both fields as one immutable revision; store code combining properties holds its gate.
+        internal void AcceptVerifiedReplacement(RecoveryManifestReplacement replacement)
+        {
+            var current = Volatile.Read(ref _revision);
+            var context = current.Context ?? (replacement.Manifest.State == RecoveryRecordState.Applying ? new PatchExecutionContext(Plan) : null);
+            var next = new Revision(replacement.Manifest, current.FileIdentities.SetItem(ManifestFileName, replacement.Identity), context);
+            Volatile.Write(ref _revision, next);
+        }
+        internal void Invalidate()
+        {
+            Interlocked.Exchange(ref _invalidated, 1);
+            Volatile.Read(ref _revision).Context?.Invalidate();
+        }
     }
 }

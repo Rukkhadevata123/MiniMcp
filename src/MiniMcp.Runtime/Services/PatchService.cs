@@ -10,8 +10,9 @@ public sealed record PatchChange(string Action, string Path,
 public sealed record PatchResult(bool DryRun, PatchChange[] Changes);
 
 // Independent implementation of the Codex patch syntax; see README for references and differences.
-internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitStage, int, Task>? checkpoint = null)
+internal sealed partial class PatchService(ProjectWorkspace workspace, Func<PatchCommitStage, int, Task>? checkpoint = null)
 {
+    private readonly object _outcomeIssuer = new();
     internal string ProjectRoot => workspace.Root;
 
     private sealed record Chunk(string? Anchor, string[] Lines, bool EndOfFile);
@@ -77,7 +78,9 @@ internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitS
     public async Task<PatchResult> CommitAsync(PatchPlan plan, CancellationToken cancellationToken = default)
     {
         var outcome = await CommitWithOutcomeAsync(plan, cancellationToken).ConfigureAwait(false);
-        if (outcome.State == PatchCommitState.Incomplete)
+        if (outcome.VerificationFailure is not null)
+            throw new WorkspaceException("Patch installation or rollback finished, but the resulting files could not be verified. Inspect the affected paths before continuing.");
+        if (outcome.VerifiedState == PatchCommitState.Incomplete)
             throw new WorkspaceException("Patch failed and rollback or staging cleanup was incomplete. Stop editing and inspect .minimcp-* files beside the affected paths; original files may remain in .minimcp-*.bak.");
         if (outcome.Failure is { } failure) ExceptionDispatchInfo.Capture(failure).Throw();
         return plan.ToResult(dryRun: false);
@@ -85,7 +88,26 @@ internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitS
 
     // Argument, ownership, lock-wait and initial validation failures still throw before engine work.
     // Once staging begins, the returned outcome describes installation, rollback and cleanup separately.
-    internal async Task<PatchCommitOutcome> CommitWithOutcomeAsync(PatchPlan plan, CancellationToken cancellationToken = default)
+    internal Task<PatchCommitOutcome> CommitWithOutcomeAsync(PatchPlan plan, CancellationToken cancellationToken = default) =>
+        CommitWithOutcomeCoreAsync(plan, null, cancellationToken);
+
+    // Low-level engine entry, not the complete backup/approval transaction. The coordinator must
+    // retain its workspace lock across preparation, execution, observation and final record update.
+    internal Task<PatchCommitOutcome> CommitWithContextAsync(PatchPlan plan, PatchExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return CommitWithOutcomeCoreAsync(plan, context, cancellationToken);
+    }
+
+    internal void ValidateOutcome(PatchPlan plan, PatchCommitOutcome outcome, PatchExecutionContext? context = null)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(outcome);
+        if (!ReferenceEquals(plan.Owner, this) || !outcome.IsIssuedFor(plan, _outcomeIssuer) || (context is not null && !outcome.HasContext(context)))
+            throw new InvalidOperationException("The verified patch outcome belongs to another service, plan or execution context.");
+    }
+
+    private async Task<PatchCommitOutcome> CommitWithOutcomeCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
         if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
@@ -93,8 +115,21 @@ internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitS
         try
         {
             // Reject stale plans before creating any directories, staging files or rollback backups.
-            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            return await CommitCoreAsync(plan, cancellationToken).ConfigureAwait(false);
+            if (context is null) await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+            else
+            {
+                context.Start(plan);
+                try { await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false); }
+                catch (Exception failure)
+                {
+                    // An Applying attempt that was refused before staging still needs truthful final
+                    // evidence. Verify the original state; external changes downgrade it to Incomplete.
+                    var declined = new PatchCommitOutcome(plan, _outcomeIssuer, context, PatchCommitState.RolledBack, failure, [], []);
+                    return await VerifyOutcomeCoreAsync(plan, declined).ConfigureAwait(false);
+                }
+            }
+            var outcome = await CommitCoreAsync(plan, context, cancellationToken).ConfigureAwait(false);
+            return await VerifyOutcomeCoreAsync(plan, outcome).ConfigureAwait(false);
         }
         finally { workspace.Mutations.Release(); }
     }
@@ -245,7 +280,7 @@ internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitS
         }
     }
 
-    private async Task<PatchCommitOutcome> CommitCoreAsync(PatchPlan plan, CancellationToken cancellationToken)
+    private async Task<PatchCommitOutcome> CommitCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
     {
         var changes = plan.Changes.Select(change => new Change(change)).ToList();
         var directories = new List<string>();
@@ -324,7 +359,7 @@ internal sealed class PatchService(ProjectWorkspace workspace, Func<PatchCommitS
         }
         var state = committed ? PatchCommitState.Committed : rollbackErrors.Count == 0 && cleanupErrors.Count == 0
             ? PatchCommitState.RolledBack : PatchCommitState.Incomplete;
-        return new PatchCommitOutcome(state, failure, rollbackErrors.ToImmutable(), cleanupErrors.ToImmutable());
+        return new PatchCommitOutcome(plan, _outcomeIssuer, context, state, failure, rollbackErrors.ToImmutable(), cleanupErrors.ToImmutable());
     }
 
     private Task Checkpoint(PatchCommitStage stage, int index) => checkpoint?.Invoke(stage, index) ?? Task.CompletedTask;

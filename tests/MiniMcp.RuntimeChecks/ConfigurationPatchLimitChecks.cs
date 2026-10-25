@@ -94,7 +94,11 @@ internal static class ConfigurationPatchLimitChecks
             Assert(snapshot.Policy.PatchApprovalLimits == limits && first.Value.PatchApprovalLimits == limits, "Prior snapshots unchanged");
             Assert((await fixture.Store.ReadPolicyAsync()) == next && next.Revision != first.Revision, "Updated revision");
             Assert((await File.ReadAllBytesAsync(fixture.Source)).SequenceEqual(settingsBytes), "Settings unchanged");
-            Assert(!Directory.Exists(fixture.Paths.RecoveryDirectory) && !Directory.EnumerateFiles(fixture.DirectoryPath, "*.tmp", SearchOption.AllDirectories).Any(), "No recovery or staging remnants");
+            Assert(!Directory.Exists(fixture.Paths.RecoveryDirectory), "No recovery directory");
+            // Match the returned long filename explicitly; Windows wildcard searches can include 8.3 aliases.
+            var temporaryFiles = Directory.EnumerateFiles(fixture.DirectoryPath, "*", SearchOption.AllDirectories)
+                .Where(path => Path.GetExtension(path).Equals(".tmp", StringComparison.OrdinalIgnoreCase)).ToArray();
+            Assert(temporaryFiles.Length == 0, "No staging remnants: " + string.Join(", ", temporaryFiles));
         });
 
         await check("invalid patch limit saves leave existing policy intact and create no missing policy storage", async () =>

@@ -16,6 +16,28 @@ internal static class RecoveryStorageLimits
 // Observed usage, not a reservation. Writers must inspect again under their storage mutation lock.
 internal sealed record RecoveryStorageUsage(long Bytes, int RecordSlots)
 {
+    // A current feasibility check, never a reservation of future capacity.
+    public void EnsureCanBeginApplying(long recordBytes, int oldBytes, int applyingBytes, int maximumFinalBytes)
+    {
+        EnsureCanReplaceManifest(recordBytes, oldBytes, applyingBytes);
+        var after = new RecoveryStorageUsage(checked(Bytes - oldBytes + applyingBytes), RecordSlots);
+        after.EnsureCanReplaceManifest(checked(recordBytes - oldBytes + applyingBytes), applyingBytes, maximumFinalBytes);
+    }
+
+    public void EnsureCanReplaceManifest(long recordBytes, int oldBytes, int newBytes)
+    {
+        if (oldBytes is <= 0 or > RecoveryManifestJson.MaxManifestBytes || newBytes is <= 0 or > RecoveryManifestJson.MaxManifestBytes ||
+            recordBytes < oldBytes || recordBytes > RecoveryStorageLimits.MaxRecordBytes)
+            throw new ArgumentOutOfRangeException(nameof(recordBytes), "Use actual bounded record and manifest sizes.");
+        if (RecordSlots is < 1 or > RecoveryStorageLimits.MaxRecordSlots || Bytes < recordBytes || Bytes > RecoveryStorageLimits.MaxStoreBytes)
+            throw new InvalidDataException("Recovery usage is inconsistent or outside its limits.");
+        if (recordBytes - oldBytes + newBytes > RecoveryStorageLimits.MaxRecordBytes)
+            throw new IOException("The replacement would exceed the per-record byte limit.");
+        // Temporarily retain both manifests in the existing record slot. Never exceed the global cap.
+        if (newBytes > RecoveryStorageLimits.MaxStoreBytes - Bytes)
+            throw new IOException("Recovery storage lacks space for the temporary manifest; clean records locally before retrying.");
+    }
+
     public void EnsureCanAdd(long recordBytes)
     {
         if (recordBytes is <= 0 or > RecoveryStorageLimits.MaxRecordBytes)

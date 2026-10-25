@@ -24,14 +24,15 @@ internal static class RecoveryFileSystem
 
     public static FileStream OpenFile(string path, FileMode mode) => OpenFile(path, mode, FileAccess.ReadWrite);
     public static FileStream OpenRead(string path) => OpenFile(path, FileMode.Open, FileAccess.Read);
+    public static FileStream OpenSharedRead(string path) => OpenFile(path, FileMode.Open, FileAccess.Read, windowsShare: 1); // FILE_SHARE_READ only
 
-    private static FileStream OpenFile(string path, FileMode mode, FileAccess access)
+    private static FileStream OpenFile(string path, FileMode mode, FileAccess access, uint windowsShare = 0)
     {
         SafeFileHandle handle;
         if (OperatingSystem.IsWindows())
         {
             var disposition = mode switch { FileMode.CreateNew => 1u, FileMode.Open => 3u, FileMode.OpenOrCreate => 4u, _ => throw new ArgumentException("Unsupported recovery file mode.") };
-            handle = CreateFileWindows(WindowsPath(path), access == FileAccess.Read ? 0x80000000 : 0xc0000000, 0, IntPtr.Zero, disposition, 0x00200000, IntPtr.Zero);
+            handle = CreateFileWindows(WindowsPath(path), access == FileAccess.Read ? 0x80000000 : 0xc0000000, windowsShare, IntPtr.Zero, disposition, 0x00200000, IntPtr.Zero);
             if (handle.IsInvalid) { var error = Marshal.GetLastPInvokeError(); handle.Dispose(); throw Failure("Open recovery file", error); }
         }
         else if (OperatingSystem.IsLinux())
@@ -68,6 +69,17 @@ internal static class RecoveryFileSystem
         if (!OperatingSystem.IsLinux()) return;
         using var handle = OpenDirectory(path);
         if (Fsync(handle.DangerousGetHandle().ToInt32()) != 0) throw Failure("Flush recovery directory", Marshal.GetLastPInvokeError());
+    }
+
+    // Callers verify two regular files in the same directory/device before this rename.
+    // No cross-volume copy/delete fallback. Errors after the call begins are treated as uncertain.
+    public static void ReplaceFile(string source, string destination)
+    {
+        CheckPlatform();
+        var replaced = OperatingSystem.IsWindows()
+            ? MoveFileWindows(WindowsPath(source), WindowsPath(destination), 1 | 8) // REPLACE_EXISTING | WRITE_THROUGH
+            : Rename(source, destination) == 0;
+        if (!replaced) throw Failure("Replace recovery manifest", Marshal.GetLastPInvokeError());
     }
 
     private static SafeFileHandle OpenDirectory(string path)
@@ -139,6 +151,8 @@ internal static class RecoveryFileSystem
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CreateDirectoryWindows(string path, IntPtr attributes);
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileWindows(string path, uint access, uint share, IntPtr attributes, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", EntryPoint = "MoveFileExW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool MoveFileWindows(string source, string destination, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint GetFileType(SafeFileHandle handle);
     [DllImport("kernel32.dll", EntryPoint = "GetFileInformationByHandle", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetFileInformation(SafeFileHandle handle, out WindowsInformation information);
@@ -154,6 +168,8 @@ internal static class RecoveryFileSystem
     [DllImport("libc", EntryPoint = "fcntl", SetLastError = true)] private static extern int DuplicateDescriptor(int descriptor, int command, int minimum);
     [DllImport("libc", EntryPoint = "close", SetLastError = true)] private static extern int Close(int descriptor);
     [DllImport("libc", EntryPoint = "fsync", SetLastError = true)] private static extern int Fsync(int descriptor);
+    [DllImport("libc", EntryPoint = "rename", SetLastError = true)]
+    private static extern int Rename([MarshalAs(UnmanagedType.LPUTF8Str)] string source, [MarshalAs(UnmanagedType.LPUTF8Str)] string destination);
     [DllImport("libc", EntryPoint = "statx", SetLastError = true)] private static extern int Statx(int descriptor, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, out LinuxStatx status);
     [StructLayout(LayoutKind.Explicit, Size = 256)]
     private struct LinuxStatx
