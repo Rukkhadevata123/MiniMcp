@@ -117,6 +117,8 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 
 补丁使用 `*** Begin Patch` / `*** End Patch` 格式，精确匹配上下文。内部补丁引擎的写入、BOM/换行/Unix 权限保留和提交失败回滚由核心检查验证。
 
+内部 `CommitWithRecoveryAsync` 在同一工作区修改锁内完成计划复查、原字节备份、`Applying` 持久化、实际提交或回滚、结果核验及最终记录保存。备份失败不创建工作区目录或暂存文件；准备后、暂存后和每个操作安装前复查外部修改。`Applying` 完成核验后，即使调用取消也会核验实际结果并等待最终清单保存；保存失败保留对应记录与引擎结果，不额外回滚工作区。该入口仅供内部流程检查，MCP 工具的实际写入仍按上述规则拒绝。
+
 `dry_run=true` 成功返回 `dryRun=true`、完整 `diff`、逐文件 `changes`、合计 `statistics`、整批 `risk` 和 `decision`。每个 `changes` 元素包含 `summary`（`action`、`path`、`moveTo`、`beforeBytes`、`afterBytes`）、该文件的 `statistics` 与 `risk`；统计字段为 `addedLines`、`removedLines`、`addedBytes`、`removedBytes`。MCP 的结构化结果和文本 JSON 包含一致的完整预览和决定，不返回内部计划、原始快照对象、绝对配置路径或批准凭证。
 
 逐文件 `risk` 包含 `kind`（`Ordinary`、`Critical`、`Unknown`）和字符串数组 `reasons`。关键规则优先于普通源码/文档扩展名，覆盖脚本、构建文件、CI/自动化目录和实际选定的配置文件；未知类型、删除与移动列入需确认原因。整批 `risk` 包含 `size`（`paths`、`changedLines`、`changedBytes`）、本机 `limits` 和所有 `reasons`。原因包括 `CriticalFile`、`UnknownFileType`、`Delete`、`Move`、`PathLimitExceeded`、`ChangedLineLimitExceeded`、`ChangedByteLimitExceeded`，不把 `None` 放入数组。

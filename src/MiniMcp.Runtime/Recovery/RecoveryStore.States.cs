@@ -2,9 +2,10 @@ using MiniMcp.Services;
 
 namespace MiniMcp.Recovery;
 
-internal sealed class RecoveryFinalizationException(PatchCommitOutcome outcome, Exception failure)
+internal sealed class RecoveryFinalizationException(RecoveryStore.PreparedRecord record, PatchCommitOutcome outcome, Exception failure)
     : IOException($"The patch engine reported {outcome.State} (verified result: {outcome.VerifiedState}), but its final recovery record could not be saved. Inspect the record locally; no additional workspace rollback was attempted.", failure)
 {
+    public RecoveryStore.PreparedRecord Record { get; } = record;
     public PatchCommitOutcome Outcome { get; } = outcome;
 }
 
@@ -39,7 +40,7 @@ internal sealed partial class RecoveryStore
             {
                 // The engine result stays attached even if writing, readback or quota validation fails.
                 // Do not replay the engine or label a committed patch as cancelled/rolled back.
-                throw new RecoveryFinalizationException(outcome, failure);
+                throw new RecoveryFinalizationException(record, outcome, failure);
             }
         }
         finally { Writes.Release(); }

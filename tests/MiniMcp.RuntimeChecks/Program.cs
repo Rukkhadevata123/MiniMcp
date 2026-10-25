@@ -287,6 +287,7 @@ await RecoveryManifestReplacementChecks.RunAsync(Check);
 await RecoveryApplyingStateChecks.RunAsync(Check);
 await RecoveryCompletionChecks.RunAsync(Check);
 await RecoveryFinalizationChecks.RunAsync(Check);
+await RecordedPatchCommitChecks.RunAsync(Check);
 await RuntimeConfigurationChecks.RunAsync(Check);
 await RuntimeSnapshotChecks.RunAsync(Check);
 await RuntimeSessionChecks.RunAsync(Check);

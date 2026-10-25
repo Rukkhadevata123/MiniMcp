@@ -114,24 +114,30 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Reject stale plans before creating any directories, staging files or rollback backups.
-            if (context is null) await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            else
-            {
-                context.Start(plan);
-                try { await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false); }
-                catch (Exception failure)
-                {
-                    // An Applying attempt that was refused before staging still needs truthful final
-                    // evidence. Verify the original state; external changes downgrade it to Incomplete.
-                    var declined = new PatchCommitOutcome(plan, _outcomeIssuer, context, PatchCommitState.RolledBack, failure, [], []);
-                    return await VerifyOutcomeCoreAsync(plan, declined).ConfigureAwait(false);
-                }
-            }
-            var outcome = await CommitCoreAsync(plan, context, cancellationToken).ConfigureAwait(false);
-            return await VerifyOutcomeCoreAsync(plan, outcome).ConfigureAwait(false);
+            return await ExecuteAndVerifyCoreAsync(plan, context, cancellationToken).ConfigureAwait(false);
         }
         finally { workspace.Mutations.Release(); }
+    }
+
+    // Caller retains the workspace mutation lock, including any surrounding recovery transaction.
+    private async Task<PatchCommitOutcome> ExecuteAndVerifyCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
+    {
+        // Reject stale plans before creating any directories, staging files or rollback backups.
+        if (context is null) await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+        else
+        {
+            context.Start(plan);
+            try { await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false); }
+            catch (Exception failure)
+            {
+                // An Applying attempt that was refused before staging still needs truthful final
+                // evidence. Verify the original state; external changes downgrade it to Incomplete.
+                var declined = new PatchCommitOutcome(plan, _outcomeIssuer, context, PatchCommitState.RolledBack, failure, [], []);
+                return await VerifyOutcomeCoreAsync(plan, declined).ConfigureAwait(false);
+            }
+        }
+        var outcome = await CommitCoreAsync(plan, context, cancellationToken).ConfigureAwait(false);
+        return await VerifyOutcomeCoreAsync(plan, outcome).ConfigureAwait(false);
     }
 
     private static List<Operation> Parse(string patch)
@@ -260,24 +266,28 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         workspace.Resolve(".");
         if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
         foreach (var change in plan.Changes)
+            await ValidateChangeAsync(change, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ValidateChangeAsync(PlannedPatchChange change, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        workspace.Resolve(workspace.Relative(change.Source));
+        workspace.Resolve(workspace.Relative(change.Destination));
+        if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
+        if (Directory.Exists(change.Source) || Directory.Exists(change.Destination))
+            throw new WorkspaceException("A patch path became a directory; prepare a new plan.");
+        foreach (var path in new[] { change.Source, change.Destination })
+            for (var parent = Path.GetDirectoryName(path); parent != workspace.Root && parent is not null; parent = Path.GetDirectoryName(parent))
+                if (File.Exists(parent)) throw new WorkspaceException("A patch parent path became a file; prepare a new plan.");
+        if (change.Before is not null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            workspace.Resolve(workspace.Relative(change.Source));
-            workspace.Resolve(workspace.Relative(change.Destination));
-            if (Directory.Exists(change.Source) || Directory.Exists(change.Destination))
-                throw new WorkspaceException("A patch path became a directory; prepare a new plan.");
-            foreach (var path in new[] { change.Source, change.Destination })
-                for (var parent = Path.GetDirectoryName(path); parent != workspace.Root && parent is not null; parent = Path.GetDirectoryName(parent))
-                    if (File.Exists(parent)) throw new WorkspaceException("A patch parent path became a file; prepare a new plan.");
-            if (change.Before is not null)
-            {
-                var current = await workspace.SnapshotAsync(change.Source, cancellationToken).ConfigureAwait(false);
-                if (!current.Bytes.AsSpan().SequenceEqual(change.Before.Bytes.AsSpan()) || current.Mode != change.Before.Mode)
-                    throw new WorkspaceException("A file changed since the patch was prepared; prepare a new plan.");
-            }
-            if ((change.Before is null || change.Source != change.Destination) && File.Exists(change.Destination))
-                throw new WorkspaceException("A patch destination appeared since the patch was prepared.");
+            var current = await workspace.SnapshotAsync(change.Source, cancellationToken).ConfigureAwait(false);
+            if (!current.Bytes.AsSpan().SequenceEqual(change.Before.Bytes.AsSpan()) || current.Mode != change.Before.Mode)
+                throw new WorkspaceException("A file changed since the patch was prepared; prepare a new plan.");
         }
+        if ((change.Before is null || change.Source != change.Destination) && File.Exists(change.Destination))
+            throw new WorkspaceException("A patch destination appeared since the patch was prepared.");
     }
 
     private async Task<PatchCommitOutcome> CommitCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
@@ -316,6 +326,9 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             {
                 var change = changes[i];
                 await Checkpoint(PatchCommitStage.BeforeInstall, i).ConfigureAwait(false);
+                // Earlier operations may already be installed, so recheck this untouched operation
+                // rather than the full original plan. Late cancellation must not split the batch.
+                await ValidateChangeAsync(plan.Changes[i], CancellationToken.None).ConfigureAwait(false);
                 if (change.Before is not null)
                 {
                     var backup = Path.Combine(Path.GetDirectoryName(change.Source)!, $".minimcp-{Guid.NewGuid():N}.bak");
