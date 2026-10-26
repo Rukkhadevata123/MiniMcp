@@ -4,7 +4,7 @@ MiniMcp 由 Runtime 类库、跨平台 CLI 和 Windows WinUI 入口组成，HTTP
 
 CLI 与桌面窗口直接控制 Runtime 的启动和停止。`/mcp` 提供 stateless Streamable HTTP，`/healthz` 提供本机健康检查。
 
-MCP 提供 `read_file`、`list_files`、`search_text`、`apply_patch` 和 `bash`，五个工具使用同一个会话执行入口。所有模式允许文件查询和补丁预演；ProjectEdit 允许普通补丁，直接拒绝受限批次；FullAccess 允许全部通过基础检查的补丁和 Bash，每次实际补丁提交均保存恢复记录。
+MCP 固定提供 `read_file`、`list_files`、`search_text`、`git_status`、`git_diff`、`git_log`、`apply_patch` 和 `bash`，八个工具使用同一个会话执行入口。所有模式允许文件/Git 查询和补丁预演；ProjectEdit 允许普通补丁，直接拒绝受限批次；FullAccess 允许全部通过基础检查的补丁和 Bash，每次实际补丁提交均保存恢复记录。
 
 ## 项目结构
 
@@ -16,9 +16,9 @@ src/
     Diagnostics/            有界脱敏日志、独立状态订阅与输出排空
     Configuration/          运行配置、认证和本机执行策略模型
     Security/               Cloudflare Access JWT 验证
-    Services/               文件、补丁、Bash 与进程清理
+    Services/               文件、搜索、Git、补丁、Bash 与进程清理
     Recovery/               恢复记录、准备记录持久化与受限加载
-    Tools/                  五个固定 MCP 工具入口
+    Tools/                  八个固定 MCP 工具入口
   MiniMcp.Cli/               .NET 10 命令行入口
   MiniMcp.Desktop/           Windows WinUI 3 本机服务窗口
 examples/
@@ -90,7 +90,7 @@ HTTP Host 白名单在 Local 模式包含 `localhost`、`127.0.0.1` 和 `[::1]`�
 
 CloudflareAccess 的 `/mcp` 要求认证，每个请求由认证/授权中间件校验单个 `Cf-Access-Jwt-Assertion`：验证 RS256 签名、团队 issuer、应用 AUD 和有效期，从团队的 HTTPS JWKS 地址缓存并受限刷新公钥。Cookie 和客户端 OAuth Bearer 不作为 Access JWT；Managed OAuth 由 Cloudflare 网关处理。JWT 声明不会改变本机执行策略。Local 模式允许匿名 MCP 请求，`/healthz` 在两种模式下均允许匿名诊断；本机健康响应不验证公网网关连通性。[Cloudflare JWT 验证说明](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 
-`examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash/rg、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限、恢复目录和 ProjectEdit 编辑上限。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。执行权限在共用工具入口检查。
+`examples/` 提供不含凭据的 JSON 格式示例。`AppSettings` 定义项目目录、端口、Bash/rg/Git、认证和隧道配置；`ExecutionPolicy` 单独定义本机执行权限、恢复目录和 ProjectEdit 编辑上限。模型默认认证为 `CloudflareAccess`、执行模式为 `ReadOnly`、隧道关闭；本机示例显式选择 `Local` 认证。执行权限在共用工具入口检查。
 
 `policy.json` 的 `projectEditLimits` 保存 ProjectEdit 普通补丁的上限：`maxPaths` 默认 10，`maxChangedLines` 默认 500，`maxChangedBytes` 默认 65536。口径为整批不同路径数、增删行之和、增删真实字节之和，移动包含源和目标两个路径；等于上限允许，超过任一上限整批拒绝。各项接受 0 至 2147483647 的整数，0 禁止该维度的非零变更；省略对象或字段使用默认值，负值、空值和错误类型报错。旧 `patchApprovalLimits` 字段已移除，严格解析会拒绝，须改名。FullAccess 仍遵守基础限制与强制恢复记录要求。
 
@@ -111,6 +111,8 @@ Runtime 的 `ConfigurationPaths` 提供共用路径规则：Windows 配置位于
 `ConfigurationValidator.Validate` 组合配置值、路径和启用的外部依赖检查；`ConfigurationStore.LoadAsync` 从文件调用同一流程。仅 FullAccess 要求 Bash，ReadOnly/ProjectEdit 均跳过；Linux 在 Bash 或受管隧道启用时要求 `/usr/bin/setsid`，搜索执行时也检查此清理依赖。隧道启用时要求 cloudflared 以及可打开、非空的 token 文件。停用功能保留其配置，不检查对应程序或文件是否存在。程序仅检查文件存在、非目录及 Linux 执行位，token 不读取正文；不启动程序、不验证版本或公网认证，实际运行仍由启动结果判断。
 
 `rgPath` 是可选路径，相对所选 settings.json 解析。显式配置优先，否则查找程序目录、Linux 常见安装目录及 PATH 中的绝对目录，跳过项目和当前工作目录内的自动候选；不会执行项目里的 rg，也不会下载安装。本仓库未捆绑 rg，使用前需安装 [ripgrep 官方发行版](https://github.com/BurntSushi/ripgrep/releases) 或配置可信程序。`check` 仅报告其程序文件定位结果；缺失、显式路径失效或运行时不支持固定参数时，只影响 `search_text`，其他工具和 MCP 启动仍可用。查询使用现有 Windows Job/Linux 进程组管理，原始 stdout/stderr 不经过日志内容裁剪后再当查询数据。
+
+`gitPath` 同样可选、相对 settings.json 解析，显式路径优先；自动查找 Windows 常见 Git 安装及程序目录/Linux 常见目录/绝对 PATH，跳过项目和当前目录内的候选。需要本机 [Git](https://git-scm.com/downloads)，本仓库不附带或下载程序。缺失只使三个 Git 查询返回工具错误。CLI `check` 和桌面启动时展示 rg/Git 的程序文件定位结果，不执行它们；版本支持、仓库布局及配置安全由实际调用核验，不将“找到程序文件”当作工具一定可用。
 
 完整校验返回 `RuntimeConfiguration`，只读保存规范化后的 `AppSettings`、`ExecutionPolicy` 与 `SettingsFilePath`，作为运行入口的共用配置输入。`SettingsFilePath` 为实际配置来源的绝对路径；校验内存草稿时，它表示预期保存路径，用于识别自选文件名的关键配置。`ConfigurationStore.LoadAsync(..., mode: ExecutionMode.ReadOnly)` 可为本次加载选择执行模式；该选择在两份文件成功解析后应用，并参与完整校验，不写回 `policy.json`。已生成的配置快照不随文件或编辑草稿变化。
 
@@ -138,12 +140,15 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 | `read_file` | `path`、`start_line=1`、`end_line=null` | 读取 UTF-8 文本，行号从 1 开始，包含结束行 |
 | `list_files` | `path="."`、`max_depth=2`、`max_entries=200`、`include_hidden=false`、`format="flat"` | 内建目录列表及可选树形输出 |
 | `search_text` | `pattern`、`path="."`、`glob=null`、`regex=false`、`case_sensitive=true`、`max_depth=16`、`max_results=100` | 受控 rg 文本查询，返回匹配行与完整性信息 |
+| `git_status` | `path="."`、`max_entries=200` | staged/unstaged/untracked 状态，最多 2000 项 |
+| `git_diff` | `path="."`、`staged=false`、`max_files=20`、`max_lines=1000` | 工作区对 index，或 staged 的 index 对 HEAD；最多 100 文件/4000 行，无未跟踪文件正文 |
+| `git_log` | `path="."`、`max_count=20` | 当前 HEAD 可达且在允许路径范围内的提交摘要，最多 100 条 |
 | `apply_patch` | `patch`、`dry_run=false` | 预演返回完整 diff、统计和策略决定；实际提交按本机模式执行并强制保存恢复记录 |
 | `bash` | `command`、`workdir="."`、`timeout_seconds=30` | 仅 FullAccess 允许执行，超时范围 1–600 秒 |
 
 文件路径和工作目录参数使用相对项目根的 `/` 分隔路径。文件工具拒绝越界、链接、私密目录和凭据文件；单文件最多 256 KiB。`read_file` 的内容和 Bash 的每个输出流分别最多 16000 个 UTF-16 字符单元；补丁 diff 使用下述独立限制。
 
-五个工具在三模式中注册相同名称、schema、描述和 annotations，缺依赖也不隐藏；权限在执行时检查。所有模式允许文件查询和补丁预演；ReadOnly 拒绝实际补丁写入和 Bash。ProjectEdit 自动执行允许的普通源码/文档补丁，删除、移动、关键文件、未知类型及超出上限的整批补丁直接拒绝，Bash 也禁止。FullAccess 允许通过基础检查的补丁和 Bash。工具参数不能批准请求、关闭备份、声明恢复就绪或修改模式和阈值。
+八个工具在三模式中注册相同名称、schema、描述和 annotations，缺依赖或非 Git 项目也不隐藏；权限在执行时检查。所有模式允许文件/Git 查询和补丁预演；ReadOnly 拒绝实际补丁写入和 Bash。ProjectEdit 自动执行允许的普通源码/文档补丁，删除、移动、关键文件、未知类型及超出上限的整批补丁直接拒绝，Bash 也禁止。FullAccess 允许通过基础检查的补丁和 Bash。工具参数不能批准请求、关闭备份、声明恢复就绪或修改模式和阈值。
 
 会话模式固定；CLI 按 Ctrl+C 停止后重新 run，桌面入口修改本机配置后停止再启动。服务端没有审批队列或 run 内 approve/deny 输入循环。MCP 客户端可以自行提示确认，其 annotations 仅为提示，客户端允许也不能放宽服务器权限。
 
@@ -152,6 +157,14 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 `search_text` 默认字面匹配、区分大小写，`regex=true` 使用 rg 默认 Rust 正则；pattern 最多 4096 UTF-8 字节，glob 最多 1024。默认深度 16、最多 32，默认返回 100 个匹配行、最多 1000；预览转义控制字符，最多 2000 字符，不返回字节偏移伪装的字符列。先对选定范围最多 10000 项做检查，再用 rg 筛选正常 ignore/glob 规则内的候选，最后分批搜索核验过的文件，避免私密文件或链接成为内容输入。仅使用选定根以内的 ignore 文件，禁用父级/全局 ignores、`.git/info/exclude` 和隐式配置；危险或过大的 ignore 文件拒绝范围。隐藏/二进制内容默认按 rg 过滤；拒绝超过 256 KiB 的候选，只返回有效 UTF-8 片段，JSON bytes 字段不解码回正文，也不保证未匹配部分是 UTF-8。私密排除在用户 glob 后应用，并再次核对结果。
 
 两个查询工具不创建修改记录，不持有写锁等待用户；结果不是跨文件事务快照。结果最多 256 KiB，`complete`、`truncated` 和 `notices` 区分范围、裁剪、跳过及不完整情况。无匹配正常返回空结果，非法正则/不支持的 rg 参数、超时和用户取消分别报告。查询预算 10 秒，外部查询同时最多 2 个、排队最多 8 个且可取消；达到输出限制会终止自己的查询进程并排空双流，不继续无限扫描。项目外并发修改不受 MiniMcp 控制，检测到候选变化时拒绝并要求重试。rg 参数的实际语义参考[官方指南](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md)。
+
+三个 Git 工具只支持 projectRoot 本身是标准工作树、其中 `.git` 是真实目录的仓库。不会向父目录发现仓库，不支持外部 gitdir/commondir/alternates、linked worktree、裸仓库、promisor/partial clone、grafts、按 worktree 配置或元数据链接/硬链接，不遍历子模块。元数据检查最多 10000 项、32 层，config 最多 64 KiB、index 最多 16 MiB；超出范围明确拒绝。路径参数按 literal 处理，硬私密排除先于结果读取，输出路径再次检查；禁用 rename 推断，不通过重命名关联暴露私密端点，索引/历史的 symlink/gitlink 模式也被排除。
+
+Git 查询先用 `config --no-includes --file` 读取本仓库配置，仅允许固定的基本配置：仓库格式、非 bare、文件模式/大小写/换行等有限 core 字段，user 名称/邮箱/签名键和 branch 的 remote/merge/rebase、remote 的 url/pushurl/fetch/tagopt。fsmonitor/sparse checkout 只允许关闭；objectFormat 仅允许 sha1/sha256。include/includeIf、外部 filter/clean/smudge/process、diff/textconv/fsmonitor 助手、路径重定向和未知配置在执行查询前拒绝；配置不会被改写，也不使用 `safe.directory=*` 绕过。配置内容、目录身份及 HEAD/ref/index 元数据会复查，发现变化拒绝；不提供对外部并发写入者的跨进程事务隔离。
+
+实际命令固定 git-dir/work-tree，清除继承的 GIT_* 和程序助手环境，禁用系统/全局配置、pager、颜色、external diff、textconv、signature 验证、submodule 递归、optional locks/index 刷新写回、lazy fetch 和网络协议。读取缺失对象直接报错，不访问远端。Git 本身的 status 默认可能写回 index，不能将“查询命令”直接当成无副作用保证。[全局控制选项](https://git-scm.com/docs/git)、[status 索引刷新](https://git-scm.com/docs/git-status#_background_refresh)、[配置 include](https://git-scm.com/docs/git-config#_includes)
+
+Git 查询与 rg 共用 10 秒预算、2 个执行槽/8 个等待槽和真实进程清理；每份结果最多 256 KiB。status 返回结构化路径及 index/worktree 字符，diff 逐文件返回状态和转义后的行，正文/对象最多 256 KiB、单行预览最多 2000 字符，超限、二进制/非 UTF-8 或非普通文件等跳过明确标记。git_diff 的查询输出允许有界裁剪，不能替代 apply_patch 的完整预演。log 仅返回 hash、作者、时间和 subject，不提供任意 revision、blob 或完整 message body；无 HEAD 提交返回明确 NoHeadCommit。Git 路径和提交字段使用 NUL 安全格式解析，原始 stderr 不回传潜在私密路径；损坏/缺失对象及不支持配置作为工具错误返回，健康 Host 保持运行。
 
 补丁使用 `*** Begin Patch` / `*** End Patch` 格式，精确匹配上下文。内部补丁引擎的写入、BOM/换行/Unix 权限保留和提交失败回滚由核心检查验证。
 
@@ -163,7 +176,7 @@ dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 
 本机代码可在运行会话中调用 `McpRuntime.PreviewRecoveryAsync(changeId)` 查看历史记录的恢复预览，ReadOnly 也允许查看。结果区分当前 `runId` 和原记录的 `recordRunId`，包含 `recordState`、模式、完整反向 `diff`、逐文件 `changes`、统计、`conflicts` 和 `blockers`；`requiresConfirmation=true` 表示实际恢复仍需本机确认，预览不授予恢复权限。只有 Committed 记录生成反向 diff；Prepared、Applying、RolledBack、Incomplete 返回 `RecordNotCommitted` 阻塞，ReadOnly 另外带 `ReadOnlyMode`。损坏或无法读取的记录报错，不自动修复或清除。
 
-恢复预览核对当前文件的完整字节哈希、存在性、适用权限及路径安全，诊断外部修改、路径占用、缺失、目录/链接/特殊文件等冲突。发现冲突或预览期间记录变化时，返回具体路径/原因，整份 `diff` 和统计为 null、`changes` 为空，不返回部分可确认内容。反向操作覆盖移回原路径、恢复修改/删除及移除原新增文件，保留原始 BOM、行尾、空文件和记录的目标权限；恢复目标权限为原记录值，普通补丁新增文件的创建请求规则另按下文说明。预览复用完整 diff 的大小与计算预算，超限报错，不截断；不创建目录、暂存或备份，不修改文件/权限/记录，也不执行恢复写入。该接口只在本机进程内提供，MCP 仍只暴露上述五个工具。
+恢复预览核对当前文件的完整字节哈希、存在性、适用权限及路径安全，诊断外部修改、路径占用、缺失、目录/链接/特殊文件等冲突。发现冲突或预览期间记录变化时，返回具体路径/原因，整份 `diff` 和统计为 null、`changes` 为空，不返回部分可确认内容。反向操作覆盖移回原路径、恢复修改/删除及移除原新增文件，保留原始 BOM、行尾、空文件和记录的目标权限；恢复目标权限为原记录值，普通补丁新增文件的创建请求规则另按下文说明。预览复用完整 diff 的大小与计算预算，超限报错，不截断；不创建目录、暂存或备份，不修改文件/权限/记录，也不执行恢复写入。该接口只在本机进程内提供，MCP 仍只暴露上述八个工具。
 
 Runtime 内部恢复协调器以完整预览生成绑定当前会话和原记录内容的一次性计划，实际提交时重新加载原记录及完整备份，并重查所有工作区路径。过期、错误归属或已使用的计划整批拒绝；准备完成后不持有修改锁等待本机决定。进入实际提交后，同一工作区修改锁覆盖恢复前备份、Applying、真实提交/回滚及最终记录，安装边界继续检查原记录变化。ReadOnly 拒绝恢复写入；备份、额度或存储占锁失败不回退为无记录恢复，晚到取消和停止等待不会丢弃真实安装、回滚或最终记录任务。
 
@@ -195,7 +208,7 @@ dotnet run --project tests/MiniMcp.ProtocolChecks
 dotnet run --project tests/MiniMcp.RuntimeChecks
 ```
 
-运行检查需要 Bash 和 rg，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
+运行检查需要 Bash、rg 和 Git，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、提交结果及回滚/清理错误、提交取消边界、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、三模式整批决定和执行阻塞原因、内存恢复草稿的原字节/前后路径状态/权限/哈希、恢复清单的严格 JSON/必需字段/大小边界、记录归属与操作/路径/备份引用对应关系、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、带记录写入、策略拒绝及 Bash 权限；交叉核对公开会话/记录 ID、真实持久化状态与原字节备份，伪造关闭恢复等参数不能绕过记录。大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 
@@ -207,7 +220,7 @@ Runtime 检查覆盖真实 HTTP 响应、loopback 绑定、端口冲突、并发
 
 恢复预览检查使用实际提交记录和原字节备份，覆盖混合反向操作、格式/权限、空文件、完整大文本、64 次移动/128 路径边界、全部不确定状态、损坏记录、当前路径/内容冲突、真实链接/硬链接、只读存储、观察期间变化及显示/计算超限。取消、工作区/存储互斥和实际 Runtime 停止/重启检查验证只读观察也受会话跟踪，旧预览不能冻结文件或充当恢复授权；所有场景核对工作区及记录保持原样。
 
-内部恢复提交检查覆盖两种可写模式的混合恢复及再次撤销、原字节/格式/权限、新记录的恢复前镜像、只读与错误计划拒绝、文件/目标/原记录变化、备份/容量/Applying 失败零提前工作区写入、各安装位置故障/取消、部分回滚与清理、所有终态的最终清单失败与安全元数据重试、一次性并发消费、同工作区串行与不同工作区独立执行，以及真实 Runtime 停止期限、实际排空和旧会话计划失效。测试仍确认公共 MCP 只有上述五个工具且无恢复写入端点。Runtime 检查可用 `-- --filter "检查名称片段"` 定向复现，省略参数运行完整检查。
+内部恢复提交检查覆盖两种可写模式的混合恢复及再次撤销、原字节/格式/权限、新记录的恢复前镜像、只读与错误计划拒绝、文件/目标/原记录变化、备份/容量/Applying 失败零提前工作区写入、各安装位置故障/取消、部分回滚与清理、所有终态的最终清单失败与安全元数据重试、一次性并发消费、同工作区串行与不同工作区独立执行，以及真实 Runtime 停止期限、实际排空和旧会话计划失效。测试仍确认公共 MCP 只有上述八个工具且无恢复写入端点。Runtime 检查可用 `-- --filter "检查名称片段"` 定向复现，省略参数运行完整检查。
 
 <a id="references"></a>
 

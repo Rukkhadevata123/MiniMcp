@@ -61,7 +61,7 @@ internal static class CliChecks
                 Assert(response.StatusCode == HttpStatusCode.OK);
                 await using (var mcp = await McpHttpChecks.ConnectAsync(address, client, stop.Token))
                 {
-                    Assert((await mcp.ListToolsAsync(cancellationToken: stop.Token)).Count == 5);
+                    Assert((await mcp.ListToolsAsync(cancellationToken: stop.Token)).Count == 8);
                     var read = await mcp.CallToolAsync("read_file", new Dictionary<string, object?> { ["path"] = "cli.txt" }, cancellationToken: stop.Token);
                     Assert(McpHttpChecks.Structured(read).GetProperty("content").GetString() == "CLI MCP fixture\n");
                     var file = $"cli-{mode}.md";

@@ -7,7 +7,8 @@ namespace MiniMcp.Configuration;
 public enum PortCheckStatus { Bindable, InUse, Unavailable }
 
 public sealed record ConfigurationCheckResult(RuntimeConfiguration Configuration, PortCheckStatus PortStatus,
-    SocketError? PortError = null, string? RipgrepPath = null, string? RipgrepError = null);
+    SocketError? PortError = null, string? RipgrepPath = null, string? RipgrepError = null,
+    string? GitPath = null, string? GitError = null);
 
 public sealed partial class ConfigurationStore
 {
@@ -41,6 +42,10 @@ public sealed partial class ConfigurationStore
         try { rgPath = ExternalProgramLocator.FindRipgrep(configuration.Settings.RgPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
         catch (Exception failure) when (failure is IOException or ArgumentException or UnauthorizedAccessException)
         { rgError = failure.Message; }
-        return new(configuration, status, error, rgPath, rgError);
+        string? gitPath = null, gitError = null;
+        try { gitPath = ExternalProgramLocator.FindGit(configuration.Settings.GitPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
+        catch (Exception failure) when (failure is IOException or ArgumentException or UnauthorizedAccessException)
+        { gitError = failure.Message; }
+        return new(configuration, status, error, rgPath, rgError, gitPath, gitError);
     }
 }

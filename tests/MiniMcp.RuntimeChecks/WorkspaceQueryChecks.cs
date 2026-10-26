@@ -130,7 +130,7 @@ internal static class WorkspaceQueryChecks
             await runtime.StartAsync(fixture.Configuration);
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
             await using var client = await McpHttpChecks.ConnectAsync(runtime.Address!, http);
-            Assert((await client.ListToolsAsync()).Count == 5, "Missing rg keeps the fixed catalog");
+            Assert((await client.ListToolsAsync()).Count == 8, "Missing rg keeps the fixed catalog");
             Assert((await client.CallToolAsync("search_text", new Dictionary<string, object?> { ["pattern"] = "hello" })).IsError == true, "Missing dependency is a tool error");
             Assert((await client.CallToolAsync("list_files", new Dictionary<string, object?>())).IsError != true && runtime.Snapshot.State == RuntimeState.Running,
                 "Missing rg does not disrupt the Host or other tools");
@@ -209,7 +209,7 @@ internal static class WorkspaceQueryChecks
                 var tools = await client.ListToolsAsync();
                 var current = JsonSerializer.Serialize(tools.OrderBy(tool => tool.Name).Select(tool => tool.ProtocolTool));
                 catalog ??= current;
-                Assert(catalog == current && tools.Count == 5, "Stable schemas/descriptions/annotations in all modes");
+                Assert(catalog == current && tools.Count == 8, "Stable schemas/descriptions/annotations in all modes");
                 foreach (var tool in tools.Where(tool => tool.Name is "list_files" or "search_text"))
                     Assert(tool.ProtocolTool.Annotations is { ReadOnlyHint: true, DestructiveHint: false, OpenWorldHint: false }, "Read-only hints");
                 var before = fixture.Snapshot();

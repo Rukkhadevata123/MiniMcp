@@ -11,6 +11,7 @@ public sealed record AppSettings
     public int Port { get; init; } = 8000;
     public string BashPath { get; init; } = "";
     public string RgPath { get; init; } = "";
+    public string GitPath { get; init; } = "";
     public AuthenticationSettings Authentication { get; init; } = new();
     public TunnelSettings Tunnel { get; init; } = new();
 }

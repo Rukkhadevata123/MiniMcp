@@ -28,6 +28,9 @@
                                TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     <TextBlock x:Name="ConfigurationText" Text="端口和模式取自配置文件" AutomationProperties.AutomationId="Configuration"
                                TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="QueryDependenciesText" Text="启动时检查 rg/Git 程序文件；缺失只影响对应查询工具。"
+                               AutomationProperties.AutomationId="QueryDependencies" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <ProgressRing x:Name="BusyIndicator" Width="20" Height="20" Visibility="Collapsed" />
                         <TextBlock x:Name="StatusText" Text="已停止" VerticalAlignment="Center" AutomationProperties.AutomationId="Status"
@@ -42,7 +45,7 @@
                     <Button x:Name="StopButton" Content="停止" Click="OnStopClicked" IsEnabled="False" AutomationProperties.AutomationId="Stop" />
                 </StackPanel>
                 <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" AutomationProperties.AutomationId="Error" />
-                <TextBlock Text="修改配置后，下次启动生效。/mcp 提供 MCP 服务，/healthz 用于健康检查。读取和预演可用；补丁写入关闭，Bash 仅 FullAccess 可用。关闭窗口会停止服务。"
+                <TextBlock Text="修改配置后，停止再启动生效。/mcp 提供 MCP 服务，/healthz 用于健康检查。三种模式都可查询和预演；ProjectEdit 允许普通补丁、拒绝受限批次，FullAccess 允许通过基础检查的补丁和 Bash。实际补丁强制备份。关闭窗口会停止服务。"
                            TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
         </ScrollViewer>

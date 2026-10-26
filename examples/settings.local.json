@@ -4,6 +4,7 @@
   "port": 8000,
   "bashPath": "",
   "rgPath": "",
+  "gitPath": "",
   "authentication": {
     "mode": "Local",
     "publicOrigin": null,

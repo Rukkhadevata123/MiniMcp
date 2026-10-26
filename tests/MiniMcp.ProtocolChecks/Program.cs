@@ -57,7 +57,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         await using var client = await McpClient.CreateAsync(new StreamClientTransport(input.Writer.AsStream(), output.Reader.AsStream()),
             cancellationToken: timeout.Token);
         var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
-        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "list_files", "read_file", "search_text" }), "Exactly five tools");
+        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "git_diff", "git_log", "git_status", "list_files", "read_file", "search_text" }), "Exactly eight tools");
         foreach (var tool in tools)
         {
             var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order().ToArray();
@@ -67,6 +67,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 "apply_patch" => ["dry_run", "patch"],
                 "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
                 "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
+                "git_status" => ["max_entries", "path"],
+                "git_diff" => ["max_files", "max_lines", "path", "staged"],
+                "git_log" => ["max_count", "path"],
                 _ => ["command", "timeout_seconds", "workdir"]
             };
             Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);

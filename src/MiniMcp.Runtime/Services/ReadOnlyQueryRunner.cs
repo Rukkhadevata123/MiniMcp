@@ -37,7 +37,7 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
 
     internal static async Task<QueryProcessResult> RunAsync(string executable, string directory,
         IEnumerable<string> arguments, char separator, int maxFrameCharacters, int maxOutputCharacters,
-        Func<string, bool> accept, CancellationToken cancellationToken)
+        Func<string, bool> accept, CancellationToken cancellationToken, IReadOnlyDictionary<string, string>? environment = null)
     {
         if (!Path.IsPathFullyQualified(executable) || !File.Exists(executable))
             throw new WorkspaceException("The query executable is missing. Configure an existing absolute program path.");
@@ -57,6 +57,8 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
         foreach (var key in start.Environment.Keys.ToArray())
             if (!new[] { "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG" }.Contains(key, StringComparer.OrdinalIgnoreCase))
                 start.Environment.Remove(key);
+        if (environment is not null)
+            foreach (var (key, value) in environment) start.Environment[key] = value;
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         ProcessLifetime lifetime;
         cancellationToken.ThrowIfCancellationRequested();

@@ -58,7 +58,7 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
         candidates.RemoveAll(relative => IsBinaryCandidate(relative, allowed, notices, cancellationToken));
         var matches = new List<TextSearchMatch>();
         var matchedFiles = new HashSet<string>(StringComparer.Ordinal);
-        var bytes = 0;
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(workspace.Relative(root)).Length;
         var stop = false;
         // Explicit candidates preserve rg's earlier ignore/glob decision while preventing the
         // search process from opening an unchecked file. Batches stay below Windows argv limits.

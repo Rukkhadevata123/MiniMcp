@@ -21,6 +21,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     private readonly WorkspaceQueries _queries;
     private readonly ReadOnlyQueryRunner _queryRunner = new();
     private readonly TextSearchService _search;
+    private readonly GitQueryService _git;
     private bool _accepting = true;
     private int _activeCalls;
     private Task? _stopTask;
@@ -43,6 +44,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         _workspace = new ProjectWorkspace(configuration.Settings.ProjectRoot);
         _queries = new WorkspaceQueries(_workspace);
         _search = new TextSearchService(_workspace, configuration, _queryRunner);
+        _git = new GitQueryService(_workspace, configuration, _queryRunner);
         _patches = new PatchService(_workspace, patchCheckpoint);
         _recovery = new RecoveryStore(runId, configuration, preparationCheckpoint, null, replacementCheckpoint);
         _recoveryPreviews = new RecoveryPreviewService(_workspace, _recovery, recoveryPreviewCheckpoint);
@@ -67,6 +69,15 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         bool regex = false, bool caseSensitive = true, int maxDepth = 16, int maxResults = 100,
         CancellationToken cancellationToken = default) => ExecuteAsync(token =>
             _search.SearchAsync(pattern, path, glob, regex, caseSensitive, maxDepth, maxResults, token), cancellationToken);
+
+    public Task<GitStatusResult> GitStatusAsync(string path = ".", int maxEntries = 200, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(token => _git.StatusAsync(path, maxEntries, token), cancellationToken);
+
+    public Task<GitDiffResult> GitDiffAsync(string path = ".", bool staged = false, int maxFiles = 20, int maxLines = 1000,
+        CancellationToken cancellationToken = default) => ExecuteAsync(token => _git.DiffAsync(path, staged, maxFiles, maxLines, token), cancellationToken);
+
+    public Task<GitLogResult> GitLogAsync(string path = ".", int maxCount = 20, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(token => _git.LogAsync(path, maxCount, token), cancellationToken);
 
     // Local only. WorkspaceTools does not map record IDs, previews or restoration to MCP tools.
     public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>

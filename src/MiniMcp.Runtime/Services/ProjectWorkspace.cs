@@ -4,7 +4,7 @@ using MiniMcp.Recovery;
 
 namespace MiniMcp.Services;
 
-public sealed class WorkspaceException(string message) : Exception(message);
+public sealed class WorkspaceException(string message, Exception? innerException = null) : Exception(message, innerException);
 public sealed record ReadResult(string Path, int StartLine, int EndLine, int TotalLines, bool Truncated, string Content);
 internal sealed record TextFile(ImmutableArray<byte> Bytes, string Text, bool HasBom, UnixFileMode? Mode);
 internal sealed record TextLine(string Text, string Ending);

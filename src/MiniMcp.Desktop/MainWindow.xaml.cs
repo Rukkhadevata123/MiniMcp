@@ -65,11 +65,24 @@ public sealed partial class MainWindow : Window
             {
                 var token = source!.Token;
                 // File metadata and dependency checks also run off the UI thread.
-                var configuration = await Task.Run(() => new ConfigurationStore().LoadAsync(
-                    path: null, workingDirectory: AppContext.BaseDirectory, cancellationToken: token), token);
+                var loaded = await Task.Run(async () =>
+                {
+                    var configuration = await new ConfigurationStore().LoadAsync(
+                        path: null, workingDirectory: AppContext.BaseDirectory, cancellationToken: token);
+                    var rg = CanLocate(() => ExternalProgramLocator.FindRipgrep(configuration.Settings.RgPath,
+                        configuration.SettingsFilePath, configuration.Settings.ProjectRoot));
+                    var git = CanLocate(() => ExternalProgramLocator.FindGit(configuration.Settings.GitPath,
+                        configuration.SettingsFilePath, configuration.Settings.ProjectRoot));
+                    return (Configuration: configuration, Ripgrep: rg, Git: git);
+                }, token);
                 token.ThrowIfCancellationRequested();
-                if (!_closing) StatusText.Text = "正在启动…";
-                await _runtime.StartAsync(configuration, token);
+                if (!_closing)
+                {
+                    StatusText.Text = "正在启动…";
+                    QueryDependenciesText.Text = $"启动时定位：rg {(loaded.Ripgrep ? "已找到程序文件" : "未找到，文本搜索不可用")}；"
+                        + $"Git {(loaded.Git ? "已找到程序文件" : "未找到，Git 查询不可用")}。仅检查文件，版本与仓库限制由实际查询核验。";
+                }
+                await _runtime.StartAsync(loaded.Configuration, token);
             }
             else
             {
@@ -126,6 +139,12 @@ public sealed partial class MainWindow : Window
         ErrorBar.Title = title;
         ErrorBar.Message = exception.Message;
         ErrorBar.IsOpen = true;
+    }
+
+    private static bool CanLocate(Func<string?> locate)
+    {
+        try { return locate() is not null; }
+        catch (Exception exception) when (exception is IOException or ArgumentException or UnauthorizedAccessException) { return false; }
     }
 
     private void UpdateControls()

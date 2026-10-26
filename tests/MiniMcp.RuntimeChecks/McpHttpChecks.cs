@@ -52,9 +52,9 @@ internal static class McpHttpChecks
             using var trace = new SessionHeaderObserver { InnerHandler = new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false } };
             using var http = new HttpClient(trace);
             await using var client = await ConnectAsync(fixture.Runtime.Address!, http);
-            Assert((await client.ListToolsAsync()).Count == 5 && !trace.SawSessionHeader, "Stateless tool discovery");
+            Assert((await client.ListToolsAsync()).Count == 8 && !trace.SawSessionHeader, "Stateless tool discovery");
             await using (var initialized = await ConnectAsync(fixture.Runtime.Address!, http, protocolVersion: "2025-11-25"))
-                Assert((await initialized.ListToolsAsync()).Count == 5 && !trace.SawSessionHeader, "Initialize-handshake client stays stateless");
+                Assert((await initialized.ListToolsAsync()).Count == 8 && !trace.SawSessionHeader, "Initialize-handshake client stays stateless");
             foreach (var method in new[] { HttpMethod.Get, HttpMethod.Delete })
             {
                 using var request = fixture.Request("mcp", method: method);
@@ -96,7 +96,7 @@ internal static class McpHttpChecks
                 ["Cf-Access-Jwt-Assertion"] = fixture.Token(), ["Authorization"] = "Bearer opaque-client-token",
                 ["X-Execution-Mode"] = "FullAccess"
             });
-            Assert((await client.ListToolsAsync()).Count == 5, "Authorized discovery");
+            Assert((await client.ListToolsAsync()).Count == 8, "Authorized discovery");
             Assert(Structured(await Call(client, "read_file", new() { ["path"] = "sample.txt" }))
                 .GetProperty("content").GetString() == "read-only fixture\n", "Authorized read");
             Error(await Call(client, "bash", new() { ["command"] = "printf unexpected > forbidden.txt", ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
@@ -227,7 +227,7 @@ internal static class McpHttpChecks
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await using var client = await ConnectAsync(fixture.Runtime.Address!, fixture.Client, deadline.Token);
         var tools = await client.ListToolsAsync(cancellationToken: deadline.Token);
-        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "list_files", "read_file", "search_text" }), "Exactly five tools");
+        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "git_diff", "git_log", "git_status", "list_files", "read_file", "search_text" }), "Exactly eight tools");
         foreach (var tool in tools)
         {
             var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order();
@@ -236,6 +236,9 @@ internal static class McpHttpChecks
                 "read_file" => ["end_line", "path", "start_line"], "apply_patch" => ["dry_run", "patch"],
                 "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
                 "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
+                "git_status" => ["max_entries", "path"],
+                "git_diff" => ["max_files", "max_lines", "path", "staged"],
+                "git_log" => ["max_count", "path"],
                 _ => ["command", "timeout_seconds", "workdir"]
             };
             Assert(properties.SequenceEqual(expected), "Schema: " + tool.Name);

@@ -57,7 +57,9 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
         var entries = new List<FileListEntry>();
         var notices = new HashSet<string>(StringComparer.Ordinal);
         var work = 0;
-        var bytes = 0;
+        var scope = workspace.Relative(root);
+        // Include the scope itself and its doubly escaped tree representation in the byte budget.
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(scope).Length * 3;
         var stopped = false;
         void Walk(string directory, int depth)
         {
@@ -104,7 +106,6 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
         try { Walk(root, 0); }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { notices.Add("Timeout"); }
         cancellationToken.ThrowIfCancellationRequested();
-        var scope = workspace.Relative(root);
         var tree = format == "tree" ? QueryText.Display(scope) + "/\n" + string.Concat(entries.Select(entry =>
             new string(' ', (entry.Depth - 1) * 2) + QueryText.Display(entry.Path.Split('/')[^1]) +
             (entry.Kind == "directory" ? entry.Expanded ? "/" : "/ [not expanded]" : "") + "\n")) : null;

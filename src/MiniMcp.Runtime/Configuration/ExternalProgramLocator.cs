@@ -6,6 +6,20 @@ namespace MiniMcp.Configuration;
 /// </summary>
 public static class ExternalProgramLocator
 {
+    public static string? FindGit(string configuredPath, string configurationFile, string? projectRoot = null) =>
+        Find(configuredPath, configurationFile, "Git", GitCandidates(Environment.GetEnvironmentVariable("PATH"))
+            .Where(path => !IsWithin(Environment.CurrentDirectory, path) && (projectRoot is null || !IsWithin(projectRoot, path))));
+
+    private static IEnumerable<string> GitCandidates(string? searchPath)
+    {
+        if (OperatingSystem.IsWindows())
+            foreach (var root in WindowsInstallDirectories("Git").Concat(UserGitDirectory()))
+                yield return Path.Combine(root, "cmd", "git.exe");
+        var name = OperatingSystem.IsWindows() ? "git.exe" : "git";
+        foreach (var directory in AbsoluteDirectories([AppContext.BaseDirectory, "/usr/local/bin", "/usr/bin", "/bin"]).Concat(PathDirectories(searchPath)))
+            yield return Path.Combine(directory, name);
+    }
+
     public static string? FindRipgrep(string configuredPath, string configurationFile, string? projectRoot = null) =>
         Find(configuredPath, configurationFile, "ripgrep", RipgrepCandidates(
             [AppContext.BaseDirectory, "/usr/local/bin", "/usr/bin", "/bin"], Environment.GetEnvironmentVariable("PATH"))

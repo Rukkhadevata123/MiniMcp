@@ -152,6 +152,7 @@ public sealed class ConfigurationValidator
             ProjectRoot = root,
             BashPath = OptionalPath("bashPath", settings.BashPath),
             RgPath = OptionalPath("rgPath", settings.RgPath),
+            GitPath = OptionalPath("gitPath", settings.GitPath),
             Tunnel = settings.Tunnel with
             {
                 ExecutablePath = OptionalPath("tunnel.executablePath", settings.Tunnel.ExecutablePath),

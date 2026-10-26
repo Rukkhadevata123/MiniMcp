@@ -221,7 +221,7 @@ internal static class RecoveryRestoreLifetimeChecks
             await runtime.StartAsync(fixture.Configuration);
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(5) };
             await using var client = await McpHttpChecks.ConnectAsync(runtime.Address!, http);
-            Assert((await client.ListToolsAsync()).Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "list_files", "read_file", "search_text" }) &&
+            Assert((await client.ListToolsAsync()).Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "git_diff", "git_log", "git_status", "list_files", "read_file", "search_text" }) &&
                 !typeof(McpRuntime).GetMethods().Any(method => method.Name is "CommitRecoveryAsync" or "PrepareRecoveryAsync" or "RestoreAsync"), "Local confirmation has no automatic-approved placeholder or remote invocation surface");
             var source = await runtime.Execution!.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var preview = await client.CallToolAsync("apply_patch", new Dictionary<string, object?>

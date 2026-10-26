@@ -87,6 +87,8 @@ internal static class CliApplication
             $"Bash：程序文件已检查；{Visible(configuration.Settings.BashPath)}");
         output.WriteLine(check.RipgrepPath is { } rg ? $"文本搜索：已找到 rg 程序文件（未执行）；{Visible(rg)}" :
             "文本搜索：rg 不可用，其他工具不受影响。" + (check.RipgrepError is { } rgError ? Visible(rgError) : ""));
+        output.WriteLine(check.GitPath is { } git ? $"Git 查询：已找到程序文件（未执行）；{Visible(git)}" :
+            "Git 查询：程序不可用，其他工具不受影响。" + (check.GitError is { } gitError ? Visible(gitError) : ""));
         output.WriteLine(configuration.Settings.Tunnel.Enabled ? "受管隧道：程序文件存在；token 文件可读且非空（未启动）。" : "受管隧道：关闭。");
         var endpoint = $"127.0.0.1:{configuration.Settings.Port}";
         if (check.PortStatus == PortCheckStatus.Bindable)
