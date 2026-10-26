@@ -4,6 +4,8 @@ using MiniMcp.Configuration;
 using MiniMcp.Runtime;
 using MiniMcp.Recovery;
 
+if (args.Length > 0 && args[0] == "--no-config") return await WorkspaceQueryChecks.ChildAsync(args);
+
 if (args is ["--cli-process", var cliControl])
     return await CliProcessChecks.ChildAsync(cliControl);
 if (args is ["--cli-console-signal", var cliTarget, var cliSignalCount])
@@ -289,6 +291,7 @@ await ConfigurationValidatorChecks.RunAsync(Check);
 await ConfigurationValueChecks.RunAsync(Check);
 await AuthenticationRegistrationChecks.RunAsync(Check);
 await ToolExecutionChecks.RunAsync(Check);
+await WorkspaceQueryChecks.RunAsync(Check);
 await ConfigurationDependencyChecks.RunAsync(Check);
 await ConfigurationSerializationChecks.RunAsync(Check);
 await ConfigurationSaveChecks.RunAsync(Check);

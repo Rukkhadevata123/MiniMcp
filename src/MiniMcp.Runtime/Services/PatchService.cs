@@ -94,7 +94,7 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
     internal Task<PatchCommitOutcome> CommitWithOutcomeAsync(PatchPlan plan, CancellationToken cancellationToken = default) =>
         CommitWithOutcomeCoreAsync(plan, null, cancellationToken);
 
-    // Low-level engine entry, not the complete backup/approval transaction. The coordinator must
+    // Low-level engine entry, not the complete recorded transaction. The coordinator must
     // retain its workspace lock across preparation, execution, observation and final record update.
     internal Task<PatchCommitOutcome> CommitWithContextAsync(PatchPlan plan, PatchExecutionContext context, CancellationToken cancellationToken = default)
     {

@@ -46,7 +46,7 @@ internal static class RecordedToolHttpChecks
                 var mixedResult = await Call(client, mixed);
                 if (mode == ExecutionMode.ProjectEdit)
                 {
-                    Error(mixedResult, "local approval");
+                    Error(mixedResult, "ProjectEdit restrictions");
                     Assert(before.SequenceEqual(fixture.ProjectSnapshot()) && fixture.RecordIds().Length == 1, "High-risk mixed batch does not execute or back up its ordinary portion");
                 }
                 else

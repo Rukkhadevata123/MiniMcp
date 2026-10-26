@@ -3,6 +3,7 @@
   "projectRoot": "./project",
   "port": 8000,
   "bashPath": "",
+  "rgPath": "",
   "authentication": {
     "mode": "Local",
     "publicOrigin": null,

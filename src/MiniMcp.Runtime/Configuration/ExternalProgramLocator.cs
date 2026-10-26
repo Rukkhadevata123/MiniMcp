@@ -6,6 +6,25 @@ namespace MiniMcp.Configuration;
 /// </summary>
 public static class ExternalProgramLocator
 {
+    public static string? FindRipgrep(string configuredPath, string configurationFile, string? projectRoot = null) =>
+        Find(configuredPath, configurationFile, "ripgrep", RipgrepCandidates(
+            [AppContext.BaseDirectory, "/usr/local/bin", "/usr/bin", "/bin"], Environment.GetEnvironmentVariable("PATH"))
+            .Where(path => !IsWithin(Environment.CurrentDirectory, path) && (projectRoot is null || !IsWithin(projectRoot, path))));
+
+    internal static string? FindRipgrep(string configuredPath, string configurationFile,
+        IEnumerable<string> installDirectories, string? searchPath) =>
+        Find(configuredPath, configurationFile, "ripgrep", RipgrepCandidates(installDirectories, searchPath));
+
+    private static IEnumerable<string> RipgrepCandidates(IEnumerable<string> installDirectories, string? searchPath) =>
+        AbsoluteDirectories(installDirectories).Concat(PathDirectories(searchPath))
+            .Select(directory => Path.Combine(directory, OperatingSystem.IsWindows() ? "rg.exe" : "rg"));
+
+    private static bool IsWithin(string root, string path)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        return !Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
     public static string? FindBash(string configuredPath, string configurationFile) =>
         FindBash(configuredPath, configurationFile, BashInstallDirectories(), Environment.GetEnvironmentVariable("PATH"));
 

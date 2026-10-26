@@ -26,13 +26,13 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
     private readonly RSA _rsa = RSA.Create(2048);
     public HttpSecurityFixture(AuthenticationMode mode = AuthenticationMode.CloudflareAccess,
         ExecutionMode executionMode = ExecutionMode.ReadOnly, bool mapProbes = true,
-        PatchApprovalLimits? patchLimits = null, string? settingsRelativePath = null)
+        ProjectEditLimits? patchLimits = null, string? settingsRelativePath = null)
     {
         Root = Path.Combine(_directory, "project");
         Directory.CreateDirectory(Root);
         File.WriteAllText(Path.Combine(Root, "sample.txt"), "read-only fixture\n");
         var paths = new ConfigurationPaths(Path.Combine(_directory, "user"), Path.Combine(_directory, "state"));
-        var bash = executionMode == ExecutionMode.ReadOnly ? "" : ExternalProgramLocator.FindBash(
+        var bash = executionMode != ExecutionMode.FullAccess ? "" : ExternalProgramLocator.FindBash(
             Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "", Path.Combine(Environment.CurrentDirectory, "settings.json"))
             ?? throw new Exception("Bash is required for HTTP editing-mode checks.");
         Configuration = new ConfigurationValidator(paths).Validate(new AppSettings
@@ -44,7 +44,7 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
                 Mode = mode, PublicOrigin = "https://mcp.example.com", Team = "fixture-team", Audience = Audience
             }
         }, settingsRelativePath is null ? Path.Combine(_directory, "settings.json") : Path.Combine(Root, settingsRelativePath),
-            new ExecutionPolicy { Mode = executionMode, PatchApprovalLimits = patchLimits ?? new() });
+            new ExecutionPolicy { Mode = executionMode, ProjectEditLimits = patchLimits ?? new() });
         var key = _rsa.ExportParameters(false);
         Documents = new SigningDocuments(JsonSerializer.Serialize(new
         {

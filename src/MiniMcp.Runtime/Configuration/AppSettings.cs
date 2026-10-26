@@ -10,6 +10,7 @@ public sealed record AppSettings
     public string ProjectRoot { get; init; } = "";
     public int Port { get; init; } = 8000;
     public string BashPath { get; init; } = "";
+    public string RgPath { get; init; } = "";
     public AuthenticationSettings Authentication { get; init; } = new();
     public TunnelSettings Tunnel { get; init; } = new();
 }

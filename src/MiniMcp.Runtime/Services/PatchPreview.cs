@@ -17,7 +17,7 @@ public sealed record PatchStatistics(int AddedLines, int RemovedLines, long Adde
 public sealed record PatchBatchSize(int Paths, long ChangedLines, long ChangedBytes);
 public sealed record PatchFileRisk(string Kind, ImmutableArray<string> Reasons);
 public sealed record PatchFilePreview(PatchChange Summary, PatchStatistics Statistics, PatchFileRisk Risk);
-public sealed record PatchRiskSummary(PatchBatchSize Size, PatchApprovalLimits Limits, ImmutableArray<string> Reasons);
+public sealed record PatchRiskSummary(PatchBatchSize Size, ProjectEditLimits Limits, ImmutableArray<string> Reasons);
 public sealed record PatchWriteSummary(string Mode, string Disposition, ImmutableArray<string> Blockers,
     bool RequiresRecoveryRecord, bool CanCommit);
 
@@ -47,8 +47,8 @@ public sealed record PatchApplyResult(bool DryRun, string Diff, ImmutableArray<P
             new(assessment.Changes[index].Kind.ToString(), Reasons(assessment.Changes[index].Reasons)))).ToImmutableArray();
         return new(committed is null, preview.Diff, files, preview.Statistics, new(assessment.Size, assessment.Limits, Reasons(assessment.Reasons)),
             new(decision.Mode.ToString(), decision.Disposition.ToString(),
-                Enum.GetValues<PatchWriteBlocker>().Where(value => value != PatchWriteBlocker.None && (decision.Blockers & value) != 0)
-                    .Select(value => value.ToString()).ToImmutableArray(), decision.RequiresRecoveryRecord, decision.CanCommit), commit);
+                decision.Blockers == PatchWriteBlocker.None ? [] : [decision.Blockers.ToString()],
+                decision.RequiresRecoveryRecord, decision.CanCommit), commit);
     }
 
     private static ImmutableArray<string> Reasons(PatchRiskReason reasons) => Enum.GetValues<PatchRiskReason>()

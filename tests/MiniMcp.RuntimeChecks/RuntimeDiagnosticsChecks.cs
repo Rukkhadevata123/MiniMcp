@@ -257,7 +257,7 @@ internal static class RuntimeDiagnosticsChecks
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
             await using (var transport = new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(runtime.Address!, "mcp") }, http))
             await using (var mcp = await McpClient.CreateAsync(transport))
-                Assert((await mcp.ListToolsAsync()).Count == 3, "Real MCP discovery still works");
+                Assert((await mcp.ListToolsAsync()).Count == 5, "Real MCP discovery still works");
             Assert(runtime.GetLogs().Entries.Any(entry => entry.Category == "host-probe" && entry.Message == "probe started"), "Host ILogger captured");
             Assert(runtime.GetLogs().Entries.Any(entry => entry.Category.StartsWith("Microsoft.AspNetCore.") && entry.Message.Contains("/mcp")), "HTTP logs captured");
             await runtime.StopAsync();

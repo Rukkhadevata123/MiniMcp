@@ -41,7 +41,7 @@ internal static class RecordedToolExecutionChecks
 
         await check("ProjectEdit rejects every high-risk mixed batch before preparing records or executing its ordinary member", async () =>
         {
-            var cases = new (string Body, PatchApprovalLimits Limits)[]
+            var cases = new (string Body, ProjectEditLimits Limits)[]
             {
                 ("*** Add File: Directory.Build.cs\n+build", new()), ("*** Add File: unknown.data\n+data", new()),
                 ("*** Delete File: sample.md", new()), ("*** Update File: sample.md\n*** Move to: moved.md", new()),
@@ -57,7 +57,7 @@ internal static class RecordedToolExecutionChecks
                 var original = fixture.ProjectSnapshot();
                 var patch = Patch("*** Add File: nested/ordinary.md\n+ordinary\n" + body);
                 var preview = await execution.ApplyPatchAsync(patch, true);
-                Assert(preview.Decision.Disposition == "RequiresApproval" && preview.Decision.Blockers.SequenceEqual(["ApprovalUnavailable"]), "Entire batch uses the highest risk");
+                Assert(preview.Decision.Disposition == "Denied" && preview.Decision.Blockers.SequenceEqual(["ProjectEditRestriction"]), "Entire batch uses the highest risk");
                 await Reject<WorkspaceException>(() => execution.ApplyPatchAsync(patch));
                 Assert(preparations == 0 && !Directory.Exists(fixture.RecoveryDirectory) && original.SequenceEqual(fixture.ProjectSnapshot()), "No ordinary subset, backup or approval placeholder executes");
             }

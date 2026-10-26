@@ -5,75 +5,75 @@ internal static class ConfigurationPatchLimitChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        await check("patch approval limits retain defaults when the object or individual fields are omitted", async () =>
+        await check("ProjectEdit limits retain defaults when the object or individual fields are omitted", async () =>
         {
-            var defaults = new PatchApprovalLimits { MaxPaths = 10, MaxChangedLines = 500, MaxChangedBytes = 65536 };
-            foreach (var json in new[] { "{}", """{"patchApprovalLimits":{}}""" })
+            var defaults = new ProjectEditLimits { MaxPaths = 10, MaxChangedLines = 500, MaxChangedBytes = 65536 };
+            foreach (var json in new[] { "{}", """{"projectEditLimits":{}}""" })
             {
                 var policy = ConfigurationJson.ParsePolicy(json);
-                Assert(policy.PatchApprovalLimits == defaults && policy.Mode == ExecutionMode.ReadOnly, "Defaults");
+                Assert(policy.ProjectEditLimits == defaults && policy.Mode == ExecutionMode.ReadOnly, "Defaults");
             }
-            var partial = ConfigurationJson.ParsePolicy("""{"patchApprovalLimits":{"maxPaths":0}}""");
-            Assert(partial.PatchApprovalLimits == (defaults with { MaxPaths = 0 }), "Partial object");
+            var partial = ConfigurationJson.ParsePolicy("""{"projectEditLimits":{"maxPaths":0}}""");
+            Assert(partial.ProjectEditLimits == (defaults with { MaxPaths = 0 }), "Partial object");
             var example = ConfigurationJson.ParsePolicy(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "examples", "policy.readonly.json")));
-            Assert(example.PatchApprovalLimits == defaults, "Example defaults");
+            Assert(example.ProjectEditLimits == defaults, "Example defaults");
         });
 
-        await check("patch approval JSON rejects malformed nested limits and preserves field diagnostics", () =>
+        await check("ProjectEdit limits JSON rejects malformed nested limits and preserves field diagnostics", () =>
         {
             foreach (var value in new[] { "null", "[]", "true", "1", "\"limits\"" })
-                Reject<JsonException>(() => ConfigurationJson.ParsePolicy("{\"patchApprovalLimits\":" + value + "}"));
+                Reject<JsonException>(() => ConfigurationJson.ParsePolicy("{\"projectEditLimits\":" + value + "}"));
             foreach (var field in new[] { "maxPaths", "maxChangedLines", "maxChangedBytes" })
             {
                 foreach (var value in new[] { "null", "true", "\"10\"", "1.5", "2147483648", "-2147483649" })
                 {
-                    var error = Reject<JsonException>(() => ConfigurationJson.ParsePolicy("{\"patchApprovalLimits\":{\"" + field + "\":" + value + "}}"));
-                    Assert(error.Path == "$.patchApprovalLimits." + field, "Numeric error path");
+                    var error = Reject<JsonException>(() => ConfigurationJson.ParsePolicy("{\"projectEditLimits\":{\"" + field + "\":" + value + "}}"));
+                    Assert(error.Path == "$.projectEditLimits." + field, "Numeric error path");
                 }
             }
             foreach (var json in new[]
             {
-                """{"patchApprovalLimits":{"unknown":1}}""", """{"patchApprovalLimits":{"MaxPaths":1}}""",
-                """{"PatchApprovalLimits":{}}""", """{"patchApprovalLimits":{"maxPaths":1,"maxPaths":2}}""",
-                """{"patchApprovalLimits":{"maxPaths":1,"max\u0050aths":2}}""", """{"patchApprovalLimits":{},"patchApprovalLimits":{}}"""
+                """{"projectEditLimits":{"unknown":1}}""", """{"projectEditLimits":{"MaxPaths":1}}""",
+                """{"ProjectEditLimits":{}}""", """{"projectEditLimits":{"maxPaths":1,"maxPaths":2}}""",
+                """{"projectEditLimits":{"maxPaths":1,"max\u0050aths":2}}""", """{"projectEditLimits":{},"projectEditLimits":{}}"""
             }) Reject<JsonException>(() => ConfigurationJson.ParsePolicy(json));
-            Reject<JsonException>(() => ConfigurationJson.ParseSettings("""{"patchApprovalLimits":{"maxPaths":100}}"""));
+            Reject<JsonException>(() => ConfigurationJson.ParseSettings("""{"projectEditLimits":{"maxPaths":100}}"""));
             return Task.CompletedTask;
         });
 
-        await check("patch approval value checks accept inclusive integer bounds and reject invalid drafts in every mode", () =>
+        await check("ProjectEdit limits value checks accept inclusive integer bounds and reject invalid drafts in every mode", () =>
         {
             var settings = new AppSettings { Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } };
             foreach (var mode in Enum.GetValues<ExecutionMode>())
             {
                 foreach (var value in new[] { 0, 1, int.MaxValue })
                     ConfigurationValidator.ValidateValues(settings, new ExecutionPolicy
-                    { Mode = mode, PatchApprovalLimits = new() { MaxPaths = value, MaxChangedLines = value, MaxChangedBytes = value } });
+                    { Mode = mode, ProjectEditLimits = new() { MaxPaths = value, MaxChangedLines = value, MaxChangedBytes = value } });
                 foreach (var (field, limits) in InvalidLimits())
                 {
                     var error = Reject<ConfigurationValidationException>(() => ConfigurationValidator.ValidateValues(settings,
-                        new ExecutionPolicy { Mode = mode, PatchApprovalLimits = limits }));
+                        new ExecutionPolicy { Mode = mode, ProjectEditLimits = limits }));
                     Assert(error.Field == field, "Value error field");
                 }
                 var missing = Reject<ConfigurationValidationException>(() => ConfigurationValidator.ValidateValues(settings,
-                    new ExecutionPolicy { Mode = mode, PatchApprovalLimits = null! }));
-                Assert(missing.Field == "patchApprovalLimits", "Null draft");
+                    new ExecutionPolicy { Mode = mode, ProjectEditLimits = null! }));
+                Assert(missing.Field == "projectEditLimits", "Null draft");
             }
             return Task.CompletedTask;
         });
 
-        await check("patch approval serialization preserves explicit values without leaking policy fields into settings", () =>
+        await check("ProjectEdit limits serialization preserves explicit values without leaking policy fields into settings", () =>
         {
-            var policy = new ExecutionPolicy { PatchApprovalLimits = new() { MaxPaths = 0, MaxChangedLines = int.MaxValue, MaxChangedBytes = 12345 } };
+            var policy = new ExecutionPolicy { ProjectEditLimits = new() { MaxPaths = 0, MaxChangedLines = int.MaxValue, MaxChangedBytes = 12345 } };
             var json = ConfigurationJson.SerializePolicy(policy);
             Assert(ConfigurationJson.ParsePolicy(json) == policy && !json.Contains('\r') && json.EndsWith('\n'), "Roundtrip");
             using var document = JsonDocument.Parse(json);
-            var limits = document.RootElement.GetProperty("patchApprovalLimits");
+            var limits = document.RootElement.GetProperty("projectEditLimits");
             Assert(limits.EnumerateObject().Select(property => property.Name).Order()
                 .SequenceEqual(new[] { "maxChangedBytes", "maxChangedLines", "maxPaths" }), "Exact fields");
             using var settings = JsonDocument.Parse(ConfigurationJson.SerializeSettings(new AppSettings()));
-            Assert(!settings.RootElement.TryGetProperty("patchApprovalLimits", out _), "Separate settings");
-            Reject<JsonException>(() => ConfigurationJson.SerializePolicy(policy with { PatchApprovalLimits = null! }));
+            Assert(!settings.RootElement.TryGetProperty("projectEditLimits", out _), "Separate settings");
+            Reject<JsonException>(() => ConfigurationJson.SerializePolicy(policy with { ProjectEditLimits = null! }));
             return Task.CompletedTask;
         });
 
@@ -83,15 +83,15 @@ internal static class ConfigurationPatchLimitChecks
             var settings = await fixture.Store.ReadSettingsAsync(fixture.Source, fixture.DirectoryPath);
             var settingsBytes = await File.ReadAllBytesAsync(fixture.Source);
             var original = await fixture.Store.ReadPolicyAsync();
-            var limits = new PatchApprovalLimits { MaxPaths = 3, MaxChangedLines = 20, MaxChangedBytes = 1024 };
-            var first = await fixture.Store.SavePolicyAsync(original with { Value = original.Value with { PatchApprovalLimits = limits } }, settings);
+            var limits = new ProjectEditLimits { MaxPaths = 3, MaxChangedLines = 20, MaxChangedBytes = 1024 };
+            var first = await fixture.Store.SavePolicyAsync(original with { Value = original.Value with { ProjectEditLimits = limits } }, settings);
             Assert((await fixture.Store.ReadPolicyAsync()) == first, "First saved policy");
             var snapshot = await fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath);
-            Assert(snapshot.Policy.PatchApprovalLimits == limits, "Validated snapshot");
+            Assert(snapshot.Policy.ProjectEditLimits == limits, "Validated snapshot");
             var nextLimits = limits with { MaxPaths = 0, MaxChangedLines = int.MaxValue, MaxChangedBytes = 0 };
-            var next = await fixture.Store.SavePolicyAsync(first with { Value = first.Value with { PatchApprovalLimits = nextLimits } }, settings);
-            Assert((await fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath)).Policy.PatchApprovalLimits == nextLimits, "Updated limits");
-            Assert(snapshot.Policy.PatchApprovalLimits == limits && first.Value.PatchApprovalLimits == limits, "Prior snapshots unchanged");
+            var next = await fixture.Store.SavePolicyAsync(first with { Value = first.Value with { ProjectEditLimits = nextLimits } }, settings);
+            Assert((await fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath)).Policy.ProjectEditLimits == nextLimits, "Updated limits");
+            Assert(snapshot.Policy.ProjectEditLimits == limits && first.Value.ProjectEditLimits == limits, "Prior snapshots unchanged");
             Assert((await fixture.Store.ReadPolicyAsync()) == next && next.Revision != first.Revision, "Updated revision");
             Assert((await File.ReadAllBytesAsync(fixture.Source)).SequenceEqual(settingsBytes), "Settings unchanged");
             Assert(!Directory.Exists(fixture.Paths.RecoveryDirectory), "No recovery directory");
@@ -113,12 +113,12 @@ internal static class ConfigurationPatchLimitChecks
                 foreach (var (field, limits) in InvalidLimits())
                 {
                     var error = await RejectAsync<ConfigurationValidationException>(() => fixture.Store.SavePolicyAsync(original with
-                    { Value = original.Value with { PatchApprovalLimits = limits } }, settings));
+                    { Value = original.Value with { ProjectEditLimits = limits } }, settings));
                     Assert(error.Field == field && before.SequenceEqual(fixture.Snapshot()), "Invalid save effects");
                 }
                 var missing = await RejectAsync<ConfigurationValidationException>(() => fixture.Store.SavePolicyAsync(original with
-                { Value = original.Value with { PatchApprovalLimits = null! } }, settings));
-                Assert(missing.Field == "patchApprovalLimits" && before.SequenceEqual(fixture.Snapshot()), "Null save effects");
+                { Value = original.Value with { ProjectEditLimits = null! } }, settings));
+                Assert(missing.Field == "projectEditLimits" && before.SequenceEqual(fixture.Snapshot()), "Null save effects");
             }
         });
 
@@ -129,7 +129,7 @@ internal static class ConfigurationPatchLimitChecks
             foreach (var (field, limits) in InvalidLimits())
             {
                 // Formatting is separate from business validation; this represents an invalid manual edit.
-                fixture.WritePolicy(new ExecutionPolicy { PatchApprovalLimits = limits });
+                fixture.WritePolicy(new ExecutionPolicy { ProjectEditLimits = limits });
                 var before = fixture.Snapshot();
                 foreach (var mode in Enum.GetValues<ExecutionMode>())
                 {
@@ -140,7 +140,7 @@ internal static class ConfigurationPatchLimitChecks
                 { Value = settings.Value with { Port = 9000 } }));
                 Assert(save.Field == field && before.SequenceEqual(fixture.Snapshot()), "Settings save cannot bypass policy");
             }
-            File.WriteAllText(fixture.Paths.PolicyFile, """{"patchApprovalLimits":null}""");
+            File.WriteAllText(fixture.Paths.PolicyFile, """{"projectEditLimits":null}""");
             var malformed = await RejectAsync<ConfigurationLoadException>(() => fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath, ExecutionMode.ReadOnly));
             Assert(malformed.FilePath == fixture.Paths.PolicyFile && malformed.InnerException is JsonException, "Malformed local source");
         });
@@ -151,25 +151,25 @@ internal static class ConfigurationPatchLimitChecks
             fixture.WritePolicy(new ExecutionPolicy());
             var settings = await fixture.Store.ReadSettingsAsync(fixture.Source, fixture.DirectoryPath);
             var original = await fixture.Store.ReadPolicyAsync();
-            var external = new PatchApprovalLimits { MaxPaths = 0, MaxChangedLines = 0, MaxChangedBytes = 0 };
-            fixture.WritePolicy(original.Value with { PatchApprovalLimits = external });
+            var external = new ProjectEditLimits { MaxPaths = 0, MaxChangedLines = 0, MaxChangedBytes = 0 };
+            fixture.WritePolicy(original.Value with { ProjectEditLimits = external });
             var before = fixture.Snapshot();
             var error = await RejectAsync<ConfigurationConflictException>(() => fixture.Store.SavePolicyAsync(original, settings));
             Assert(error.FilePath == fixture.Paths.PolicyFile && before.SequenceEqual(fixture.Snapshot()), "Conflict leaves external values");
-            Assert((await fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath)).Policy.PatchApprovalLimits == external, "Reload external limits");
+            Assert((await fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath)).Policy.ProjectEditLimits == external, "Reload external limits");
         });
     }
 
-    private static IEnumerable<(string Field, PatchApprovalLimits Limits)> InvalidLimits()
+    private static IEnumerable<(string Field, ProjectEditLimits Limits)> InvalidLimits()
     {
         foreach (var value in new[] { -1, int.MinValue })
         {
-            yield return ("patchApprovalLimits.maxPaths", new() { MaxPaths = value });
-            yield return ("patchApprovalLimits.maxChangedLines", new() { MaxChangedLines = value });
-            yield return ("patchApprovalLimits.maxChangedBytes", new() { MaxChangedBytes = value });
+            yield return ("projectEditLimits.maxPaths", new() { MaxPaths = value });
+            yield return ("projectEditLimits.maxChangedLines", new() { MaxChangedLines = value });
+            yield return ("projectEditLimits.maxChangedBytes", new() { MaxChangedBytes = value });
         }
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch approval configuration: " + message); }
+    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("ProjectEdit limits configuration: " + message); }
     private static T Reject<T>(Action action) where T : Exception
     {
         try { action(); } catch (T exception) { return exception; }

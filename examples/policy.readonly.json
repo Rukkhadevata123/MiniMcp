@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "ReadOnly",
   "recoveryDirectory": "",
-  "patchApprovalLimits": {
+  "projectEditLimits": {
     "maxPaths": 10,
     "maxChangedLines": 500,
     "maxChangedBytes": 65536

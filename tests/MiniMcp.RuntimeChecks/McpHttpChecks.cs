@@ -52,9 +52,9 @@ internal static class McpHttpChecks
             using var trace = new SessionHeaderObserver { InnerHandler = new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false } };
             using var http = new HttpClient(trace);
             await using var client = await ConnectAsync(fixture.Runtime.Address!, http);
-            Assert((await client.ListToolsAsync()).Count == 3 && !trace.SawSessionHeader, "Stateless tool discovery");
+            Assert((await client.ListToolsAsync()).Count == 5 && !trace.SawSessionHeader, "Stateless tool discovery");
             await using (var initialized = await ConnectAsync(fixture.Runtime.Address!, http, protocolVersion: "2025-11-25"))
-                Assert((await initialized.ListToolsAsync()).Count == 3 && !trace.SawSessionHeader, "Initialize-handshake client stays stateless");
+                Assert((await initialized.ListToolsAsync()).Count == 5 && !trace.SawSessionHeader, "Initialize-handshake client stays stateless");
             foreach (var method in new[] { HttpMethod.Get, HttpMethod.Delete })
             {
                 using var request = fixture.Request("mcp", method: method);
@@ -96,7 +96,7 @@ internal static class McpHttpChecks
                 ["Cf-Access-Jwt-Assertion"] = fixture.Token(), ["Authorization"] = "Bearer opaque-client-token",
                 ["X-Execution-Mode"] = "FullAccess"
             });
-            Assert((await client.ListToolsAsync()).Count == 3, "Authorized discovery");
+            Assert((await client.ListToolsAsync()).Count == 5, "Authorized discovery");
             Assert(Structured(await Call(client, "read_file", new() { ["path"] = "sample.txt" }))
                 .GetProperty("content").GetString() == "read-only fixture\n", "Authorized read");
             Error(await Call(client, "bash", new() { ["command"] = "printf unexpected > forbidden.txt", ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
@@ -227,13 +227,15 @@ internal static class McpHttpChecks
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await using var client = await ConnectAsync(fixture.Runtime.Address!, fixture.Client, deadline.Token);
         var tools = await client.ListToolsAsync(cancellationToken: deadline.Token);
-        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "read_file" }), "Exactly three tools");
+        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "list_files", "read_file", "search_text" }), "Exactly five tools");
         foreach (var tool in tools)
         {
             var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order();
             string[] expected = tool.Name switch
             {
                 "read_file" => ["end_line", "path", "start_line"], "apply_patch" => ["dry_run", "patch"],
+                "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
+                "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
                 _ => ["command", "timeout_seconds", "workdir"]
             };
             Assert(properties.SequenceEqual(expected), "Schema: " + tool.Name);
@@ -260,7 +262,7 @@ internal static class McpHttpChecks
             Assert(preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("path").GetString() == (i == 0 ? "preview/new.txt" : "sample.txt"), "Preview summary paths");
             if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
                 Error(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["approved"] = true, ["mode"] = "FullAccess" }),
-                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         if (mode == ExecutionMode.FullAccess)
         {
@@ -270,7 +272,7 @@ internal static class McpHttpChecks
             Assert(timeout.GetProperty("timedOut").GetBoolean() && timeout.GetProperty("stdout").GetString() == "partial", "Bash timeout");
         }
         else Error(await Call(client, "bash", new() { ["command"] = "printf unexpected > denied.txt", ["approved"] = true }),
-            mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+            mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.txt")) == "read-only fixture\n" && Directory.EnumerateFileSystemEntries(fixture.Root).Count() == 2,
             "Previews and denials leave workspace unchanged");
         Assert(fixture.Runtime.Execution!.ActiveCalls == 0 && fixture.Runtime.Snapshot.State == RuntimeState.Running, "Tool errors preserve runtime availability");
@@ -278,7 +280,7 @@ internal static class McpHttpChecks
 
     private static async Task CheckRiskAsync(ExecutionMode mode)
     {
-        var limits = new PatchApprovalLimits { MaxPaths = 2, MaxChangedLines = 3, MaxChangedBytes = 6 };
+        var limits = new ProjectEditLimits { MaxPaths = 2, MaxChangedLines = 3, MaxChangedBytes = 6 };
         await using var fixture = new HttpSecurityFixture(AuthenticationMode.Local, mode, mapProbes: false,
             patchLimits: limits, settingsRelativePath: "custom.md");
         File.WriteAllText(fixture.Configuration.SettingsFilePath, ConfigurationJson.SerializeSettings(fixture.Configuration.Settings));
@@ -304,10 +306,10 @@ internal static class McpHttpChecks
             var preview = FullPreview(await Call(client, "apply_patch", new()
             {
                 ["patch"] = patch, ["dry_run"] = true, ["mode"] = "FullAccess", ["approved"] = true, ["recoveryReady"] = true,
-                ["decision"] = new { canCommit = true }, ["patchApprovalLimits"] = new { maxPaths = int.MaxValue }
+                ["decision"] = new { canCommit = true }, ["projectEditLimits"] = new { maxPaths = int.MaxValue }
             }));
             CheckReview(preview, mode, reasons);
-            var actualLimits = preview.GetProperty("risk").GetProperty("limits").Deserialize<PatchApprovalLimits>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var actualLimits = preview.GetProperty("risk").GetProperty("limits").Deserialize<ProjectEditLimits>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
             Assert(actualLimits == limits, "Agent arguments cannot replace local limits");
             if (reasons.Length == 0)
             {
@@ -323,7 +325,7 @@ internal static class McpHttpChecks
             }
             if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && reasons.Length != 0))
                 Error(await Call(client, "apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["recoveryReady"] = true }),
-                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         Assert(before.SequenceEqual(Snapshot(storage)) && fixture.Runtime.Execution!.ActiveCalls == 0, "No writes, recovery records, pending approvals or retained calls");
     }
@@ -381,11 +383,11 @@ internal static class McpHttpChecks
         var decision = preview.GetProperty("decision");
         var review = mode == ExecutionMode.ProjectEdit && reasons.Length != 0;
         Assert(decision.GetProperty("mode").GetString() == mode.ToString() && decision.GetProperty("disposition").GetString() ==
-            (mode == ExecutionMode.ReadOnly ? "Denied" : review ? "RequiresApproval" : "Automatic"), "Mode determines disposition");
-        string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["ApprovalUnavailable"] : [];
+            (mode == ExecutionMode.ReadOnly || review ? "Denied" : "Automatic"), "Mode determines disposition");
+        string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["ProjectEditRestriction"] : [];
         Assert(decision.GetProperty("blockers").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal)
             .SequenceEqual(blockers.Order(StringComparer.Ordinal)), "Actual execution blockers");
-        Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "Local blockers determine eligibility and every writable mode requires recovery");
+        Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (blockers.Length == 0), "Local blockers determine eligibility and every writable mode requires recovery");
     }
 
     private static void Error(CallToolResult result, string message) => Assert(result.IsError == true && result.StructuredContent is null &&

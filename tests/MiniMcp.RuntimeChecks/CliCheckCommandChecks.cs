@@ -82,7 +82,7 @@ internal static class CliCheckCommandChecks
                 var before = fixture.Snapshot();
                 var result = await fixture.Invoke(["check", "--config", "configs/custom.json"]);
                 Assert(result.Code == 0 && result.Error == "" && result.Output.Contains(mode.ToString()) &&
-                    result.Output.Contains(program) && result.Output.Contains(fixture.Root), "Fixed user policy and settings-relative paths");
+                    (mode != ExecutionMode.FullAccess || result.Output.Contains(program)) && result.Output.Contains(fixture.Root), "Fixed user policy and settings-relative paths");
                 Assert(before.SequenceEqual(fixture.Snapshot()), "No policy override or program execution");
             }
             Assert(!Directory.Exists(Path.GetDirectoryName(fixture.Paths.RecoveryDirectory)), "Checking writable modes creates no recovery store");
@@ -97,8 +97,8 @@ internal static class CliCheckCommandChecks
                 fixture.WritePolicy(new ExecutionPolicy { Mode = mode });
                 var before = fixture.Snapshot();
                 var result = await fixture.Invoke(["check"]);
-                Assert(result.Code == (mode == ExecutionMode.ReadOnly ? 0 : 2), "Saved dependency requirement");
-                if (mode != ExecutionMode.ReadOnly) Assert(result.Error.Contains("bashPath"), "Dependency diagnostic");
+                Assert(result.Code == (mode == ExecutionMode.FullAccess ? 2 : 0), "Saved dependency requirement");
+                if (mode == ExecutionMode.FullAccess) Assert(result.Error.Contains("bashPath"), "Dependency diagnostic");
                 Assert(before.SequenceEqual(fixture.Snapshot()), "Failure does not write configuration");
             }
         });
@@ -259,9 +259,12 @@ internal static class CliCheckCommandChecks
         await check("CLI check: shared exit contract returns 130 for actual startup cancellation only after successful cleanup", async () =>
         {
             using var cancellation = new CancellationTokenSource();
+            var releaseStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var checkpoints = new TunnelCheckpoints
             {
-                AfterStart = () => { cancellation.Cancel(); return Task.CompletedTask; }
+                // Keep startup actually pending until it observes cancellation, rather than racing
+                // a successful StartAsync completion against the CLI's signal observation.
+                AfterStart = () => { cancellation.Cancel(); return releaseStart.Task; }
             };
             await using var fixture = new TunnelFixture(checks: checkpoints);
             var directory = fixture.DirectoryPath;
@@ -271,8 +274,10 @@ internal static class CliCheckCommandChecks
             using var error = new StringWriter();
             var code = await CliApplication.RunAsync(["run", "--config", fixture.Configuration.SettingsFilePath], output, error,
                 cancellation.Token, store, directory, () => fixture.Runtime);
+            releaseStart.TrySetResult();
             Assert(code == 130 && fixture.Runtime.Snapshot.State == RuntimeState.Disposed &&
-                error.ToString().Contains("启动已取消") && !output.ToString().Contains("已停止"), "Actual cancelled startup fully released");
+                error.ToString().Contains("启动已取消") && !output.ToString().Contains("已停止"),
+                $"Actual cancelled startup fully released: code={code}, state={fixture.Runtime.Snapshot.State}, error={error}");
         });
 
         await check("CLI check: shared exit contract keeps cancelled cleanup as failure and allows a later explicit retry", async () =>

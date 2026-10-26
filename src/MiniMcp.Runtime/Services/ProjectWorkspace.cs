@@ -205,11 +205,14 @@ internal sealed class ProjectWorkspace
             RejectLink(directory.FullName);
     }
 
-    private static bool IsPrivateName(string name) =>
-        new[] { ".git", ".ssh", ".aws", ".config", ".codex", ".agents", ".cloudflared", "tunnel-token" }
-            .Contains(name, StringComparer.OrdinalIgnoreCase) ||
-        name.StartsWith(".env", StringComparison.OrdinalIgnoreCase) ||
-        new[] { ".pfx", ".p12", ".key", ".pem" }.Any(extension => name.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+    internal static ImmutableArray<string> PrivateNames { get; } = [".git", ".ssh", ".aws", ".config", ".codex", ".agents", ".cloudflared", "tunnel-token"];
+    internal static ImmutableArray<string> PrivateExtensions { get; } = [".pfx", ".p12", ".key", ".pem"];
+    internal const string PrivatePrefix = ".env";
+
+    internal static bool IsPrivateName(string name) =>
+        PrivateNames.Contains(name, StringComparer.OrdinalIgnoreCase) ||
+        name.StartsWith(PrivatePrefix, StringComparison.OrdinalIgnoreCase) ||
+        PrivateExtensions.Any(extension => name.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
 
     private static void RejectLink(string path)
     {

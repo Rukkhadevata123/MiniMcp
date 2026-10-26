@@ -22,10 +22,10 @@ internal sealed record PatchChangeRisk(PatchChange Summary, PatchFileKind Kind, 
 
 // Classification describes this exact snapshot. It is neither approval nor permission to commit it.
 internal sealed record PatchRiskAssessment(PatchPreview Preview, ImmutableArray<PatchChangeRisk> Changes,
-    PatchBatchSize Size, PatchApprovalLimits Limits, PatchRiskReason Reasons)
+    PatchBatchSize Size, ProjectEditLimits Limits, PatchRiskReason Reasons)
 {
     public PatchPlan Plan => Preview.Plan;
-    public bool RequiresApproval => Reasons != PatchRiskReason.None;
+    public bool RestrictedInProjectEdit => Reasons != PatchRiskReason.None;
 }
 
 internal static class PatchRiskClassifier
@@ -72,7 +72,7 @@ internal static class PatchRiskClassifier
     };
 
     public static PatchRiskAssessment Classify(PatchPreview preview, string settingsFilePath,
-        PatchApprovalLimits limits, CancellationToken cancellationToken = default)
+        ProjectEditLimits limits, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(preview);

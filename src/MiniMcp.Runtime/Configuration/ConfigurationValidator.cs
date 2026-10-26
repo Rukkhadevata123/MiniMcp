@@ -35,12 +35,12 @@ public sealed class ConfigurationValidator
         ValidateValues(settings, policy);
         var normalized = NormalizePaths(settings, settingsFile, policy);
         settings = normalized.Settings;
-        if (policy.Mode != ExecutionMode.ReadOnly)
+        if (policy.Mode == ExecutionMode.FullAccess)
         {
             var bash = Field("bashPath", () => CheckProgram(_findBash(settings.BashPath, settingsFile), "Bash"));
             settings = settings with { BashPath = bash };
         }
-        if (OperatingSystem.IsLinux() && (policy.Mode != ExecutionMode.ReadOnly || settings.Tunnel.Enabled))
+        if (OperatingSystem.IsLinux() && (policy.Mode == ExecutionMode.FullAccess || settings.Tunnel.Enabled))
             Field("setsid", () =>
             {
                 if (!File.Exists("/usr/bin/setsid"))
@@ -80,11 +80,11 @@ public sealed class ConfigurationValidator
         Require(policy.SchemaVersion == 1, "policy.schemaVersion", "Unsupported policy schema version; expected 1.");
         Require(settings.Port is >= 1 and <= 65535, "port", "Use a port between 1 and 65535.");
         Require(Enum.IsDefined(policy.Mode), "mode", "Unknown execution mode.");
-        var limits = policy.PatchApprovalLimits
-            ?? throw new ConfigurationValidationException("patchApprovalLimits", "Must not be null.");
-        Require(limits.MaxPaths >= 0, "patchApprovalLimits.maxPaths", "Use a nonnegative integer.");
-        Require(limits.MaxChangedLines >= 0, "patchApprovalLimits.maxChangedLines", "Use a nonnegative integer.");
-        Require(limits.MaxChangedBytes >= 0, "patchApprovalLimits.maxChangedBytes", "Use a nonnegative integer.");
+        var limits = policy.ProjectEditLimits
+            ?? throw new ConfigurationValidationException("projectEditLimits", "Must not be null.");
+        Require(limits.MaxPaths >= 0, "projectEditLimits.maxPaths", "Use a nonnegative integer.");
+        Require(limits.MaxChangedLines >= 0, "projectEditLimits.maxChangedLines", "Use a nonnegative integer.");
+        Require(limits.MaxChangedBytes >= 0, "projectEditLimits.maxChangedBytes", "Use a nonnegative integer.");
         var authentication = settings.Authentication
             ?? throw new ConfigurationValidationException("authentication", "Must not be null.");
         var tunnel = settings.Tunnel ?? throw new ConfigurationValidationException("tunnel", "Must not be null.");
@@ -151,6 +151,7 @@ public sealed class ConfigurationValidator
         {
             ProjectRoot = root,
             BashPath = OptionalPath("bashPath", settings.BashPath),
+            RgPath = OptionalPath("rgPath", settings.RgPath),
             Tunnel = settings.Tunnel with
             {
                 ExecutablePath = OptionalPath("tunnel.executablePath", settings.Tunnel.ExecutablePath),

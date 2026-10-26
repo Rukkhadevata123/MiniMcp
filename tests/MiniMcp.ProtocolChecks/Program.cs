@@ -57,7 +57,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         await using var client = await McpClient.CreateAsync(new StreamClientTransport(input.Writer.AsStream(), output.Reader.AsStream()),
             cancellationToken: timeout.Token);
         var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
-        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "read_file" }), "Exactly three tools");
+        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "list_files", "read_file", "search_text" }), "Exactly five tools");
         foreach (var tool in tools)
         {
             var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order().ToArray();
@@ -65,6 +65,8 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             {
                 "read_file" => ["end_line", "path", "start_line"],
                 "apply_patch" => ["dry_run", "patch"],
+                "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
+                "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
                 _ => ["command", "timeout_seconds", "workdir"]
             };
             Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);
@@ -130,7 +132,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             Assert(preview.GetProperty("commit").ValueKind == JsonValueKind.Null, "Preview has no commit record or authorization");
             if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
                 await Call("apply_patch", new() { ["patch"] = patches[i] }, error: true,
-                    message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                    message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         // Agent-supplied approval or mode fields cannot grant write permissions.
         if (mode != ExecutionMode.FullAccess)
@@ -155,7 +157,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             var preview = await Call("apply_patch", new()
             {
                 ["patch"] = patch, ["dry_run"] = true, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true,
-                ["patchApprovalLimits"] = new { maxPaths = int.MaxValue, maxChangedLines = int.MaxValue, maxChangedBytes = int.MaxValue }
+                ["projectEditLimits"] = new { maxPaths = int.MaxValue, maxChangedLines = int.MaxValue, maxChangedBytes = int.MaxValue }
             });
             CheckReview(preview, mode, reasons);
             Assert(preview.GetProperty("risk").GetProperty("limits").GetProperty("maxPaths").GetInt32() == 10, "Only local limits apply");
@@ -163,7 +165,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("kind").GetString() == "Critical", "Actual selected settings source is critical");
             if (mode != ExecutionMode.FullAccess)
                 await Call("apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true },
-                    error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                    error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         Console.WriteLine($"PASS {mode}: risk causes, batch thresholds, selected settings and mode decisions cannot be overridden by tool arguments");
 
@@ -192,13 +194,13 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         {
             var deniedCommand = new Dictionary<string, object?> { ["command"] = "printf unexpected > bash-denied.txt" };
             await Call("bash", deniedCommand, error: true,
-                message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
             await Call("bash", new()
             {
                 ["command"] = deniedCommand["command"], ["approved"] = true, ["mode"] = "FullAccess"
             }, error: true);
             await Call("bash", deniedCommand, error: true,
-                message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         else
         {
@@ -231,7 +233,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             {
                 // ReadOnly has no written.md, so use a valid fresh add for each denial.
                 if (mode == ExecutionMode.ReadOnly) arguments["patch"] = patches[0];
-                await Call("apply_patch", arguments, error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "local approval");
+                await Call("apply_patch", arguments, error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
                 if (mode == ExecutionMode.ProjectEdit) break;
                 continue;
             }
@@ -273,11 +275,11 @@ static void CheckReview(JsonElement preview, ExecutionMode mode, params string[]
     var decision = preview.GetProperty("decision");
     var review = mode == ExecutionMode.ProjectEdit && reasons.Length != 0;
     Assert(decision.GetProperty("mode").GetString() == mode.ToString() &&
-        decision.GetProperty("disposition").GetString() == (mode == ExecutionMode.ReadOnly ? "Denied" : review ? "RequiresApproval" : "Automatic"), "Local mode decision");
-    string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["ApprovalUnavailable"] : [];
+        decision.GetProperty("disposition").GetString() == (mode == ExecutionMode.ReadOnly || review ? "Denied" : "Automatic"), "Local mode decision");
+    string[] blockers = mode == ExecutionMode.ReadOnly ? ["ReadOnlyMode"] : review ? ["ProjectEditRestriction"] : [];
     Assert(decision.GetProperty("blockers").EnumerateArray().Select(value => value.GetString()).Order(StringComparer.Ordinal)
         .SequenceEqual(blockers.Order(StringComparer.Ordinal)), "Current blocking causes");
-    Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (mode != ExecutionMode.ReadOnly), "Local blockers determine eligibility; every writable mode requires a real recovery record");
+    Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (blockers.Length == 0), "Local blockers determine eligibility; every writable mode requires a real recovery record");
 }
 
 static void Assert(bool condition, string message)

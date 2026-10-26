@@ -11,7 +11,7 @@ internal static class PatchWritePolicyChecks
             using var fixture = new Fixture();
             var before = fixture.Snapshot();
             var risk = await fixture.Assess("*** Add File: nested/new.md\n+new\n*** Update File: source.cs\n@@\n-old\n+new");
-            Assert(!risk.RequiresApproval, "Ordinary batch");
+            Assert(!risk.RestrictedInProjectEdit, "Ordinary batch");
             foreach (var mode in Enum.GetValues<ExecutionMode>())
             {
                 var decision = PatchWritePolicy.Decide(risk, mode);
@@ -23,10 +23,10 @@ internal static class PatchWritePolicyChecks
             Assert(before.SequenceEqual(fixture.Snapshot()), "No ordinary member executed");
         });
 
-        await check("every high-risk patch trigger requires ProjectEdit approval while FullAccess still requires recovery", async () =>
+        await check("every high-risk patch trigger is denied in ProjectEdit while FullAccess still requires recovery", async () =>
         {
             using var fixture = new Fixture();
-            var cases = new (string Body, PatchApprovalLimits Limits, PatchRiskReason Reason)[]
+            var cases = new (string Body, ProjectEditLimits Limits, PatchRiskReason Reason)[]
             {
                 ("*** Add File: .github/workflows/check.cs\n+new", new(), PatchRiskReason.CriticalFile),
                 ("*** Add File: custom.data\n+new", new(), PatchRiskReason.UnknownFileType),
@@ -40,12 +40,13 @@ internal static class PatchWritePolicyChecks
             foreach (var (body, limits, reason) in cases)
             {
                 var risk = await fixture.Assess(body, limits);
-                Assert(risk.Reasons == reason && risk.RequiresApproval, "Expected trigger: " + reason);
+                Assert(risk.Reasons == reason && risk.RestrictedInProjectEdit, "Expected trigger: " + reason);
                 var edit = PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit);
-                AssertDecision(edit, PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable);
+                AssertDecision(edit, PatchWriteDisposition.Denied, PatchWriteBlocker.ProjectEditRestriction);
+                Assert(!(edit with { Blockers = PatchWriteBlocker.None }).CanCommit, "Removing a rejection reason cannot turn a denied batch into execution permission");
                 var full = PatchWritePolicy.Decide(risk, ExecutionMode.FullAccess);
                 AssertDecision(full, PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
-                Assert(edit.RequiresRecoveryRecord && full.RequiresRecoveryRecord && full.Assessment.Reasons == reason, "Mode does not erase risk or recovery");
+                Assert(!edit.RequiresRecoveryRecord && full.RequiresRecoveryRecord && full.Assessment.Reasons == reason, "Denied batches create no recovery attempt; FullAccess keeps risk and recording");
                 AssertDecision(PatchWritePolicy.Decide(risk, ExecutionMode.ReadOnly), PatchWriteDisposition.Denied, PatchWriteBlocker.ReadOnlyMode);
             }
             Assert(before.SequenceEqual(fixture.Snapshot()), "No file, directory or state writes");
@@ -62,7 +63,7 @@ internal static class PatchWritePolicyChecks
                 PatchRiskReason.PathLimitExceeded | PatchRiskReason.ChangedLineLimitExceeded | PatchRiskReason.ChangedByteLimitExceeded;
             Assert(risk.Reasons == expectedReasons && risk.Changes[0].Reasons == PatchRiskReason.None, "All review causes retained");
             var decision = PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit);
-            AssertDecision(decision, PatchWriteDisposition.RequiresApproval, PatchWriteBlocker.ApprovalUnavailable);
+            AssertDecision(decision, PatchWriteDisposition.Denied, PatchWriteBlocker.ProjectEditRestriction);
             Assert(ReferenceEquals(decision.Assessment.Preview, risk.Preview) && ReferenceEquals(decision.Assessment.Plan, risk.Plan), "Exact complete preview");
             Assert(decision.Assessment.Reasons == expectedReasons && before.SequenceEqual(fixture.Snapshot()), "Whole batch remains unchanged");
         });
@@ -71,7 +72,7 @@ internal static class PatchWritePolicyChecks
         {
             using var fixture = new Fixture();
             const string body = "*** Add File: new.md\n+extra\n*** Update File: source.cs\n@@\n-old\n+new";
-            var exact = new PatchApprovalLimits { MaxPaths = 2, MaxChangedLines = 3, MaxChangedBytes = 14 };
+            var exact = new ProjectEditLimits { MaxPaths = 2, MaxChangedLines = 3, MaxChangedBytes = 14 };
             var risk = await fixture.Assess(body, exact);
             Assert(risk.Size == new PatchBatchSize(2, 3, 14), "Known change size");
             AssertDecision(PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit), PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
@@ -84,8 +85,8 @@ internal static class PatchWritePolicyChecks
             {
                 var exceeded = PatchRiskClassifier.Classify(risk.Preview, fixture.SettingsPath, limits);
                 Assert(exceeded.Reasons == reason, "Single lowered dimension");
-                AssertDecision(PatchWritePolicy.Decide(exceeded, ExecutionMode.ProjectEdit), PatchWriteDisposition.RequiresApproval,
-                    PatchWriteBlocker.ApprovalUnavailable);
+                AssertDecision(PatchWritePolicy.Decide(exceeded, ExecutionMode.ProjectEdit), PatchWriteDisposition.Denied,
+                    PatchWriteBlocker.ProjectEditRestriction);
                 AssertDecision(PatchWritePolicy.Decide(exceeded, ExecutionMode.FullAccess), PatchWriteDisposition.Automatic, PatchWriteBlocker.None);
             }
             var empty = await fixture.Assess("*** Add File: empty.md", new() { MaxPaths = 1, MaxChangedLines = 0, MaxChangedBytes = 0 });
@@ -147,7 +148,7 @@ internal static class PatchWritePolicyChecks
             _workspace = new ProjectWorkspace(Root);
             _service = new PatchService(_workspace);
         }
-        public async Task<PatchRiskAssessment> Assess(string body, PatchApprovalLimits? limits = null)
+        public async Task<PatchRiskAssessment> Assess(string body, ProjectEditLimits? limits = null)
         {
             var plan = await _service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch");
             return PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), SettingsPath, limits ?? new());

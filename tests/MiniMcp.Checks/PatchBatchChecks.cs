@@ -46,12 +46,12 @@ internal static class PatchBatchChecks
                 "*** Delete File: delete.md\n*** Update File: move.cs\n*** Move to: renamed.cs\n" +
                 "*** Add File: Directory.Build.cs\n+b\n*** Add File: data.json\n+u");
             var bytes = Encoding.UTF8.GetByteCount("你好👋\nnew\nold\ngone\r\nb\nu\n");
-            var limits = new PatchApprovalLimits { MaxPaths = 6, MaxChangedLines = 5, MaxChangedBytes = bytes - 1 };
+            var limits = new ProjectEditLimits { MaxPaths = 6, MaxChangedLines = 5, MaxChangedBytes = bytes - 1 };
             var risk = fixture.Classify(preview, limits);
             Assert(risk.Size == new PatchBatchSize(7, 6, bytes), "Whole-batch totals rather than net changes");
             Assert(risk.Reasons == (BatchReasons | PatchRiskReason.CriticalFile | PatchRiskReason.UnknownFileType |
                 PatchRiskReason.Delete | PatchRiskReason.Move), "All reasons preserved");
-            Assert(risk.RequiresApproval && risk.Changes[0].Reasons == PatchRiskReason.None, "Ordinary member does not clear whole-batch review");
+            Assert(risk.RestrictedInProjectEdit && risk.Changes[0].Reasons == PatchRiskReason.None, "Ordinary member does not clear whole-batch review");
             Assert(ReferenceEquals(risk.Preview, preview) && ReferenceEquals(risk.Plan, preview.Plan) && ReferenceEquals(risk.Limits, limits), "Preview and policy binding");
             Assert(before.SequenceEqual(fixture.Snapshot()), "No partial execution");
         });
@@ -61,7 +61,7 @@ internal static class PatchBatchChecks
             using var fixture = new Fixture();
             fixture.Put("first.cs", new string('x', 4096) + "\n");
             fixture.Put("second.md", new string('y', 4096) + "\n");
-            var limits = new PatchApprovalLimits { MaxPaths = 2, MaxChangedLines = 0, MaxChangedBytes = 0 };
+            var limits = new ProjectEditLimits { MaxPaths = 2, MaxChangedLines = 0, MaxChangedBytes = 0 };
             var one = await fixture.Preview("*** Update File: first.cs\n*** Move to: moved.cs");
             var risk = fixture.Classify(one, limits);
             Assert(risk.Size == new PatchBatchSize(2, 0, 0) && risk.Reasons == PatchRiskReason.Move, "Exact two-path boundary still retains move review");
@@ -80,7 +80,7 @@ internal static class PatchBatchChecks
             })
             {
                 var preview = PatchDiffBuilder.Create(fixture.Images(before, after, beforeBom, afterBom));
-                var limits = new PatchApprovalLimits { MaxPaths = 1, MaxChangedLines = (int)lines, MaxChangedBytes = bytes };
+                var limits = new ProjectEditLimits { MaxPaths = 1, MaxChangedLines = (int)lines, MaxChangedBytes = bytes };
                 var exact = fixture.Classify(preview, limits);
                 Assert(exact.Size == new PatchBatchSize(1, lines, bytes) && exact.Reasons == PatchRiskReason.None, "Format boundary");
                 Assert(fixture.Classify(preview, limits with { MaxChangedBytes = bytes - 1 }).Reasons == PatchRiskReason.ChangedByteLimitExceeded, "Format byte overage");
@@ -94,14 +94,14 @@ internal static class PatchBatchChecks
             var context = string.Concat(Enumerable.Range(0, 500).Select(i => $"unchanged{i}\n"));
             fixture.Put("context.md", context + "old\n" + context);
             var preview = await fixture.Preview("*** Update File: context.md\n@@\n-old\n+new");
-            var limits = new PatchApprovalLimits { MaxPaths = 1, MaxChangedLines = 2, MaxChangedBytes = 8 };
+            var limits = new ProjectEditLimits { MaxPaths = 1, MaxChangedLines = 2, MaxChangedBytes = 8 };
             var risk = fixture.Classify(preview, limits);
-            Assert(risk.Size == new PatchBatchSize(1, 2, 8) && !risk.RequiresApproval, "Context excluded");
+            Assert(risk.Size == new PatchBatchSize(1, 2, 8) && !risk.RestrictedInProjectEdit, "Context excluded");
             const string text = "中👋\t\u001b";
             preview = await fixture.Preview("*** Add File: controls.md\n+" + text);
             var bytes = Encoding.UTF8.GetByteCount(text + "\n");
             risk = fixture.Classify(preview, limits with { MaxChangedBytes = bytes });
-            Assert(risk.Size == new PatchBatchSize(1, 1, bytes) && !risk.RequiresApproval, "Raw UTF-8, not escaped display");
+            Assert(risk.Size == new PatchBatchSize(1, 1, bytes) && !risk.RestrictedInProjectEdit, "Raw UTF-8, not escaped display");
             Assert(Encoding.UTF8.GetByteCount(preview.Diff) > bytes && preview.Diff.Contains("\\u001b"), "Display actually escaped");
             Assert(fixture.Classify(preview, limits with { MaxChangedBytes = bytes - 1 }).Reasons == PatchRiskReason.ChangedByteLimitExceeded, "Raw byte overage");
         });
@@ -109,10 +109,10 @@ internal static class PatchBatchChecks
         await check("zero thresholds review only nonzero dimensions and an empty new file still counts as a path", async () =>
         {
             using var fixture = new Fixture();
-            var limits = new PatchApprovalLimits { MaxPaths = 1, MaxChangedLines = 0, MaxChangedBytes = 0 };
+            var limits = new ProjectEditLimits { MaxPaths = 1, MaxChangedLines = 0, MaxChangedBytes = 0 };
             var empty = await fixture.Preview("*** Add File: empty.md");
             var risk = fixture.Classify(empty, limits);
-            Assert(risk.Size == new PatchBatchSize(1, 0, 0) && !risk.RequiresApproval, "Zero changed-content boundary");
+            Assert(risk.Size == new PatchBatchSize(1, 0, 0) && !risk.RestrictedInProjectEdit, "Zero changed-content boundary");
             Assert(fixture.Classify(empty, limits with { MaxPaths = 0 }).Reasons == PatchRiskReason.PathLimitExceeded, "No automatic file creation with zero path limit");
             var blank = await fixture.Preview("*** Add File: blank.md\n+");
             risk = fixture.Classify(blank, limits);
@@ -124,7 +124,7 @@ internal static class PatchBatchChecks
         {
             using var fixture = new Fixture();
             var preview = await fixture.Preview("*** Add File: empty.md");
-            var limits = new PatchApprovalLimits { MaxPaths = int.MaxValue, MaxChangedLines = int.MaxValue, MaxChangedBytes = int.MaxValue };
+            var limits = new ProjectEditLimits { MaxPaths = int.MaxValue, MaxChangedLines = int.MaxValue, MaxChangedBytes = int.MaxValue };
             // Synthetic statistics exercise numeric boundaries without weakening real diff/file budgets.
             var large = preview with { Statistics = new(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue) };
             var risk = fixture.Classify(large, limits);
@@ -159,7 +159,7 @@ internal static class PatchBatchChecks
         {
             using var fixture = new Fixture();
             var preview = await fixture.Preview("*** Add File: nested/new.cs\n+new");
-            var limits = new PatchApprovalLimits { MaxPaths = 0 };
+            var limits = new ProjectEditLimits { MaxPaths = 0 };
             var expected = fixture.Classify(preview, limits);
             Directory.Delete(fixture.Root, recursive: true);
             var actual = fixture.Classify(preview, limits);
@@ -195,7 +195,7 @@ internal static class PatchBatchChecks
         }
         public void Put(string path, string text) => File.WriteAllText(Path.Combine(Root, path), text, new UTF8Encoding(false));
         public async Task<PatchPreview> Preview(string body) => PatchDiffBuilder.Create(await _service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch"));
-        public PatchRiskAssessment Classify(PatchPreview preview, PatchApprovalLimits? limits = null) =>
+        public PatchRiskAssessment Classify(PatchPreview preview, ProjectEditLimits? limits = null) =>
             PatchRiskClassifier.Classify(preview, SettingsPath, limits ?? new());
         public PatchPlan Images(string before, string after, bool beforeBom, bool afterBom)
         {

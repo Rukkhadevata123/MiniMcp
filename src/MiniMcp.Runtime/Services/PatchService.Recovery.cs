@@ -7,7 +7,7 @@ internal sealed record RecordedPatchCommit(RecoveryStore.PreparedRecord Record, 
 
 internal sealed partial class PatchService
 {
-    // The caller selects policy/approval before entering this internal transaction. It cannot supply
+    // The caller checks mode policy before entering this internal transaction. It cannot supply
     // a prepared flag, a stored manifest or a result state in place of real recovery preparation.
     internal async Task<RecordedPatchCommit> CommitWithRecoveryAsync(PatchPlan plan, RecoveryStore recovery,
         CancellationToken cancellationToken = default)

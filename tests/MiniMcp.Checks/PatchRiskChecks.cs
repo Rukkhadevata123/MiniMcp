@@ -11,12 +11,12 @@ internal static class PatchRiskChecks
             foreach (var path in new[] { "src/App.cs", "ui/Page.XAML", "src/示例.cs", "src/lib.rs", "src/main.py", "web/app.tsx", "README", "docs/README.md", "notes.txt" })
             {
                 var risk = fixture.Classify(await fixture.Prepare($"*** Add File: {path}\n+new"));
-                Assert(risk.Changes[0].Kind == PatchFileKind.Ordinary && !risk.RequiresApproval && risk.Reasons == PatchRiskReason.None, path);
+                Assert(risk.Changes[0].Kind == PatchFileKind.Ordinary && !risk.RestrictedInProjectEdit && risk.Reasons == PatchRiskReason.None, path);
             }
             fixture.Put("existing.cs", "old\n");
             var plan = await fixture.Prepare("*** Update File: existing.cs\n@@\n-old\n+new");
             var update = fixture.Classify(plan);
-            Assert(!update.RequiresApproval && ReferenceEquals(update.Plan, plan), "Snapshot binding");
+            Assert(!update.RestrictedInProjectEdit && ReferenceEquals(update.Plan, plan), "Snapshot binding");
             Assert(File.ReadAllText(fixture.Path("existing.cs")) == "old\n" && !Directory.Exists(fixture.Path("src")), "No writes");
         });
 
@@ -33,7 +33,7 @@ internal static class PatchRiskChecks
             })
             {
                 var risk = fixture.Classify(await fixture.Prepare($"*** Add File: {path}\n+new"));
-                Assert(risk.Changes[0].Kind == PatchFileKind.Critical && risk.Reasons == PatchRiskReason.CriticalFile && risk.RequiresApproval, path);
+                Assert(risk.Changes[0].Kind == PatchFileKind.Critical && risk.Reasons == PatchRiskReason.CriticalFile && risk.RestrictedInProjectEdit, path);
             }
         });
 
@@ -43,7 +43,7 @@ internal static class PatchRiskChecks
             foreach (var path in new[] { "data.json", "values.yaml", "custom.config", "payload.bin", "custom-entrypoint", "archive.cs.backup" })
             {
                 var risk = fixture.Classify(await fixture.Prepare($"*** Add File: {path}\n+text"));
-                Assert(risk.Changes[0].Kind == PatchFileKind.Unknown && risk.Reasons == PatchRiskReason.UnknownFileType && risk.RequiresApproval, path);
+                Assert(risk.Changes[0].Kind == PatchFileKind.Unknown && risk.Reasons == PatchRiskReason.UnknownFileType && risk.RestrictedInProjectEdit, path);
             }
             foreach (var path in new[] { "src./code.cs", "doc.md." })
             {
@@ -75,7 +75,7 @@ internal static class PatchRiskChecks
             foreach (var (body, kind, reasons) in cases)
             {
                 var risk = fixture.Classify(await fixture.Prepare(body));
-                Assert(risk.Changes[0].Kind == kind && risk.Reasons == reasons && risk.RequiresApproval, body);
+                Assert(risk.Changes[0].Kind == kind && risk.Reasons == reasons && risk.RestrictedInProjectEdit, body);
             }
             Assert(File.Exists(fixture.Path("source.cs")) && File.Exists(fixture.Path("Directory.Build.cs")), "No partial operation");
         });
@@ -112,7 +112,7 @@ internal static class PatchRiskChecks
             fixture.Put("without.txt", "ordinary\n");
             Assert(fixture.Classify(await fixture.Prepare("*** Update File: without.txt\n@@\n-ordinary\n+#!/bin/sh")).Changes[0].Kind == PatchFileKind.Critical, "Introduced shebang");
             var doc = fixture.Classify(await fixture.Prepare("*** Add File: example.md\n+example\n+#!/bin/sh"));
-            Assert(!doc.RequiresApproval, "Embedded documentation example");
+            Assert(!doc.RestrictedInProjectEdit, "Embedded documentation example");
         });
 
         await check("retained Unix executable metadata makes ordinary filenames critical without reading host permissions", async () =>
@@ -129,7 +129,7 @@ internal static class PatchRiskChecks
             }
             var nonExecutable = plan.Changes[0];
             var safe = new PatchPlan(plan.Owner, [nonExecutable with { Before = nonExecutable.Before! with { Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite } }]);
-            Assert(!fixture.Classify(safe).RequiresApproval, "Read/write bits alone");
+            Assert(!fixture.Classify(safe).RestrictedInProjectEdit, "Read/write bits alone");
         });
 
         await check("mixed patch classification aggregates all review reasons and never executes ordinary members", async () =>
@@ -141,7 +141,7 @@ internal static class PatchRiskChecks
                 "*** Add File: custom.data\n+data\n*** Delete File: delete.md\n*** Update File: move.cs\n*** Move to: renamed.cs");
             var before = fixture.Snapshot();
             var risk = fixture.Classify(plan);
-            Assert(risk.RequiresApproval && risk.Reasons == (PatchRiskReason.CriticalFile | PatchRiskReason.UnknownFileType | PatchRiskReason.Delete | PatchRiskReason.Move), "Whole batch");
+            Assert(risk.RestrictedInProjectEdit && risk.Reasons == (PatchRiskReason.CriticalFile | PatchRiskReason.UnknownFileType | PatchRiskReason.Delete | PatchRiskReason.Move), "Whole batch");
             Assert(risk.Changes.Length == 5 && risk.Changes[0].Reasons == PatchRiskReason.None && risk.Changes[3].Reasons == PatchRiskReason.Delete, "Individual reasons");
             Assert(risk.Changes.Select(change => change.Summary).SequenceEqual(plan.Changes.Select(change => change.Summary)), "Order and exact summaries");
             Assert(before.SequenceEqual(fixture.Snapshot()) && !Directory.Exists(fixture.Path("ordinary")), "No files or directories written");

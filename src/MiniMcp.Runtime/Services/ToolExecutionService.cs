@@ -5,7 +5,7 @@ namespace MiniMcp.Services;
 
 /// <summary>
 /// Owned tool execution boundary for one runtime session and validated configuration snapshot.
-/// Approval and recovery support must be present before their dependent operations can run.
+/// All writes use the recorded transaction; read queries share cancellation and draining.
 /// </summary>
 internal sealed class ToolExecutionService : IAsyncDisposable
 {
@@ -18,6 +18,9 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     private readonly RecoveryPreviewService _recoveryPreviews;
     private readonly RecoveryRestoreService _recoveryRestores;
     private readonly Lazy<BashRunner> _bash;
+    private readonly WorkspaceQueries _queries;
+    private readonly ReadOnlyQueryRunner _queryRunner = new();
+    private readonly TextSearchService _search;
     private bool _accepting = true;
     private int _activeCalls;
     private Task? _stopTask;
@@ -38,6 +41,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         RunId = runId;
         Configuration = configuration;
         _workspace = new ProjectWorkspace(configuration.Settings.ProjectRoot);
+        _queries = new WorkspaceQueries(_workspace);
+        _search = new TextSearchService(_workspace, configuration, _queryRunner);
         _patches = new PatchService(_workspace, patchCheckpoint);
         _recovery = new RecoveryStore(runId, configuration, preparationCheckpoint, null, replacementCheckpoint);
         _recoveryPreviews = new RecoveryPreviewService(_workspace, _recovery, recoveryPreviewCheckpoint);
@@ -53,6 +58,15 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     public Task<ReadResult> ReadFileAsync(string path, int startLine = 1, int? endLine = null,
         CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _workspace.ReadFileAsync(path, startLine, endLine, token), cancellationToken);
+
+    public Task<FileListResult> ListFilesAsync(string path = ".", int maxDepth = 2, int maxEntries = 200,
+        bool includeHidden = false, string format = "flat", CancellationToken cancellationToken = default) =>
+        ExecuteAsync(token => _queries.ListAsync(path, maxDepth, maxEntries, includeHidden, format, token), cancellationToken);
+
+    public Task<TextSearchResult> SearchTextAsync(string pattern, string path = ".", string? glob = null,
+        bool regex = false, bool caseSensitive = true, int maxDepth = 16, int maxResults = 100,
+        CancellationToken cancellationToken = default) => ExecuteAsync(token =>
+            _search.SearchAsync(pattern, path, glob, regex, caseSensitive, maxDepth, maxResults, token), cancellationToken);
 
     // Local only. WorkspaceTools does not map record IDs, previews or restoration to MCP tools.
     public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>
@@ -73,7 +87,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
             var decision = await Task.Run(() =>
             {
                 var preview = PatchDiffBuilder.Create(plan, token);
-                var assessment = PatchRiskClassifier.Classify(preview, Configuration.SettingsFilePath, Configuration.Policy.PatchApprovalLimits, token);
+                var assessment = PatchRiskClassifier.Classify(preview, Configuration.SettingsFilePath, Configuration.Policy.ProjectEditLimits, token);
                 return PatchWritePolicy.Decide(assessment, Configuration.Policy.Mode, token);
             }, token).ConfigureAwait(false);
             if (dryRun)
@@ -95,7 +109,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
                 throw new WorkspaceException(Configuration.Policy.Mode switch
                 {
                     ExecutionMode.ReadOnly => "ReadOnly mode does not allow Bash commands.",
-                    ExecutionMode.ProjectEdit => "Bash requires local approval in ProjectEdit mode; approvals are not available.",
+                    ExecutionMode.ProjectEdit => "ProjectEdit restrictions forbid Bash commands. Bash is available only in FullAccess mode.",
                     _ => "Unknown execution mode; Bash commands are denied."
                 });
             return _bash.Value.RunAsync(command, workdir, timeoutSeconds, token);
@@ -167,6 +181,7 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     {
         await StopAsync().ConfigureAwait(false);
         _workspace.Mutations.Dispose();
+        _queryRunner.Dispose();
         _stopping.Dispose();
         Volatile.Write(ref _disposed, 1);
     }

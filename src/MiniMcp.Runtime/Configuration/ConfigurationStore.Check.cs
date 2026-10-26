@@ -7,7 +7,7 @@ namespace MiniMcp.Configuration;
 public enum PortCheckStatus { Bindable, InUse, Unavailable }
 
 public sealed record ConfigurationCheckResult(RuntimeConfiguration Configuration, PortCheckStatus PortStatus,
-    SocketError? PortError = null);
+    SocketError? PortError = null, string? RipgrepPath = null, string? RipgrepError = null);
 
 public sealed partial class ConfigurationStore
 {
@@ -37,6 +37,10 @@ public sealed partial class ConfigurationStore
             status = error == SocketError.AddressAlreadyInUse ? PortCheckStatus.InUse : PortCheckStatus.Unavailable;
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return new(configuration, status, error);
+        string? rgPath = null, rgError = null;
+        try { rgPath = ExternalProgramLocator.FindRipgrep(configuration.Settings.RgPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
+        catch (Exception failure) when (failure is IOException or ArgumentException or UnauthorizedAccessException)
+        { rgError = failure.Message; }
+        return new(configuration, status, error, rgPath, rgError);
     }
 }

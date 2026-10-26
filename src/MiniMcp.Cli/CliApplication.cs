@@ -83,8 +83,10 @@ internal static class CliApplication
         output.WriteLine($"项目：{Visible(configuration.Settings.ProjectRoot)}");
         output.WriteLine($"认证模式：{configuration.Settings.Authentication.Mode}（仅校验配置字段）");
         output.WriteLine($"配置执行模式：{configuration.Policy.Mode}");
-        output.WriteLine(configuration.Policy.Mode == ExecutionMode.ReadOnly ? "Bash：当前模式不启用。" :
+        output.WriteLine(configuration.Policy.Mode != ExecutionMode.FullAccess ? "Bash：当前模式不启用。" :
             $"Bash：程序文件已检查；{Visible(configuration.Settings.BashPath)}");
+        output.WriteLine(check.RipgrepPath is { } rg ? $"文本搜索：已找到 rg 程序文件（未执行）；{Visible(rg)}" :
+            "文本搜索：rg 不可用，其他工具不受影响。" + (check.RipgrepError is { } rgError ? Visible(rgError) : ""));
         output.WriteLine(configuration.Settings.Tunnel.Enabled ? "受管隧道：程序文件存在；token 文件可读且非空（未启动）。" : "受管隧道：关闭。");
         var endpoint = $"127.0.0.1:{configuration.Settings.Port}";
         if (check.PortStatus == PortCheckStatus.Bindable)

@@ -132,7 +132,7 @@ internal static class RecoveryPreviewLifetimeChecks
             await runtime.StartAsync(fixture.Configuration);
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(5) };
             await using var client = await McpHttpChecks.ConnectAsync(runtime.Address!, http);
-            Assert((await client.ListToolsAsync()).Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "read_file" }), "Historical inspection is an in-process API, not an Agent tool or HTTP management endpoint");
+            Assert((await client.ListToolsAsync()).Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "list_files", "read_file", "search_text" }), "Historical inspection is an in-process API, not an Agent tool or HTTP management endpoint");
             var oldExecution = runtime.Execution!;
             var committed = await oldExecution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var recordId = committed.Commit!.ChangeId;

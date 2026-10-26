@@ -14,7 +14,7 @@ internal sealed class PatchExecutionFixture : IDisposable
     public RuntimeConfiguration Configuration { get; }
     public string RecoveryDirectory => Configuration.Policy.RecoveryDirectory;
 
-    public PatchExecutionFixture(ExecutionMode mode = ExecutionMode.FullAccess, PatchApprovalLimits? limits = null)
+    public PatchExecutionFixture(ExecutionMode mode = ExecutionMode.FullAccess, ProjectEditLimits? limits = null)
     {
         Root = Directory.CreateDirectory(Path.Combine(DirectoryPath, "project")).FullName;
         Put("sample.md", "old\n");
@@ -24,7 +24,7 @@ internal sealed class PatchExecutionFixture : IDisposable
             ProjectRoot = Root, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local },
             BashPath = mode == ExecutionMode.ReadOnly ? "" : ExternalProgramLocator.FindBash(Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
                 Path.Combine(DirectoryPath, "settings.json")) ?? throw new Exception("Bash required for editing-mode checks.")
-        }, Path.Combine(DirectoryPath, "settings.json"), new ExecutionPolicy { Mode = mode, PatchApprovalLimits = limits ?? new() });
+        }, Path.Combine(DirectoryPath, "settings.json"), new ExecutionPolicy { Mode = mode, ProjectEditLimits = limits ?? new() });
     }
 
     public ToolExecutionService Execution(Func<PatchCommitStage, int, Task>? patch = null,

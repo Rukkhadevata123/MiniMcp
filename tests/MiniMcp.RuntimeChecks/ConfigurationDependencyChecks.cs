@@ -19,7 +19,7 @@ internal static class ConfigurationDependencyChecks
             Tunnel = new TunnelSettings { Enabled = true, ExecutablePath = "tools/cloudflared", TokenFilePath = "token" }
         };
         var readOnly = new ExecutionPolicy();
-        var edit = readOnly with { Mode = ExecutionMode.ProjectEdit };
+        var edit = readOnly with { Mode = ExecutionMode.FullAccess };
         Directory.CreateDirectory(root);
         string Put(string relative, string text = "Discovery fixture; this file must never be executed.")
         {
@@ -68,10 +68,10 @@ internal static class ConfigurationDependencyChecks
                 return Task.CompletedTask;
             });
 
-            await check("editing modes require Bash and retain explicit program paths without execution", () =>
+            await check("only FullAccess requires Bash and retains explicit program paths without execution", () =>
             {
                 var validator = Validator();
-                foreach (var mode in new[] { ExecutionMode.ProjectEdit, ExecutionMode.FullAccess })
+                foreach (var mode in new[] { ExecutionMode.FullAccess })
                 {
                     var policy = readOnly with { Mode = mode };
                     Reject("bashPath", () => validator.Validate(local, source, policy));

@@ -27,6 +27,19 @@ internal static class ExternalProgramLocatorChecks
         }
         try
         {
+            await check("ripgrep discovery honors explicit/install/PATH precedence and ignores relative PATH entries", () =>
+            {
+                var name = OperatingSystem.IsWindows() ? "rg.exe" : "rg";
+                var installed = Put("rg-installed", name);
+                var onPath = Put("rg-path", name);
+                Assert(ExternalProgramLocator.FindRipgrep("rg-path/" + name, settings, [Path.GetDirectoryName(installed)!], null) == onPath);
+                Assert(ExternalProgramLocator.FindRipgrep("", settings, [Path.GetDirectoryName(installed)!], Path.GetDirectoryName(onPath)) == installed);
+                Assert(ExternalProgramLocator.FindRipgrep("", settings, [], Path.GetDirectoryName(onPath)) == onPath);
+                Assert(ExternalProgramLocator.FindRipgrep("", settings, [], "." + Path.PathSeparator + "rg-path") is null);
+                Reject(() => ExternalProgramLocator.FindRipgrep("missing-rg", settings, [], Path.GetDirectoryName(onPath)));
+                return Task.CompletedTask;
+            });
+
             await check("explicit program files are anchored to JSON and take precedence without execution", () =>
             {
                 var explicitFile = Put("custom", "chosen-program");

@@ -87,7 +87,7 @@ internal static class RuntimeConfigurationChecks
                         var configuration = await store.LoadAsync("project/nested/../custom.md", temporary, mode);
                         Assert(configuration.SettingsFilePath == selected && Path.IsPathFullyQualified(configuration.SettingsFilePath));
                         Assert(configuration.Settings.ProjectRoot == root && configuration.Settings.BashPath == bash && configuration.Policy.Mode == mode);
-                        var risk = PatchRiskClassifier.Classify(preview, configuration.SettingsFilePath, configuration.Policy.PatchApprovalLimits);
+                        var risk = PatchRiskClassifier.Classify(preview, configuration.SettingsFilePath, configuration.Policy.ProjectEditLimits);
                         Assert(risk.Changes[0].Kind == PatchFileKind.Critical && risk.Reasons == PatchRiskReason.CriticalFile);
                     }
                     Assert((await File.ReadAllBytesAsync(selected)).SequenceEqual(before) && !Directory.Exists(Path.Combine(root, "nested")));
@@ -116,8 +116,8 @@ internal static class RuntimeConfigurationChecks
                     File.Delete(secondSource);
                     Assert(first.SettingsFilePath == firstSource && second.SettingsFilePath == secondSource);
                     Assert(first.Settings.Port == 8000 && second.Settings.Port == 8123);
-                    Assert(PatchRiskClassifier.Classify(preview, first.SettingsFilePath, first.Policy.PatchApprovalLimits).Reasons == PatchRiskReason.CriticalFile);
-                    Assert(!PatchRiskClassifier.Classify(preview, second.SettingsFilePath, second.Policy.PatchApprovalLimits).RequiresApproval);
+                    Assert(PatchRiskClassifier.Classify(preview, first.SettingsFilePath, first.Policy.ProjectEditLimits).Reasons == PatchRiskReason.CriticalFile);
+                    Assert(!PatchRiskClassifier.Classify(preview, second.SettingsFilePath, second.Policy.ProjectEditLimits).RestrictedInProjectEdit);
                     Assert(await File.ReadAllTextAsync(firstSource) == "external edit" && !File.Exists(secondSource));
                 }
                 finally { workspace.Mutations.Dispose(); }
@@ -134,7 +134,7 @@ internal static class RuntimeConfigurationChecks
                 try
                 {
                     var plan = await new PatchService(workspace).PrepareAsync("*** Begin Patch\n*** Add File: pending/draft.md\n+{}\n*** End Patch");
-                    var risk = PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), configuration.SettingsFilePath, configuration.Policy.PatchApprovalLimits);
+                    var risk = PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), configuration.SettingsFilePath, configuration.Policy.ProjectEditLimits);
                     Assert(risk.Changes[0].Kind == PatchFileKind.Critical && risk.Reasons == PatchRiskReason.CriticalFile);
                     Assert(!File.Exists(intended) && !Directory.Exists(Path.Combine(root, "pending")) && !Directory.Exists(paths.RecoveryDirectory));
                 }
@@ -151,10 +151,11 @@ internal static class RuntimeConfigurationChecks
                 Assert((await store.ReadPolicyAsync()).Value.Mode == ExecutionMode.FullAccess);
             });
 
-            await check("editing mode overrides still require dependencies and reject undefined modes", async () =>
+            await check("only FullAccess overrides require Bash; undefined modes are rejected", async () =>
             {
                 await Write(draft with { BashPath = "missing-bash" }, new ExecutionPolicy());
-                foreach (var mode in new[] { ExecutionMode.ProjectEdit, ExecutionMode.FullAccess })
+                Assert((await store.LoadAsync(source, temporary, mode: ExecutionMode.ProjectEdit)).Policy.Mode == ExecutionMode.ProjectEdit);
+                foreach (var mode in new[] { ExecutionMode.FullAccess })
                 {
                     var required = await Reject<ConfigurationValidationException>(() => store.LoadAsync(source, temporary, mode: mode));
                     Assert(required.Field == "bashPath");

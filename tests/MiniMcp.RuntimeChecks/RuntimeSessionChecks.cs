@@ -43,7 +43,7 @@ internal static class RuntimeSessionChecks
                 Assert((await a.ReadFileAsync("sample.txt")).Content == "first");
                 Assert((await b.ReadFileAsync("sample.txt")).Content == "second");
                 Assert((await Reject<WorkspaceException>(() => a.RunBashAsync("exit 0"))).Message.Contains("ReadOnly"));
-                Assert((await Reject<WorkspaceException>(() => b.RunBashAsync("exit 0"))).Message.Contains("local approval"));
+                Assert((await Reject<WorkspaceException>(() => b.RunBashAsync("exit 0"))).Message.Contains("ProjectEdit"));
                 var active = first.Snapshot;
                 await Reject<InvalidOperationException>(() => first.StartAsync(secondConfiguration));
                 Assert(ReferenceEquals(first.Snapshot, active) && ReferenceEquals(first.Execution, a) && !a.IsDisposed);
