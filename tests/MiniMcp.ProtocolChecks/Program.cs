@@ -1,3 +1,4 @@
+using MiniMcp.Services.Patching;
 using System.IO.Pipelines;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;

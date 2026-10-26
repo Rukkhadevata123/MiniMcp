@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>
 /// Redacts recognizable credential fields and authentication forms. This is not a classifier for

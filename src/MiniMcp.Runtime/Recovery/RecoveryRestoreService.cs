@@ -1,6 +1,7 @@
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Workspace;
 using System.Collections.Immutable;
 using MiniMcp.Configuration;
-using MiniMcp.Services;
 
 namespace MiniMcp.Recovery;
 

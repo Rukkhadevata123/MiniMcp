@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using MiniMcp.Configuration;
-using MiniMcp.Runtime;
 
 namespace MiniMcp.Cli;
 

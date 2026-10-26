@@ -1,5 +1,6 @@
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Workspace;
 using System.Text;
-using MiniMcp.Services;
 
 internal static class PatchPlanChecks
 {

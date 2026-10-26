@@ -1,3 +1,5 @@
+using MiniMcp.Diagnostics;
+using MiniMcp.Services.Processes;
 using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -13,7 +15,7 @@ using MiniMcp.Tools;
 using MiniMcp.Recovery;
 using ModelContextProtocol.AspNetCore;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp;
 
 /// <summary>
 /// Caller-owned loopback HTTP lifetime started with validated configuration.

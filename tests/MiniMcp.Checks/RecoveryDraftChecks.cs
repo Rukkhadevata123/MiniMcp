@@ -1,7 +1,8 @@
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Workspace;
 using System.Security.Cryptography;
 using System.Text;
 using MiniMcp.Recovery;
-using MiniMcp.Services;
 
 internal static class RecoveryDraftChecks
 {

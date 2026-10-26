@@ -1,5 +1,5 @@
+using MiniMcp.Diagnostics;
 using System.Text;
-using MiniMcp.Runtime;
 
 namespace MiniMcp.Cli;
 

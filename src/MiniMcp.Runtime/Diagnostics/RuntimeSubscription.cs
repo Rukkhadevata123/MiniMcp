@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Threading.Channels;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>
 /// An atomic initial view followed by a private bounded stream. Log readers can detect gaps using

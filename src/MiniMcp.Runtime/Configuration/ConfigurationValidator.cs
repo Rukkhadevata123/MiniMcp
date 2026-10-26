@@ -1,4 +1,4 @@
-using MiniMcp.Services;
+using MiniMcp.Services.Workspace;
 
 namespace MiniMcp.Configuration;
 

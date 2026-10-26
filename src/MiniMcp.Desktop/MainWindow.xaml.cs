@@ -1,7 +1,6 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using MiniMcp.Configuration;
-using MiniMcp.Runtime;
 using Windows.Graphics;
 
 namespace MiniMcp.Desktop;

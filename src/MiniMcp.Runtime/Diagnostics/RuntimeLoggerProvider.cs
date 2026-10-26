@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>A per-run ILogger adapter; the Runtime, rather than Host disposal, owns its buffer.</summary>
 internal sealed class RuntimeLoggerProvider(RuntimeDiagnostics diagnostics, Guid runId) : ILoggerProvider

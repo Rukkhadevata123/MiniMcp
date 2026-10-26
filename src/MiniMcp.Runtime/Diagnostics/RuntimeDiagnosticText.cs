@@ -1,4 +1,4 @@
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>
 /// Uses the same bounded redaction policy as Runtime logs for ordinary local diagnostics.

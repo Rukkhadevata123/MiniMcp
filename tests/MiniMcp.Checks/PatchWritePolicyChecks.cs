@@ -1,6 +1,7 @@
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Workspace;
 using System.Text;
 using MiniMcp.Configuration;
-using MiniMcp.Services;
 
 internal static class PatchWritePolicyChecks
 {

@@ -1,6 +1,6 @@
 using MiniMcp.Configuration;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp;
 
 public enum RuntimeState
 {

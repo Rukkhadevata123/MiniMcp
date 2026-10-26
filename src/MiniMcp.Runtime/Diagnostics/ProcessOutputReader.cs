@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>
 /// Drains arbitrary-length output using fixed reads and a bounded logical line. Overlong lines

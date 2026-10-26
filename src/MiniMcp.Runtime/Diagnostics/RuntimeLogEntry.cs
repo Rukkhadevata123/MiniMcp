@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.Extensions.Logging;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>A sanitized, immutable diagnostic. Sequence numbers span runs and reveal dropped entries.</summary>
 public sealed record RuntimeLogEntry(long Sequence, DateTimeOffset Timestamp, Guid RunId,

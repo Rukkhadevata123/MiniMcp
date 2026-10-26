@@ -1,7 +1,9 @@
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Processes;
+using MiniMcp.Services.Workspace;
 using System.Diagnostics;
 using System.Text;
 using MiniMcp.Configuration;
-using MiniMcp.Services;
 
 var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-checks-{Guid.NewGuid():N}");
 var root = Path.Combine(temporary, "project with spaces");

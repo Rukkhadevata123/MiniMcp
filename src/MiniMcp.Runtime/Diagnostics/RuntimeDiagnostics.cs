@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.Extensions.Logging;
 
-namespace MiniMcp.Runtime;
+namespace MiniMcp.Diagnostics;
 
 /// <summary>One short publication lock; formatting, IO and observer continuations stay outside it.</summary>
 internal sealed class RuntimeDiagnostics

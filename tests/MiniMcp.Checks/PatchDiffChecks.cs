@@ -1,7 +1,8 @@
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Workspace;
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
-using MiniMcp.Services;
 
 internal static class PatchDiffChecks
 {

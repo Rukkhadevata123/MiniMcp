@@ -1,3 +1,7 @@
+using MiniMcp.Services.Git;
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Processes;
+using MiniMcp.Services.Workspace;
 using MiniMcp.Configuration;
 using MiniMcp.Recovery;
 

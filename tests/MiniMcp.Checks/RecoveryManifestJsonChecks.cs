@@ -1,9 +1,9 @@
-using System.Collections.Immutable;
+using MiniMcp.Services.Patching;
+using MiniMcp.Services.Workspace;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using MiniMcp.Recovery;
-using MiniMcp.Services;
 
 internal static class RecoveryManifestJsonChecks
 {

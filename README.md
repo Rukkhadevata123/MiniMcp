@@ -16,7 +16,13 @@ src/
     Diagnostics/            有界脱敏日志、独立状态订阅与输出排空
     Configuration/          运行配置、认证和本机执行策略模型
     Security/               Cloudflare Access JWT 验证
-    Services/               文件、搜索、Git、补丁、Bash 与进程清理
+    Services/
+      ToolExecutionService.cs       会话内调用协调与权限入口
+      ToolExecutionRegistration.cs  执行服务的依赖注入注册
+      Workspace/            项目路径边界、读取、列表和文本搜索
+      Git/                  Git 查询与仓库安全检查
+      Patching/             补丁计划、完整预览、策略、提交和结果核验
+      Processes/            Bash、查询与隧道进程、Job/进程组清理
     Recovery/               恢复记录、准备记录持久化与受限加载
     Tools/                  八个固定 MCP 工具入口
   MiniMcp.Cli/               .NET 10 命令行入口
@@ -28,7 +34,15 @@ tests/
   MiniMcp.Checks/            引用 Runtime 的核心行为检查
   MiniMcp.ProtocolChecks/    实际 MCP SDK 内存流检查
   MiniMcp.RuntimeChecks/     配置、实际 HTTP 生命周期及 CLI 集成检查
+    Program.cs              检查入口及受控子进程入口
+    Configuration/          配置解析、校验、保存和依赖定位
+    Recovery/               修改记录、提交、恢复及其故障/生命周期检查
+    Runtime/                Runtime、日志、隧道和进程生命周期
+    Tools/                  HTTP/MCP、鉴权、文件/搜索/Git 查询及相关 fixture
+    Cli/                    CLI 命令、输出和真实信号检查
 ```
+
+Runtime 项目的 `RootNamespace` 为 `MiniMcp`：根目录的 `McpRuntime`、`RuntimeSnapshot` 属于 `MiniMcp`，诊断类型属于 `MiniMcp.Diagnostics`，Services 子目录分别使用 `MiniMcp.Services.Workspace`、`MiniMcp.Services.Git`、`MiniMcp.Services.Patching` 和 `MiniMcp.Services.Processes`。
 
 根解决方案包含全部项目，供 Windows 构建和编辑器加载。Linux 使用 CLI 项目作为构建入口，项目引用会自动构建 Runtime，不涉及 WinUI：
 
