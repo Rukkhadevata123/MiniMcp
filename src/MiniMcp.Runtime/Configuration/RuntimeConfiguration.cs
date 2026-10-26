@@ -1,20 +1,22 @@
 namespace MiniMcp.Configuration;
 
 /// <summary>
-/// Immutable input produced by complete configuration validation. Paths and enabled program
-/// dependencies have been resolved; later edits to files or drafts do not change this snapshot.
+/// Immutable normalized configuration. Recovery-only loads skip external-program checks and
+/// cannot start an HTTP host. Later file or draft edits do not change either kind of snapshot.
 /// </summary>
 public sealed class RuntimeConfiguration
 {
-    internal RuntimeConfiguration(AppSettings settings, ExecutionPolicy policy, string settingsFilePath)
+    internal RuntimeConfiguration(AppSettings settings, ExecutionPolicy policy, string settingsFilePath, bool forRecoveryOnly = false)
     {
         Settings = settings;
         Policy = policy;
         SettingsFilePath = settingsFilePath;
+        ForRecoveryOnly = forRecoveryOnly;
     }
 
     public AppSettings Settings { get; }
     public ExecutionPolicy Policy { get; }
+    internal bool ForRecoveryOnly { get; }
     /// <summary>The normalized source path, or intended save path when validating an in-memory draft.</summary>
     public string SettingsFilePath { get; }
 }

@@ -161,6 +161,7 @@ await Check("settings: startup ignores unsaved drafts and selecting another sour
 });
 
 await MonitorChecks.Run(Check);
+await RecoveryHistoryChecks.Run(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;

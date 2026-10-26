@@ -33,8 +33,8 @@ internal sealed class RecoveryRestorePlan
 
 internal sealed record RecoveryRestoreCommit(Guid SourceChangeId, RecordedPatchCommit Commit);
 
-// Only trusted in-process coordination/tests call these primitives. No MCP, public Runtime write
-// method, confirmation boolean or automatic approval is supplied before local interaction is wired.
+// LocalRecoverySession coordinates these primitives after CLI/WinUI review and confirmation.
+// The opaque preparation is tied to its exact engine; it is never an MCP argument or stored token.
 internal sealed class RecoveryRestoreService
 {
     private readonly object _issuer = new();

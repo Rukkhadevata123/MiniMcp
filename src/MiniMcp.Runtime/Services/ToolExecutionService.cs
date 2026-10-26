@@ -87,7 +87,12 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     public Task<RecoveryPreviewResult> PreviewRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _recoveryPreviews.PreviewAsync(changeId, token), cancellationToken);
 
-    // Internal primitives only; local human confirmation will be integrated by the CLI/WinUI stages.
+    public Task<System.Collections.Immutable.ImmutableArray<RecoveryRecordSummary>> ListRecoveryAsync(CancellationToken token) =>
+        ExecuteAsync(cancellation => _recovery.ListAsync(cancellation), token);
+    public Task<RecoveryRecordDetails> ReadRecoveryAsync(Guid changeId, CancellationToken token) =>
+        ExecuteAsync(cancellation => _recoveryPreviews.ReadAsync(changeId, cancellation), token);
+
+    // LocalRecoverySession binds these primitives to the CLI/WinUI confirmation flow.
     internal Task<RecoveryRestorePlan> PrepareRecoveryAsync(Guid changeId, CancellationToken cancellationToken = default) =>
         ExecuteAsync(token => _recoveryRestores.PrepareAsync(changeId, token), cancellationToken);
 

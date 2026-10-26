@@ -12,6 +12,8 @@
                                     AutomationProperties.AutomationId="OverviewNavigation" />
                 <NavigationViewItem x:Name="LogsNavigation" Content="运行日志" Icon="Document" Tag="logs"
                                     AutomationProperties.AutomationId="LogsNavigation" />
+                <NavigationViewItem x:Name="RecoveryNavigation" Content="修改记录" Icon="Undo" Tag="recovery"
+                                    AutomationProperties.AutomationId="RecoveryNavigation" />
                 <NavigationViewItem x:Name="SettingsNavigation" Content="设置" Icon="Setting" Tag="settings"
                                     AutomationProperties.AutomationId="SettingsNavigation" />
             </NavigationView.MenuItems>

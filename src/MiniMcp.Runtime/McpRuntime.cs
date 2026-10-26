@@ -80,6 +80,14 @@ public sealed class McpRuntime : IAsyncDisposable
         return execution.PreviewRecoveryAsync(changeId, cancellationToken);
     }
 
+    public LocalRecoverySession OpenRecoverySession()
+    {
+        ObjectDisposedException.ThrowIf(Snapshot.State == RuntimeState.Disposed, this);
+        if (Snapshot.State != RuntimeState.Running || Execution is not { } execution)
+            throw new InvalidOperationException("A running runtime session is required for shared recovery access.");
+        return new(execution, ownsExecution: false);
+    }
+
     public async Task StartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -93,6 +101,7 @@ public sealed class McpRuntime : IAsyncDisposable
     public async Task RestartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration.ForRecoveryOnly) throw new InvalidOperationException("Load a complete runtime configuration before restarting the MCP host.");
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
@@ -158,6 +167,7 @@ public sealed class McpRuntime : IAsyncDisposable
 
     private async Task StartCoreAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken)
     {
+        if (configuration.ForRecoveryOnly) throw new InvalidOperationException("Recovery-only configuration cannot start the MCP host; load a complete runtime configuration.");
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_application is not null) throw new InvalidOperationException("The runtime already owns an HTTP host. Stop it before starting again.");
 

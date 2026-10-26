@@ -89,6 +89,12 @@ public sealed partial class SettingsEditor
         return new(loaded.configuration, new(source, loaded.settings.Revision, loaded.policy.Revision), loaded.dependencies);
     }
 
+    public Task<RuntimeConfiguration> ReadSavedForRecoveryAsync(CancellationToken token)
+    {
+        RequireLoaded();
+        return Task.Run(() => _store.LoadRecoveryAsync(_settingsFile!.FilePath, AppContext.BaseDirectory, token), token);
+    }
+
     private Task Begin(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
     {
         if (_isBusy || _sessionBusy) return Task.CompletedTask;

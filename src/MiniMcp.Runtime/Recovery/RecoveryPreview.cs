@@ -8,7 +8,7 @@ public sealed record RecoveryConflict(string? Path, string Reason, string Messag
 public sealed record RecoveryFilePreview(PatchChange Summary, PatchStatistics Statistics);
 
 // Local read-only observation, not an approval, a stored-record proof or an executable restore plan.
-// A future restore must re-read the record, recheck the workspace and obtain explicit local confirmation.
+// Restoration re-reads the record, rechecks the workspace and requires explicit local confirmation.
 public sealed record RecoveryPreviewResult(Guid RunId, Guid ChangeId, Guid RecordRunId, string RecordState, string Mode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Diff,
     ImmutableArray<RecoveryFilePreview> Changes,

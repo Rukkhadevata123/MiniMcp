@@ -59,12 +59,12 @@ internal static class UiSmoke
                         frame.Navigating += (_, args) => transitions.Add(args.NavigationTransitionInfo);
                         async Task Navigate(string id)
                         {
-                            var type = id switch { "OverviewNavigation" => typeof(OverviewView), "SettingsNavigation" => typeof(SettingsView), "LogsNavigation" => typeof(LogsView), _ => throw new Exception("Unknown page") };
+                            var type = id switch { "OverviewNavigation" => typeof(OverviewView), "SettingsNavigation" => typeof(SettingsView), "LogsNavigation" => typeof(LogsView), "RecoveryNavigation" => typeof(RecoveryView), _ => throw new Exception("Unknown page") };
                             navigation.SelectedItem = Find<NavigationViewItem>(id);
                             await Until(() => frame.Content is Page { IsLoaded: true } page && page.GetType() == type);
                             await Task.Delay(25);
                         }
-                        Assert(navigation.MenuItems.Count == 3, "Only implemented pages in navigation");
+                        Assert(navigation.MenuItems.Count == 4, "Only implemented pages in navigation");
                         Find<TextBox>("SettingsFilePath").Text = fixture.Source;
                         Invoke(Find<Button>("LoadSettings"));
                         await Until(() => fixture.Editor.SettingsPath == fixture.Source && !fixture.Editor.IsBusy);
@@ -204,6 +204,7 @@ internal static class UiSmoke
                         await Navigate("LogsNavigation");
                         await Until(() => logList.Items.Count > 0 && logList.Items.OfType<DesktopLogRow>().All(row => row.Entry.RunId == runtime.Snapshot.RunId));
                         Assert(runtime.DiagnosticSubscriberCounts == (1, 1), "Navigation/restart do not duplicate subscriptions");
+                        await RecoveryUiChecks.Run(runtime, fixture, window, root, Find<FrameworkElement>, Navigate, Invoke, () => OpenDialog(root), screenshotDirectory);
                         await Navigate("SettingsNavigation");
                         root.RequestedTheme = ElementTheme.Dark;
                         var scale = root.XamlRoot.RasterizationScale;
@@ -246,7 +247,7 @@ internal static class UiSmoke
                         for (var index = 0; index < 6; index++) navigation.SelectedItem = Find<NavigationViewItem>(index % 2 == 0 ? "LogsNavigation" : "OverviewNavigation");
                         await Navigate("SettingsNavigation");
                         double? commonX = null, commonWidth = null;
-                        foreach (var (id, name) in new[] { ("OverviewNavigation", "overview"), ("SettingsNavigation", "settings"), ("LogsNavigation", "logs") })
+                        foreach (var (id, name) in new[] { ("OverviewNavigation", "overview"), ("SettingsNavigation", "settings"), ("LogsNavigation", "logs"), ("RecoveryNavigation", "recovery") })
                         {
                             navigation.SelectedItem = Find<NavigationViewItem>(id);
                             await Until(() => frame.Content is Page { IsLoaded: true });

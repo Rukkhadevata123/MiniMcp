@@ -45,6 +45,18 @@ public sealed partial class ConfigurationStore
         ReadAsync(_paths.ResolveSettingsFile(path, workingDirectory), ConfigurationJson.ParseSettings,
             missingValue: null, cancellationToken);
 
+    /// <summary>Loads local recovery paths and policy without checking shell/tunnel dependencies.</summary>
+    public async Task<RuntimeConfiguration> LoadRecoveryAsync(string? path, string workingDirectory, CancellationToken token = default)
+    {
+        var settings = await ReadSettingsAsync(path, workingDirectory, token).ConfigureAwait(false);
+        var policy = await ReadPolicyAsync(token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        ConfigurationValidator.ValidateValues(settings.Value, policy.Value);
+        var normalized = new ConfigurationValidator(_paths).NormalizePaths(settings.Value, settings.FilePath, policy.Value);
+        token.ThrowIfCancellationRequested();
+        return new(normalized.Settings, normalized.Policy, normalized.SettingsFilePath, forRecoveryOnly: true);
+    }
+
     // The caller can select settings.json but cannot redirect policy.json through this API.
     public Task<ConfigurationFile<ExecutionPolicy>> ReadPolicyAsync(CancellationToken cancellationToken = default) =>
         ReadAsync(_paths.PolicyFile, ConfigurationJson.ParsePolicy, new ExecutionPolicy(), cancellationToken);

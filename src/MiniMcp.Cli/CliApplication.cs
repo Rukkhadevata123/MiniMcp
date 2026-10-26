@@ -6,10 +6,13 @@ internal static class CliApplication
 {
     public static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error,
         CancellationToken cancellationToken, ConfigurationStore? store = null, string? workingDirectory = null,
-        Func<McpRuntime>? runtimeFactory = null)
+        Func<McpRuntime>? runtimeFactory = null, TextReader? recoveryInput = null)
     {
         try
         {
+            if (args.FirstOrDefault() == "records")
+                return await CliRecoveryCommand.RunAsync(args[1..], output, error, recoveryInput, cancellationToken,
+                    store ?? new ConfigurationStore(), workingDirectory ?? Environment.CurrentDirectory).ConfigureAwait(false);
             return await ExecuteAsync(args, output, error, cancellationToken, store, workingDirectory, runtimeFactory).ConfigureAwait(false);
         }
         catch (Exception exception)
@@ -155,6 +158,7 @@ internal static class CliApplication
         if (command != Command.Check) output.WriteLine("用法：minimcp run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]");
         if (command != Command.Run) output.WriteLine("用法：minimcp check [--config <path>]");
         output.WriteLine("      minimcp --help");
+        if (command == Command.Root) output.WriteLine("      minimcp records list|show|restore [<change-id>] [--config <path>]");
         output.WriteLine();
         output.WriteLine("选项：");
         output.WriteLine("  -h, --help  显示帮助，不加载配置");
@@ -171,7 +175,7 @@ internal static class CliApplication
             output.WriteLine("run 在前台显示脱敏日志与 MCP/隧道状态；隧道意外退出保留本机诊断，停止后返回故障码 1。");
         }
         output.WriteLine("配置字段和本机进程状态不验证公网路由、Access 登录或 OAuth。");
-        output.WriteLine("退出码：0 成功/正常结束，1 运行/清理故障，2 参数/配置/依赖错误，130 加载/启动取消且清理完成。");
+        output.WriteLine("退出码：0 成功/正常结束，1 执行/清理故障，2 参数/配置/依赖错误或恢复限制，130 操作取消。");
     }
 
     private static string Visible(string value) => CliText.Visible(value);

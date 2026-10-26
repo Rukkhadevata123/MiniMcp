@@ -40,6 +40,18 @@ internal sealed class RecoveryPreviewService
 
     internal bool IsFor(ProjectWorkspace workspace, RecoveryStore store) => ReferenceEquals(_workspace, workspace) && ReferenceEquals(_store, store);
 
+    public async Task<RecoveryRecordDetails> ReadAsync(Guid changeId, CancellationToken token)
+    {
+        if (changeId == Guid.Empty) throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
+        await _workspace.Mutations.WaitAsync(token).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+        try
+        {
+            var inspection = await InspectUnderLockAsync(changeId, token).ConfigureAwait(false);
+            return RecoveryRecordDetails.Create(inspection.Record.Manifest, inspection.Preview);
+        }
+        finally { _workspace.Mutations.Release(); }
+    }
+
     // The local preview or restore coordinator owns this exact workspace's mutation lock.
     internal async Task<RecoveryInspection> InspectUnderLockAsync(Guid changeId, CancellationToken cancellationToken)
     {

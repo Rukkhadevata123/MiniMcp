@@ -28,7 +28,7 @@ internal sealed partial class RecoveryStore
 
     // Callers retain both the process gate and store lock until all record checks/operations finish.
     private async Task<LoadedRecord> LoadRecordCoreAsync(Guid changeId, RecoveryFileIdentity rootIdentity, CancellationToken cancellationToken,
-        LoadedFile? temporaryManifest = null)
+        LoadedFile? temporaryManifest = null, bool forCatalog = false)
     {
         var storage = _configuration.Policy.RecoveryDirectory;
         var directory = Path.Combine(storage, changeId.ToString("N"));
@@ -37,13 +37,13 @@ internal sealed partial class RecoveryStore
         CheckRecord();
         var manifestFile = await ReadFileAsync(ManifestFileName, RecoveryManifestJson.MaxManifestBytes, null).ConfigureAwait(false);
         var manifest = RecoveryManifestJson.Parse(manifestFile.Bytes.AsSpan());
-        RecoveryManifestValidator.Validate(manifest, _configuration.Settings.ProjectRoot, changeId, cancellationToken);
+        RecoveryManifestValidator.Validate(manifest, forCatalog ? manifest.ProjectRoot : _configuration.Settings.ProjectRoot, changeId, cancellationToken);
         await LoadingCheckpoint(RecoveryLoadingStage.ManifestRead).ConfigureAwait(false);
         CheckRecord();
         var expected = manifest.Paths.Where(path => path.Before is not null).ToArray();
         CheckEntries(directory, ExpectedNames(expected.Select(path => path.BackupFile!).Prepend(ManifestFileName)), cancellationToken);
-        var backups = ImmutableArray.CreateBuilder<RecoveryBackup>(expected.Length);
-        foreach (var path in expected)
+        var backups = ImmutableArray.CreateBuilder<RecoveryBackup>(forCatalog ? 0 : expected.Length);
+        foreach (var path in forCatalog ? [] : expected)
         {
             CheckRecord();
             var image = path.Before!;
@@ -67,7 +67,7 @@ internal sealed partial class RecoveryStore
             if (RecoveryFileSystem.FileIdentity(stream) != file.Identity)
                 throw new IOException("A recovery file changed during loading.");
         }
-        CheckEntries(directory, ExpectedNames(files.Select(file => file.Name)), cancellationToken);
+        CheckEntries(directory, ExpectedNames(forCatalog ? expected.Select(path => path.BackupFile!).Prepend(ManifestFileName) : files.Select(file => file.Name)), cancellationToken);
         CheckRecord();
         return new LoadedRecord(new RecoveryRecordSnapshot(manifest, backups.MoveToImmutable()), identity, files.ToImmutableArray());
 
