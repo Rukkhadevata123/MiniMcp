@@ -1,0 +1,109 @@
+<Page
+    x:Class="MiniMcp.Desktop.Views.LogsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:MiniMcp.Desktop.ViewModels"
+    xmlns:controls="using:MiniMcp.Desktop.Controls" NavigationCacheMode="Required" Background="Transparent">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <Style x:Key="WarningLogTextStyle" TargetType="TextBlock" BasedOn="{StaticResource LogTextStyle}">
+                        <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}" />
+                    </Style>
+                    <Style x:Key="ErrorLogTextStyle" TargetType="TextBlock" BasedOn="{StaticResource LogTextStyle}">
+                        <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+                    </Style>
+                    <Style x:Key="CriticalLogTextStyle" TargetType="TextBlock" BasedOn="{StaticResource ErrorLogTextStyle}">
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                    </Style>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <!-- Inherit the native row foreground so hover/selection use the matching system contrast pair. -->
+                    <Style x:Key="WarningLogTextStyle" TargetType="TextBlock" BasedOn="{StaticResource LogTextStyle}" />
+                    <Style x:Key="ErrorLogTextStyle" TargetType="TextBlock" BasedOn="{StaticResource LogTextStyle}" />
+                    <Style x:Key="CriticalLogTextStyle" TargetType="TextBlock" BasedOn="{StaticResource LogTextStyle}">
+                        <Setter Property="FontWeight" Value="SemiBold" />
+                    </Style>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <Style x:Key="LogTextStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Consolas" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="Normal" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="MaxLines" Value="3" />
+                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                <Setter Property="Margin" Value="0,4" />
+            </Style>
+            <DataTemplate x:Key="NormalLogTemplate" x:DataType="models:DesktopLogRow">
+                <TextBlock Text="{x:Bind Text}" Style="{StaticResource LogTextStyle}" />
+            </DataTemplate>
+            <DataTemplate x:Key="WarningLogTemplate" x:DataType="models:DesktopLogRow">
+                <TextBlock Text="{x:Bind Text}" Style="{ThemeResource WarningLogTextStyle}" />
+            </DataTemplate>
+            <DataTemplate x:Key="ErrorLogTemplate" x:DataType="models:DesktopLogRow">
+                <TextBlock Text="{x:Bind Text}" Style="{ThemeResource ErrorLogTextStyle}" />
+            </DataTemplate>
+            <DataTemplate x:Key="CriticalLogTemplate" x:DataType="models:DesktopLogRow">
+                <TextBlock Text="{x:Bind Text}" Style="{ThemeResource CriticalLogTextStyle}" />
+            </DataTemplate>
+            <controls:LogLevelTemplateSelector x:Key="LogLevelTemplateSelector"
+                NormalTemplate="{StaticResource NormalLogTemplate}" WarningTemplate="{StaticResource WarningLogTemplate}"
+                ErrorTemplate="{StaticResource ErrorLogTemplate}" CriticalTemplate="{StaticResource CriticalLogTemplate}" />
+        </ResourceDictionary>
+    </Page.Resources>
+    <Grid RowSpacing="20">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <controls:PageHeader Title="运行日志" Description="查看和筛选诊断，复制或导出当前范围。" />
+        <Border Grid.Row="1" Style="{StaticResource WorkspaceCardStyle}">
+    <Grid RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+            <RowDefinition Height="*" /><RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid x:Name="FilterGrid" RowSpacing="8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+            <TextBox x:Name="SearchField" Header="搜索消息或类别" MaxLength="256" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.AutomationId="LogSearch" />
+            <ComboBox x:Name="LevelField" Grid.Column="1" Header="最低级别" SelectedIndex="{Binding MinimumLevelIndex, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch" AutomationProperties.AutomationId="LogLevel">
+                <ComboBoxItem Content="全部级别" /><ComboBoxItem Content="Information 及以上" />
+                <ComboBoxItem Content="Warning 及以上" /><ComboBoxItem Content="Error 及以上" />
+            </ComboBox>
+            <StackPanel x:Name="FilterToggles" Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="16">
+                <CheckBox Content="仅本次运行" IsChecked="{Binding CurrentRunOnly, Mode=TwoWay}" AutomationProperties.AutomationId="LogCurrentRun" />
+                <CheckBox Content="自动滚动" IsChecked="{Binding AutoScroll, Mode=TwoWay}" AutomationProperties.AutomationId="LogAutoScroll" />
+            </StackPanel>
+        </Grid>
+        <CommandBar x:Name="LogCommands" Grid.Row="1" DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True">
+            <AppBarButton Label="复制选中" Icon="Copy" Click="OnCopySelected" AutomationProperties.AutomationId="CopySelectedLogs" />
+            <AppBarButton Label="复制筛选结果" Icon="Copy" Click="OnCopyFiltered" AutomationProperties.AutomationId="CopyFilteredLogs" />
+            <AppBarButton Label="导出筛选结果" Icon="Save" Click="OnExport" AutomationProperties.AutomationId="ExportLogs" />
+            <CommandBar.SecondaryCommands>
+                <AppBarButton Label="重新载入缓存" Click="OnReload" AutomationProperties.AutomationId="ReloadLogs" />
+                <AppBarButton Label="清空日志" Click="OnClear" AutomationProperties.AutomationId="ClearLogs" />
+            </CommandBar.SecondaryCommands>
+        </CommandBar>
+        <StackPanel Grid.Row="2" Spacing="4">
+            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" AutomationProperties.AutomationId="LogSummary" />
+            <TextBlock Text="{Binding ActionMessage}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="LogActionMessage" />
+            <TextBlock Text="{Binding ObservationError}" TextWrapping="Wrap" />
+        </StackPanel>
+        <ListView x:Name="LogList" Grid.Row="3" ItemsSource="{Binding Rows}" SelectionMode="Extended"
+                  ItemTemplateSelector="{StaticResource LogLevelTemplateSelector}"
+                  SelectionChanged="OnSelectionChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  AutomationProperties.AutomationId="LogList">
+            <ListView.ItemsPanel><ItemsPanelTemplate><ItemsStackPanel /></ItemsPanelTemplate></ListView.ItemsPanel>
+        </ListView>
+        <StackPanel Grid.Row="4" Spacing="4">
+            <TextBox x:Name="SelectedText" Header="选中日志（已脱敏，控制字符可见）" IsReadOnly="True" TextWrapping="Wrap"
+                     MaxHeight="120" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.AutomationId="LogDetails" />
+            <TextBlock Text="最多缓存 1000 条、512 Ki 字符。复制和导出使用当前选择或筛选结果。"
+                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+    </Grid>
+        </Border>
+    </Grid>
+</Page>

@@ -61,7 +61,8 @@ public sealed class McpRuntime : IAsyncDisposable
 
     /// <summary>Up to 1000 entries / 512 Ki UTF-16 characters; each message is at most 4096 characters.</summary>
     public RuntimeLogSnapshot GetLogs() => _diagnostics.GetLogs();
-    public void ClearLogs() => _diagnostics.ClearLogs();
+    /// <summary>Clears retained logs and returns the sequence through which queued display entries can be discarded.</summary>
+    public long ClearLogs() => _diagnostics.ClearLogs();
 
     /// <summary>Atomically captures retained logs and subscribes to new entries (128 queued entries maximum).</summary>
     public RuntimeSubscription<RuntimeLogEntry> SubscribeLogs(CancellationToken cancellationToken = default) =>

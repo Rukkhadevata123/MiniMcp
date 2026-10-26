@@ -2,30 +2,33 @@
     x:Class="MiniMcp.Desktop.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:views="using:MiniMcp.Desktop.Views"
     Title="MiniMcp">
-    <Grid x:Name="Root" Loaded="OnRootLoaded" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid x:Name="Root" Loaded="OnRootLoaded" ActualThemeChanged="OnRootThemeChanged" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <NavigationView x:Name="Navigation" IsSettingsVisible="False" IsBackButtonVisible="Collapsed"
                         PaneDisplayMode="Auto" OpenPaneLength="208" CompactModeThresholdWidth="680" ExpandedModeThresholdWidth="1000"
                         SelectionChanged="OnNavigationChanged" PaneTitle="MiniMcp">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="OverviewNavigation" Content="概览" Icon="Home" Tag="overview"
                                     AutomationProperties.AutomationId="OverviewNavigation" />
+                <NavigationViewItem x:Name="LogsNavigation" Content="运行日志" Icon="Document" Tag="logs"
+                                    AutomationProperties.AutomationId="LogsNavigation" />
                 <NavigationViewItem x:Name="SettingsNavigation" Content="设置" Icon="Setting" Tag="settings"
                                     AutomationProperties.AutomationId="SettingsNavigation" />
             </NavigationView.MenuItems>
-            <Grid>
+            <Grid x:Name="WorkspaceViewport" SizeChanged="OnWorkspaceSizeChanged">
+            <Grid x:Name="WorkspaceColumn" MaxWidth="1200" HorizontalAlignment="Stretch" Margin="24,20,24,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" Margin="24,8,24,0"
+                <InfoBar x:Name="ErrorBar" Severity="Error" IsOpen="False" IsClosable="True" Margin="0,0,0,12"
                          AutomationProperties.AutomationId="Error" />
-                <InfoBar Grid.Row="1" IsOpen="{Binding NeedsRestart}" Severity="Informational" IsClosable="False" Margin="24,8,24,0"
+                <InfoBar Grid.Row="1" IsOpen="{Binding NeedsRestart}" Severity="Informational" IsClosable="False" Margin="0,0,0,12"
                          Title="已保存，需重启生效" Message="{Binding RestartMessage}" AutomationProperties.AutomationId="RestartRequired" />
-                <views:OverviewView x:Name="Overview" Grid.Row="2" ActionRequested="OnLifecycleAction" />
-                <views:SettingsView x:Name="Settings" Grid.Row="2" Visibility="Collapsed" ActionRequested="OnSettingsAction" />
+                <Frame x:Name="PageFrame" Grid.Row="2" CacheSize="4" IsNavigationStackEnabled="False"
+                       Navigated="OnPageNavigated" AutomationProperties.AutomationId="WorkspaceFrame" />
+            </Grid>
             </Grid>
         </NavigationView>
     </Grid>

@@ -28,10 +28,10 @@ internal sealed class RuntimeDiagnostics
         lock (_gate) return new(_logs.ToImmutableArray(), _characters);
     }
 
-    public void ClearLogs()
+    public long ClearLogs()
     {
         // Existing subscriptions/snapshots retain their bounded immutable views. Sequences never reset.
-        lock (_gate) { _logs.Clear(); _characters = 0; }
+        lock (_gate) { _logs.Clear(); _characters = 0; return _sequence; }
     }
 
     public RuntimeSubscription<RuntimeLogEntry> SubscribeLogs(CancellationToken cancellationToken)

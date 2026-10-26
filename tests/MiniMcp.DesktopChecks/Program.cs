@@ -3,6 +3,8 @@ using MiniMcp.Configuration;
 using MiniMcp.DesktopChecks;
 
 if (args is ["--ui"]) return UiSmoke.Run();
+if (args is ["--ui-screenshots", var screenshotDirectory]) return UiSmoke.Run(screenshotDirectory);
+if (args is ["tunnel", "--no-autoupdate", "run", "--token-file", var tunnelTokenFile]) return await DesktopTunnelChild.Run(tunnelTokenFile);
 
 var passed = 0; var failed = 0;
 async Task Check(string name, Func<Task> action)
@@ -157,6 +159,8 @@ await Check("settings: startup ignores unsaved drafts and selecting another sour
     await fixture.Editor.LoadAsync(other);
     Assert(fixture.Editor.SettingsPath == other && fixture.Editor.PolicyPath == fixture.Paths.PolicyFile && !fixture.Editor.HasUnsavedChanges, "Explicit selected source with fixed policy");
 });
+
+await MonitorChecks.Run(Check);
 
 Console.WriteLine($"\n{passed} passed, {failed} failed.");
 return failed == 0 ? 0 : 1;

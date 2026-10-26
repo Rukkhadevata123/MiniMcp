@@ -3,9 +3,13 @@ using Microsoft.UI.Xaml.Controls;
 
 namespace MiniMcp.Desktop.Views;
 
-public sealed partial class SettingsView : UserControl
+public sealed partial class SettingsView : Page
 {
-    public SettingsView() => InitializeComponent();
+    public SettingsView()
+    {
+        InitializeComponent();
+        SizeChanged += (_, args) => SourceActions.Orientation = args.NewSize.Width >= 560 ? Orientation.Horizontal : Orientation.Vertical;
+    }
     public event EventHandler<string>? ActionRequested;
     private void Request(string action) => ActionRequested?.Invoke(this, action);
     private void OnReload(object sender, RoutedEventArgs args) => Request("load");

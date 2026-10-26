@@ -1,35 +1,62 @@
-<UserControl
+<Page
     x:Class="MiniMcp.Desktop.Views.OverviewView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="760" HorizontalAlignment="Stretch" Spacing="20" Padding="24,8,24,32">
-            <TextBlock Text="概览" Style="{ThemeResource TitleTextBlockStyle}" />
-            <TextBlock Text="MiniMcp 本机 MCP 服务" Style="{ThemeResource SubtitleTextBlockStyle}" />
-            <StackPanel Spacing="8">
-                <TextBlock x:Name="StatusText" Text="已停止" Style="{ThemeResource BodyStrongTextBlockStyle}"
-                           AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="Status" />
-                <ProgressRing x:Name="BusyIndicator" Width="24" Height="24" IsActive="False" Visibility="Collapsed" HorizontalAlignment="Left" />
-                <TextBlock x:Name="ProjectText" Text="尚未启动项目" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="Project" />
-                <TextBlock x:Name="ConfigurationText" Text="实际端口、认证与执行模式将在启动后显示。" TextWrapping="Wrap"
-                           AutomationProperties.AutomationId="Configuration" />
-                <TextBlock x:Name="AddressText" Text="服务没有监听地址" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="Address" />
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MiniMcp.Desktop.Controls"
+    NavigationCacheMode="Required" Background="Transparent">
+    <Grid RowSpacing="20">
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <controls:PageHeader Title="概览" Description="查看服务状态、连接地址和 Cloudflare 隧道。" />
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="16" Padding="0,0,0,8">
+                <Border Style="{StaticResource WorkspaceCardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="本机服务" Style="{StaticResource WorkspaceSectionTitleStyle}" />
+                        <TextBlock x:Name="StatusText" Text="已停止" Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                   AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="Status" />
+                        <ProgressRing x:Name="BusyIndicator" Width="24" Height="24" IsActive="False" Visibility="Collapsed" HorizontalAlignment="Left" />
+                        <StackPanel Spacing="8">
+                            <TextBlock x:Name="ProjectText" Text="启动后显示项目目录。" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="Project" />
+                            <TextBlock x:Name="ConfigurationText" Text="启动后显示端口、认证方式和执行模式。" TextWrapping="Wrap" AutomationProperties.AutomationId="Configuration" />
+                            <TextBlock x:Name="AddressText" Text="服务没有监听地址" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="Address" />
+                            <TextBlock x:Name="RunText" Text="尚未创建会话" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="RunIdentity" />
+                            <TextBlock x:Name="RuntimeError" TextWrapping="Wrap" AutomationProperties.AutomationId="RuntimeError" />
+                        </StackPanel>
+                        <StackPanel x:Name="ServiceActions" Spacing="8">
+                            <Button x:Name="StartButton" Content="启动服务" Click="OnStart" Style="{ThemeResource AccentButtonStyle}"
+                                    HorizontalAlignment="Left" AutomationProperties.AutomationId="Start" />
+                            <Button x:Name="StopButton" Content="停止服务" Click="OnStop" IsEnabled="False"
+                                    HorizontalAlignment="Left" AutomationProperties.AutomationId="Stop" />
+                            <Button x:Name="RestartButton" Content="重启并应用配置" Click="OnRestart" IsEnabled="False"
+                                    HorizontalAlignment="Left" AutomationProperties.AutomationId="Restart" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource WorkspaceCardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Cloudflare 隧道" Style="{StaticResource WorkspaceSectionTitleStyle}" />
+                        <TextBlock x:Name="TunnelText" Text="未启动" TextWrapping="Wrap" AutomationProperties.AutomationId="TunnelStatus" />
+                        <TextBlock x:Name="TunnelError" TextWrapping="Wrap" AutomationProperties.AutomationId="TunnelError" />
+                        <TextBlock x:Name="PublicAddress" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <StackPanel x:Name="TunnelActions" Spacing="8">
+                            <Button x:Name="StartTunnelButton" Content="启动隧道" Click="OnStartTunnel" HorizontalAlignment="Left" IsEnabled="False" AutomationProperties.AutomationId="StartTunnel" />
+                            <Button x:Name="StopTunnelButton" Content="停止隧道" Click="OnStopTunnel" HorizontalAlignment="Left" IsEnabled="False" AutomationProperties.AutomationId="StopTunnel" />
+                        </StackPanel>
+                        <TextBlock Text="隧道可单独启停，MCP 服务保持运行。公网连接与登录状态请通过客户端验证。" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource WorkspaceCardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="配置与依赖" Style="{StaticResource WorkspaceSectionTitleStyle}" />
+                        <TextBlock Text="{Binding SavedMode}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding DraftStatus}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ActiveDependencies}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="QueryDependencies" />
+                        <TextBlock Text="服务使用已保存的配置。保存后点击“重启并应用配置”即可生效。"
+                                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
-            <StackPanel Spacing="10">
-                <Button x:Name="StartButton" Content="按已保存配置启动" Click="OnStart" Style="{ThemeResource AccentButtonStyle}"
-                        HorizontalAlignment="Left" AutomationProperties.AutomationId="Start" />
-                <Button x:Name="StopButton" Content="停止服务" Click="OnStop" IsEnabled="False"
-                        HorizontalAlignment="Left" AutomationProperties.AutomationId="Stop" />
-                <Button x:Name="RestartButton" Content="重启并应用配置" Click="OnRestart" IsEnabled="False"
-                        HorizontalAlignment="Left" AutomationProperties.AutomationId="Restart" />
-            </StackPanel>
-            <TextBlock Text="{Binding DraftStatus}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Text="{Binding SavedMode}" TextWrapping="Wrap" />
-            <TextBlock Text="{Binding ActiveDependencies}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="QueryDependencies" />
-            <TextBlock Text="本次运行的配置固定。修改草稿或保存文件不会切换运行模式；重启会先完成停止，再创建新会话。"
-                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Text="三种模式都暴露相同的 8 个工具，使用限制由服务端检查。补丁完整预演、写入前完整备份和失败回滚始终保留。"
-                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        </StackPanel>
-    </ScrollViewer>
-</UserControl>
+        </ScrollViewer>
+    </Grid>
+</Page>

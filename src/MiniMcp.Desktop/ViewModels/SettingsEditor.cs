@@ -23,8 +23,9 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
     private bool _isBusy, _sessionBusy, _interactionBusy;
     private RuntimeSnapshot _runtime = new(RuntimeState.Stopped);
     private SavedConfigurationStamp? _applied;
-    private string _error = "", _message = "", _dependencies = "检查草稿可查看本机依赖；不会执行外部程序。";
-    private string _activeDependencies = "启动成功后显示本次依赖文件检查。";
+    private Guid? _appliedRunId;
+    private string _error = "", _message = "", _dependencies = "点击“检查草稿与本机依赖”查看检查结果。";
+    private string _activeDependencies = "启动后显示本次使用的程序路径和文件检查结果。";
     private CancellationTokenSource? _pendingCancellation;
     private Task _pending = Task.CompletedTask;
     private Task _cancelling = Task.CompletedTask;
@@ -55,13 +56,13 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
         _maxLinesText != Number(_policyFile.Value.ProjectEditLimits.MaxChangedLines) ||
         _maxBytesText != Number(_policyFile.Value.ProjectEditLimits.MaxChangedBytes));
     public bool HasUnsavedChanges => IsSettingsDirty || IsPolicyDirty;
-    public string DraftStatus => !IsLoaded ? "加载配置文件后开始编辑。" : HasUnsavedChanges ? "有未保存的草稿；启动只读取已保存的文件。" :
-        HasSavedSettings ? "草稿与已保存文件一致。" : "配置文件尚不存在；保存运行配置后创建。";
-    public string SavedMode => _policyFile is null ? "尚未加载本机策略" : $"已保存默认模式：{_policyFile.Value.Mode}";
+    public string DraftStatus => !IsLoaded ? "加载配置文件后开始编辑。" : HasUnsavedChanges ? "有未保存的修改。启动服务使用已保存的配置。" :
+        HasSavedSettings ? "草稿与已保存文件一致。" : "保存运行配置后创建文件。";
+    public string SavedMode => _policyFile is null ? "尚未加载本机策略" : $"已保存的默认模式：{_policyFile.Value.Mode}";
     public string ActiveMode => _runtime.Configuration is { } configuration
-        ? $"本次实际模式：{configuration.Policy.Mode} · 状态：{_runtime.State}" : "尚未启动会话";
-    public bool NeedsRestart => _runtime.HasOwnedResources && _applied is not null && CurrentStamp != _applied;
-    public string RestartMessage => "配置文件已保存或重新加载。本次运行继续使用原配置，点击概览中的“重启并应用配置”后生效。";
+        ? $"本次模式：{configuration.Policy.Mode} · 状态：{_runtime.State}" : "尚未启动会话";
+    public bool NeedsRestart => _runtime.HasOwnedResources && _runtime.RunId == _appliedRunId && _applied is not null && CurrentStamp != _applied;
+    public string RestartMessage => "配置已更新，点击概览中的“重启并应用配置”后生效。";
     public string ErrorMessage => _error;
     public bool HasError => _error.Length != 0;
     public string Message => _message;
@@ -101,9 +102,9 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
     }
     public string ModeDescription => _policyDraft.Mode switch
     {
-        ExecutionMode.ReadOnly => "ReadOnly：允许文件、搜索、Git 查询和补丁完整预演；禁止写入和 Bash。",
-        ExecutionMode.ProjectEdit => "ProjectEdit：允许限额内的普通源码/文档补丁，强制备份；删除、移动、关键或未知文件整批拒绝。禁止 Bash。",
-        _ => "FullAccess：允许通过基础检查的补丁和 Bash。补丁强制备份；Bash 按运行账号权限访问文件和网络，其副作用不由补丁记录恢复。"
+        ExecutionMode.ReadOnly => "ReadOnly：允许读取文件、搜索文本、查询 Git 和预览完整补丁；写入和 Bash 已禁用。",
+        ExecutionMode.ProjectEdit => "ProjectEdit：允许限额内的普通源码、文档补丁，执行前自动备份。涉及删除、移动、关键文件或未知文件的补丁会整批拒绝；Bash 已禁用。",
+        _ => "FullAccess：允许通过基础检查的补丁和 Bash，补丁执行前自动备份。Bash 按运行账号权限访问文件和网络，其改动不在补丁恢复范围内。"
     };
     public string RecoveryDirectory { get => _policyDraft.RecoveryDirectory; set => EditPolicy(_policyDraft with { RecoveryDirectory = value ?? "" }); }
     public string MaxPathsText { get => _maxPathsText; set => EditLimit(ref _maxPathsText, value); }
@@ -116,7 +117,7 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
     {
         _runtime = snapshot;
         if (applied is not null && snapshot.Configuration == applied.Configuration)
-        { _applied = applied.Stamp; _activeDependencies = applied.Dependencies; }
+        { _applied = applied.Stamp; _appliedRunId = snapshot.RunId; _activeDependencies = applied.Dependencies; }
         Raise(nameof(ActiveMode)); Raise(nameof(NeedsRestart)); Raise(nameof(ActiveDependencies));
     }
     public Task CancelPendingAsync() => _cancelling = _pendingCancellation?.CancelAsync() ?? Task.CompletedTask;

@@ -1,11 +1,17 @@
 using System.ComponentModel;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Navigation;
 using Microsoft.Windows.Storage.Pickers;
 using MiniMcp.Desktop.ViewModels;
+using MiniMcp.Desktop.Views;
 using MiniMcp.Diagnostics;
 using Windows.Graphics;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.UI.ViewManagement;
 
 namespace MiniMcp.Desktop;
 
@@ -13,9 +19,16 @@ public sealed partial class MainWindow : Window
 {
     private readonly McpRuntime _runtime;
     private readonly SettingsEditor _editor;
+    private readonly RuntimeMonitor _monitor;
+    private readonly UISettings _uiSettings = new();
+    private OverviewView? _overview;
+    private SettingsView? _settings;
+    private LogsView? _logs;
     private Task _operation = Task.CompletedTask;
     private CancellationTokenSource? _starting;
     private Task _cancellingStart = Task.CompletedTask;
+    private CancellationTokenSource? _exporting;
+    private Task _cancellingExport = Task.CompletedTask;
     private ContentDialog? _dialog;
     private bool _busy, _uiAction, _closing;
     private string? _status;
@@ -26,10 +39,15 @@ public sealed partial class MainWindow : Window
     {
         _runtime = runtime; _editor = editor;
         InitializeComponent();
+        var queue = DispatcherQueue;
+        _monitor = new(_runtime, action => queue.TryEnqueue(DispatcherQueuePriority.Normal, () => action()),
+            action => queue.TryEnqueue(DispatcherQueuePriority.Low, () => action()));
+        _monitor.StateChanged += OnRuntimeState;
         Navigation.DataContext = _editor;
         _editor.PropertyChanged += OnEditorChanged;
         Navigation.SelectedItem = OverviewNavigation;
         AppWindow.Closing += OnClosing;
+        _editor.SetRuntime(_runtime.Snapshot);
     }
 
     private async void OnRootLoaded(object sender, RoutedEventArgs args)
@@ -50,19 +68,58 @@ public sealed partial class MainWindow : Window
 
     private void OnNavigationChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (Overview is null || Settings is null) return;
-        var settings = (args.SelectedItem as NavigationViewItem)?.Tag as string == "settings";
-        Overview.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
-        Settings.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+        if (PageFrame is null) return;
+        var page = (args.SelectedItem as NavigationViewItem)?.Tag as string;
+        var type = page switch { "overview" => typeof(OverviewView), "settings" => typeof(SettingsView), "logs" => typeof(LogsView), _ => null };
+        if (type is null || PageFrame.CurrentSourcePageType == type) return;
+        NavigationTransitionInfo transition = _uiSettings.AnimationsEnabled ? new EntranceNavigationTransitionInfo() : new SuppressNavigationTransitionInfo();
+        PageFrame.Navigate(type, null, transition);
         if (sender.DisplayMode != NavigationViewDisplayMode.Expanded) sender.IsPaneOpen = false;
+    }
+
+    private void OnPageNavigated(object sender, NavigationEventArgs args)
+    {
+        // Required page caching preserves editor controls, list selection and scroll position;
+        // the window retains its existing Runtime/monitor subscriptions across every navigation.
+        switch (args.Content)
+        {
+            case OverviewView view:
+                if (!ReferenceEquals(_overview, view)) { _overview = view; view.DataContext = _editor; view.ActionRequested += OnLifecycleAction; }
+                break;
+            case SettingsView view:
+                if (!ReferenceEquals(_settings, view)) { _settings = view; view.DataContext = _editor; view.ActionRequested += OnSettingsAction; }
+                break;
+            case LogsView view:
+                if (!ReferenceEquals(_logs, view)) { _logs = view; view.Attach(_monitor); view.ActionRequested += OnLogAction; }
+                break;
+        }
+        if (args.Content is FrameworkElement content) content.RequestedTheme = Root.ActualTheme;
+        UpdateControls();
+    }
+    private void OnRootThemeChanged(FrameworkElement sender, object args)
+    {
+        // Cached pages are disconnected while inactive and otherwise fall back to App's theme.
+        // Keep their template resources consistent with the same workspace theme when reattached.
+        foreach (var page in new Page?[] { _overview, _settings, _logs })
+            if (page is not null) page.RequestedTheme = sender.ActualTheme;
+    }
+    private void OnWorkspaceSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        var gutter = args.NewSize.Width >= 1000 ? 32 : args.NewSize.Width >= 720 ? 24 : 16;
+        WorkspaceColumn.Margin = new Thickness(gutter, 20, gutter, 24);
     }
 
     private async void OnSettingsAction(object? sender, string action)
     {
         if (_busy || _uiAction || _closing || _editor.IsBusy) return;
         _uiAction = true; _editor.SetInteractionBusy(true); UpdateControls();
-        _operation = SettingsActionAsync(action);
-        try { await _operation; }
+        _operation = HandleSettingsActionAsync(action);
+        await _operation;
+    }
+
+    private async Task HandleSettingsActionAsync(string action)
+    {
+        try { await SettingsActionAsync(action); }
         catch (Exception error) { ShowError("设置操作失败", error); }
         finally { _uiAction = false; _editor.SetInteractionBusy(false); UpdateControls(); }
     }
@@ -103,7 +160,7 @@ public sealed partial class MainWindow : Window
         _dialog = new ContentDialog
         {
             XamlRoot = Root.XamlRoot, Title = title,
-            Content = "当前运行配置或本机策略有未保存的草稿。继续将放弃这些草稿，已保存文件不会因此改变。",
+            Content = "运行配置或本机策略有未保存的修改。继续将放弃这些修改。",
             PrimaryButtonText = "放弃草稿并继续", CloseButtonText = "保留草稿", DefaultButton = ContentDialogButton.Close
         };
         try { return await _dialog.ShowAsync() == ContentDialogResult.Primary; }
@@ -127,6 +184,8 @@ public sealed partial class MainWindow : Window
         try
         {
             if (action == "stop") await _runtime.StopAsync();
+            else if (action == "tunnel-start") await _runtime.StartTunnelAsync(cancellation!.Token);
+            else if (action == "tunnel-stop") await _runtime.StopTunnelAsync(cancellation!.Token);
             else
             {
                 var token = cancellation!.Token;
@@ -150,13 +209,61 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void OnRuntimeState(object? sender, RuntimeSnapshot snapshot)
+    {
+        _editor.SetRuntime(snapshot); UpdateControls();
+    }
+
+    private async void OnLogAction(object? sender, string action)
+    {
+        if (_busy || _editor.IsBusy || _uiAction || _closing) return;
+        _uiAction = true; _editor.SetInteractionBusy(true); UpdateControls();
+        _operation = HandleLogActionAsync(action);
+        await _operation;
+    }
+    private async Task HandleLogActionAsync(string action)
+    {
+        try { await LogActionAsync(action); }
+        catch (OperationCanceledException) { _monitor.SetActionMessage("导出已取消。"); }
+        catch (Exception error) { _monitor.SetActionMessage("日志操作失败：" + error.Message); }
+        finally
+        {
+            try { await _cancellingExport; }
+            catch (Exception error) { _monitor.SetActionMessage("导出取消回调失败：" + error.Message); }
+            _exporting?.Dispose(); _exporting = null; _cancellingExport = Task.CompletedTask;
+            _uiAction = false; _editor.SetInteractionBusy(false); UpdateControls();
+        }
+    }
+    private async Task LogActionAsync(string action)
+    {
+        if (action == "clear") { _monitor.Clear(); return; }
+        if (action == "reload") { _monitor.ReloadBuffer(); return; }
+        var text = action == "copy-selected" ? _logs?.SelectionText() ?? "" : _monitor.FilteredText();
+        if (text.Length == 0) { _monitor.SetActionMessage("当前范围内没有日志，请先选择条目或调整筛选条件。"); return; }
+        if (action is "copy-selected" or "copy-filtered")
+        {
+            var package = new DataPackage(); package.SetText(text); Clipboard.SetContent(package);
+            _monitor.SetActionMessage("日志已复制。"); return;
+        }
+        if (action == "export")
+        {
+            var picker = new FileSavePicker(AppWindow.Id) { SuggestedFileName = "minimcp-logs-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") };
+            picker.FileTypeChoices.Add("日志文本", new List<string> { ".log", ".txt" });
+            var result = await picker.PickSaveFileAsync();
+            if (result is null || _closing) { _monitor.SetActionMessage("已取消导出。"); return; }
+            _exporting = new CancellationTokenSource(); var token = _exporting.Token;
+            await Task.Run(() => LogExport.WriteAsync(result.Path, text, token));
+            _monitor.SetActionMessage("筛选结果已导出：" + result.Path);
+        }
+    }
+
     private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         args.Cancel = true;
         if (_closing) return;
         // The native picker owns its modal interaction; keep this window/resources alive until
         // the user returns from it. Never abandon an outstanding picker/confirmation task.
-        if (_uiAction && _dialog is null && !_editor.IsBusy)
+        if (_uiAction && _dialog is null && !_editor.IsBusy && _exporting is null)
         { _status = "请先完成或取消文件选择窗口，再关闭 MiniMcp。"; UpdateControls(); return; }
         _closing = true; UpdateControls();
         try
@@ -167,9 +274,12 @@ public sealed partial class MainWindow : Window
             _status = "正在关闭并清理服务…"; UpdateControls();
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             _cancellingStart = _starting?.CancelAsync() ?? Task.CompletedTask;
+            _cancellingExport = _exporting?.CancelAsync() ?? Task.CompletedTask;
             var cancellingEditor = _editor.CancelPendingAsync();
-            await Task.WhenAll(_operation, _editor.PendingOperation, _cancellingStart, cancellingEditor).WaitAsync(deadline.Token);
+            await Task.WhenAll(_operation, _editor.PendingOperation, _cancellingStart, _cancellingExport, cancellingEditor).WaitAsync(deadline.Token);
             await _runtime.DisposeAsync(deadline.Token);
+            await _monitor.DisposeAsync().AsTask().WaitAsync(deadline.Token);
+            _monitor.StateChanged -= OnRuntimeState; _logs?.Detach();
             _editor.PropertyChanged -= OnEditorChanged;
             AppWindow.Closing -= OnClosing;
             Close();
@@ -184,9 +294,11 @@ public sealed partial class MainWindow : Window
     private void OnEditorChanged(object? sender, PropertyChangedEventArgs args) => UpdateControls();
     private void UpdateControls()
     {
-        if (Overview is null) return;
-        Overview.ShowStatus(_runtime.Snapshot, _busy || _uiAction || _closing || _editor.IsBusy,
+        _overview?.ShowStatus(_runtime.Snapshot, _busy || _uiAction || _closing || _editor.IsBusy,
             _editor.HasSavedSettings, _status);
+        _logs?.SetActionsEnabled(!_busy && !_editor.IsBusy && !_uiAction && !_closing);
+        if (_monitor.ObservationError.Length != 0 && !_closing)
+        { ErrorBar.Title = "界面更新异常"; ErrorBar.Message = _monitor.ObservationError; ErrorBar.IsOpen = true; }
     }
     private void ShowError(string title, Exception error)
     {

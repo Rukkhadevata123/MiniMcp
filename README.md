@@ -27,8 +27,8 @@ src/
     Tools/                  八个固定 MCP 工具入口
   MiniMcp.Cli/               .NET 10 命令行入口
   MiniMcp.Desktop/           Windows WinUI 3 本机服务窗口
-    ViewModels/             配置草稿、保存修订及重启提示
-    Views/                  已交付的概览与设置视图
+    ViewModels/             配置草稿、状态/有界日志展示及导出
+    Views/                  概览、运行日志和设置视图
 examples/
   settings.local.json       本机运行配置格式示例
   policy.readonly.json      本机只读策略格式示例
@@ -83,7 +83,7 @@ CLI 与 WinUI 都创建 `McpRuntime()`，通过 `StartAsync(RuntimeConfiguration
 
 `McpRuntime.StartAsync(RuntimeConfiguration)` 按正式配置中的端口启动 MCP HTTP 和健康端点。`Snapshot` 提供停止、启动中、运行、停止中、故障和释放状态，以及本次启动的 `RunId`、配置、实际地址和错误；每次启动使用新的 ID，停止后保留最近一次的 ID/配置并清空地址。`HasOwnedResources` 表示仍保留 Host/会话/进程所有权，尚未结束的启动仍须等待其真实任务；`FaultCount` 在一次运行内累计实际生命周期/隧道故障，停止和状态合并不会清除，启动新会话时重置。快照通过实际启停结果更新，不轮询健康端点。`DisposeAsync(CancellationToken)` 支持调用方传入剩余退出预算，失败保留资源供显式重试。CLI 与桌面都使用正式配置启动。
 
-Runtime 通过 `ILogger` 收集 Information 及以上的 Host、MCP 和生命周期诊断。`GetLogs()` 返回不可变日志快照，最多保留 1000 条、512 Ki 个 UTF-16 字符单元（消息和类别合计）；单条消息最多 4096、类别最多 256 个字符。`ClearLogs()` 清空保留缓冲，序号继续递增。日志保留跨会话历史，每条包含 `RunId`、递增序号、UTC 时间、级别、类别和事件编号；已结束会话的缓存 logger 拒绝新日志。
+Runtime 通过 `ILogger` 收集 Information 及以上的 Host、MCP 和生命周期诊断。`GetLogs()` 返回不可变日志快照，最多保留 1000 条、512 Ki 个 UTF-16 字符单元（消息和类别合计）；单条消息最多 4096、类别最多 256 个字符。`ClearLogs()` 清空保留缓冲并返回清理到的序号，序号继续递增，界面可据此忽略清理前排队的旧条目。日志保留跨会话历史，每条包含 `RunId`、递增序号、UTC 时间、级别、类别和事件编号；已结束会话的缓存 logger 拒绝新日志。
 
 `SubscribeLogs()` 和 `SubscribeState()` 原子捕获 `Initial`，各自的 `Reader` 只提供订阅后的变化。每个观察者独立消费：日志队列最多 128 条，满时丢弃最旧条目，可通过序号发现缺口并用 `GetLogs()` 重新加载；状态队列合并为最新快照，不依赖日志推断。消费者自行在终端或 UI 调度显示，不在生产者线程同步调用观察者。订阅需释放或绑定取消令牌；Runtime 成功释放后，读者可排空最后内容，后续订阅仍可读取终态及保留日志。
 
@@ -146,7 +146,11 @@ dotnet build src/MiniMcp.Desktop/MiniMcp.Desktop.csproj
 dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 ```
 
-窗口提供概览与设置导航，切页保留表单草稿和同一个 Runtime。概览显示最近一次启动的实际项目、端口、认证、执行模式、本机地址和启动时的依赖检查；设置中的默认模式和草稿检查与本次运行分开显示。日志和修改记录入口将在对应功能完成后加入。
+窗口提供概览、运行日志和设置导航，切页保留表单草稿和同一个 Runtime。概览通过独立状态订阅实时显示本次实际项目、模式、地址、RunId/故障计数、隧道本机状态/PID/退出码/错误，启动依赖与设置草稿分开显示。隧道可独立停止/启动；意外退出保留 MCP 并展示故障，不自动重连，进程 Running 不代表公网路由或登录已成功。修改记录入口在 6.3 完成后加入。
+
+页面共用居中的 1200 有效像素最大内容列，以及随可用宽度调整的 16/24/32 像素边距、固定页头和系统主题卡片。一级导航使用缓存 Page 的原生向上淡入过渡，遵循系统动画开关；切换保留草稿、选择与滚动位置，也不积累返回历史或重建 Runtime 订阅。日志保持独立的虚拟化列表区域。后续记录/完整恢复预览沿用同一布局；具体约定见 [桌面页面布局](docs/DesktopLayout.md)。
+
+运行日志每个窗口只订阅一次，后台分别等待日志和状态通道，UI 按批次更新；慢窗口不反压 Runtime，队列缺口和容量淘汰有明确计数。界面最多保留 1000 条/512 Ki UTF-16 字符（包括原文和转义显示开销），ListView 使用受约束高度的 ItemsStackPanel 虚拟化；可按字面关键词、最低级别、本次 RunId 筛选，并关闭自动滚动。选中详情、复制选中/筛选结果、导出筛选结果均只使用已由 Runtime 脱敏并转义控制字符的诊断，不包含工具正文或完整补丁/恢复预览。导出冻结点击时的可见范围，以 UTF-8 同目录暂存后安装，取消安装前保留原文件；不响应的 IO 仍沿窗口的真实任务/关闭预算保留所有权。清空会同时清理缓冲和显示，旧排队条目不会回流；也可重新载入当前缓冲。订阅随窗口关闭释放，日志内容和级别不会决定服务状态。
 
 设置默认读取 `%LOCALAPPDATA%/MiniMcp/settings.json`，可加载或选择其他运行配置文件；路径尚不存在时填写草稿后首次保存创建。认证默认 CloudflareAccess、执行模式默认 ReadOnly；可编辑项目、端口、认证、隧道、Bash/rg/Git 路径，以及恢复目录和 ProjectEdit 上限。策略始终来自固定用户 `policy.json`，不能随所选项目切换其来源。相对路径保留输入值，按所属配置文件目录解析。Bash 仅 FullAccess 要求，rg/Git 为可选依赖；“检查草稿”仅校验本机文件，不执行程序或验证公网登录。
 
@@ -233,7 +237,7 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 运行检查需要 Bash、rg 和 Git，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
 
-Windows 桌面检查直接引用 Desktop 和 Runtime 程序集，使用独立临时配置存储：`dotnet run --project tests/MiniMcp.DesktopChecks` 验证草稿/保存/冲突/取消/依赖及真实 Runtime 重启；追加 `-- --ui` 会启动实际 WinUI 检查窗口，操作原生控件验证绑定、导航、首次保存、错误与冲突提示、放弃确认、重启、主题/窄窗口/键盘焦点及系统关闭清理，然后自动退出。该窗口不会读写用户的实际 settings/policy。完整高对比度、多显示器/DPI、日志/记录页面的交互验收仍按后续步骤进行。
+Windows 桌面检查直接引用 Desktop 和 Runtime 程序集，使用独立临时配置存储：`dotnet run --project tests/MiniMcp.DesktopChecks` 验证草稿/保存/冲突/取消/依赖、真实 Runtime 重启及日志状态的慢展示/容量/过滤/脱敏/导出/清空/退订。追加 `-- --ui` 会启动实际 WinUI 检查窗口，操作原生控件验证绑定、导航、保存/冲突/确认/重启、主题/窄窗口/键盘焦点、日志虚拟化/筛选/自动滚动、受控假隧道的独立启停/异常退出实时反馈和系统关闭清理，然后自动退出。该窗口不读写用户的实际 settings/policy/token，不连接实际 Cloudflare。完整高对比度、多显示器/DPI、系统剪贴板/保存 picker 的人工操作和记录页面验收仍按后续步骤进行。
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、提交结果及回滚/清理错误、提交取消边界、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、三模式整批决定和执行阻塞原因、内存恢复草稿的原字节/前后路径状态/权限/哈希、恢复清单的严格 JSON/必需字段/大小边界、记录归属与操作/路径/备份引用对应关系、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、带记录写入、策略拒绝及 Bash 权限；交叉核对公开会话/记录 ID、真实持久化状态与原字节备份，伪造关闭恢复等参数不能绕过记录。大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 

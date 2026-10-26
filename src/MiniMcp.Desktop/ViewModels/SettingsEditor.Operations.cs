@@ -22,8 +22,8 @@ public sealed partial class SettingsEditor
         _settingsFile = loaded.settings; _policyFile = loaded.policy;
         RequestedPath = loaded.settings.FilePath;
         ResetSettings(loaded.settings.Value); ResetPolicy(loaded.policy.Value);
-        _dependencies = "检查草稿可查看本机依赖；不会执行外部程序。";
-        _message = HasSavedSettings ? "已加载配置与固定的本机策略。" : "运行配置文件尚不存在，填写后保存即可创建。";
+        _dependencies = "点击“检查草稿与本机依赖”查看检查结果。";
+        _message = HasSavedSettings ? "已加载运行配置与本机策略。" : "已载入首次使用的配置草稿，保存后创建文件。";
     }, cancellationToken);
 
     public Task SaveSettingsAsync(CancellationToken cancellationToken = default) => Begin(async token =>
@@ -35,7 +35,7 @@ public sealed partial class SettingsEditor
         // Do not test cancellation after a durable save or lose its updated revision.
         _settingsFile = saved;
         if (_settingsEdits == edits) ResetSettings(saved.Value);
-        _message = "运行配置已保存；权限策略请使用下方独立的保存按钮。本次运行不会自动改变。";
+        _message = "运行配置已保存，重启服务后生效。权限策略请单独保存。";
     }, cancellationToken);
 
     public Task SavePolicyAsync(CancellationToken cancellationToken = default) => Begin(async token =>
@@ -47,7 +47,7 @@ public sealed partial class SettingsEditor
         var saved = await Task.Run(() => _store.SavePolicyAsync(file, savedSettings, token), token);
         _policyFile = saved;
         if (_policyEdits == edits) ResetPolicy(saved.Value);
-        _message = "本机策略已保存；本次运行继续使用原模式，重启后应用。";
+        _message = "本机策略已保存，重启服务后生效。";
     }, cancellationToken);
 
     public Task CheckDraftAsync(CancellationToken cancellationToken = default) => Begin(async token =>
@@ -64,7 +64,7 @@ public sealed partial class SettingsEditor
         if (settingsEdits != _settingsEdits || policyEdits != _policyEdits)
         { _message = "检查期间草稿已改变，请重新检查。"; return; }
         _dependencies = dependencies;
-        _message = "草稿通过本机配置及必需依赖校验；没有写文件、启动程序或验证公网连接。";
+        _message = "草稿配置和必需程序文件检查通过。";
     }, cancellationToken);
 
     // The lifecycle caller owns this task. It reads saved files, never the bound draft, and
@@ -101,7 +101,7 @@ public sealed partial class SettingsEditor
             await Task.Yield();
             try { cancellation.Token.ThrowIfCancellationRequested(); await operation(cancellation.Token); }
             catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { _message = "操作已取消，草稿保留。"; }
-            catch (ConfigurationConflictException) { _error = "文件已被外部修改。草稿已保留，请重新加载后合并修改；不会覆盖外部内容。"; _message = "保存冲突"; }
+            catch (ConfigurationConflictException) { _error = "文件已被外部修改。草稿已保留，请记录改动后重新加载并合并。"; _message = "保存冲突"; }
             catch (Exception error) { _error = RuntimeDiagnosticText.Sanitize(error.Message); _message = "操作未完成，草稿保留。"; }
             finally
             {
@@ -121,10 +121,10 @@ public sealed partial class SettingsEditor
             catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
             { return $"{name}：程序路径不可用，仅对应查询不可用"; }
         }
-        var bash = configuration.Policy.Mode == ExecutionMode.FullAccess ? $"Bash：程序文件已检查 {settings.BashPath}" : "Bash：此模式禁止使用，无需安装";
+        var bash = configuration.Policy.Mode == ExecutionMode.FullAccess ? $"Bash：程序文件已检查 {settings.BashPath}" : "Bash：当前模式已禁用，无需安装";
         var rg = Optional("rg", () => ExternalProgramLocator.FindRipgrep(settings.RgPath, configuration.SettingsFilePath, settings.ProjectRoot));
         var git = Optional("Git", () => ExternalProgramLocator.FindGit(settings.GitPath, configuration.SettingsFilePath, settings.ProjectRoot));
-        var tunnel = settings.Tunnel.Enabled ? "隧道：cloudflared 文件及 token 文件可读/非空检查通过" : "隧道：关闭";
-        return RuntimeDiagnosticText.Sanitize($"{bash}\n{rg}\n{git}\n{tunnel}\n仅本机文件检查；程序版本、仓库支持和公网认证仍由实际操作核验。");
+        var tunnel = settings.Tunnel.Enabled ? "隧道：cloudflared 程序文件存在，token 文件可读且非空" : "隧道：关闭";
+        return RuntimeDiagnosticText.Sanitize($"{bash}\n{rg}\n{git}\n{tunnel}\n以上为本机文件检查结果。程序版本、仓库兼容性和公网登录需在使用时验证。");
     }
 }
