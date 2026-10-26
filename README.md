@@ -27,6 +27,8 @@ src/
     Tools/                  八个固定 MCP 工具入口
   MiniMcp.Cli/               .NET 10 命令行入口
   MiniMcp.Desktop/           Windows WinUI 3 本机服务窗口
+    ViewModels/             配置草稿、保存修订及重启提示
+    Views/                  已交付的概览与设置视图
 examples/
   settings.local.json       本机运行配置格式示例
   policy.readonly.json      本机只读策略格式示例
@@ -40,6 +42,7 @@ tests/
     Runtime/                Runtime、日志、隧道和进程生命周期
     Tools/                  HTTP/MCP、鉴权、文件/搜索/Git 查询及相关 fixture
     Cli/                    CLI 命令、输出和真实信号检查
+  MiniMcp.DesktopChecks/     Windows 桌面状态及实际 WinUI 交互检查
 ```
 
 Runtime 项目的 `RootNamespace` 为 `MiniMcp`：根目录的 `McpRuntime`、`RuntimeSnapshot` 属于 `MiniMcp`，诊断类型属于 `MiniMcp.Diagnostics`，Services 子目录分别使用 `MiniMcp.Services.Workspace`、`MiniMcp.Services.Git`、`MiniMcp.Services.Patching` 和 `MiniMcp.Services.Processes`。
@@ -143,7 +146,13 @@ dotnet build src/MiniMcp.Desktop/MiniMcp.Desktop.csproj
 dotnet run --project src/MiniMcp.Desktop --no-launch-profile
 ```
 
-窗口显示默认配置和策略文件路径，每次点击启动都会重新读取 `%LOCALAPPDATA%/MiniMcp/settings.json` 与同目录的 `policy.json`，复用 CLI 的校验和运行流程。界面显示最近一次启动的实际项目、端口、认证配置、执行配置、本机 MCP 和健康检查地址；缺少或损坏配置时显示文件名及错误，修正后可重试。配置文件修改在下次启动时生效。关闭窗口会取消配置加载或启动，等待停止并释放 Runtime；端口冲突保留已有服务。长路径和错误信息可换行，较小窗口可滚动查看。
+窗口提供概览与设置导航，切页保留表单草稿和同一个 Runtime。概览显示最近一次启动的实际项目、端口、认证、执行模式、本机地址和启动时的依赖检查；设置中的默认模式和草稿检查与本次运行分开显示。日志和修改记录入口将在对应功能完成后加入。
+
+设置默认读取 `%LOCALAPPDATA%/MiniMcp/settings.json`，可加载或选择其他运行配置文件；路径尚不存在时填写草稿后首次保存创建。认证默认 CloudflareAccess、执行模式默认 ReadOnly；可编辑项目、端口、认证、隧道、Bash/rg/Git 路径，以及恢复目录和 ProjectEdit 上限。策略始终来自固定用户 `policy.json`，不能随所选项目切换其来源。相对路径保留输入值，按所属配置文件目录解析。Bash 仅 FullAccess 要求，rg/Git 为可选依赖；“检查草稿”仅校验本机文件，不执行程序或验证公网登录。
+
+“保存运行配置”按当前已保存策略校验 settings；“保存本机策略”按已保存的运行配置校验 policy，上方未保存的草稿不参与后者校验。首次使用先保存运行配置，再保存本机策略。两文件分别调用同一 ConfigurationStore 的原子保存与 SHA-256 修订检查，冲突或失败保留草稿和外部文件，重新加载前明确确认放弃草稿。必需的完整补丁预览、写入前备份和失败回滚继续由 Runtime 提供，设置没有关闭记录/备份的开关。
+
+启动只读取已保存文件，不使用表单草稿。保存不会改变当前 RunId 或运行模式；存在已保存的新配置时提示“需重启生效”，点击“重启并应用配置”才完整停止旧会话并启动新会话。关闭窗口先处理未保存草稿，再取消并等待所属设置/启动任务和 Runtime 清理，共用十秒关闭预算；超时或失败保留窗口及真实资源所有权，可显式重试。导航自动收起，表单与长文本在窄窗口中滚动；文件/目录选择使用所属窗口的系统 picker。
 
 桌面采用未打包模式，Windows App SDK 运行文件复制到输出目录；.NET 10 / ASP.NET Core 运行依赖由目标机器提供。
 
@@ -223,6 +232,8 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 ```
 
 运行检查需要 Bash、rg 和 Git，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
+
+Windows 桌面检查直接引用 Desktop 和 Runtime 程序集，使用独立临时配置存储：`dotnet run --project tests/MiniMcp.DesktopChecks` 验证草稿/保存/冲突/取消/依赖及真实 Runtime 重启；追加 `-- --ui` 会启动实际 WinUI 检查窗口，操作原生控件验证绑定、导航、首次保存、错误与冲突提示、放弃确认、重启、主题/窄窗口/键盘焦点及系统关闭清理，然后自动退出。该窗口不会读写用户的实际 settings/policy。完整高对比度、多显示器/DPI、日志/记录页面的交互验收仍按后续步骤进行。
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、提交结果及回滚/清理错误、提交取消边界、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、三模式整批决定和执行阻塞原因、内存恢复草稿的原字节/前后路径状态/权限/哈希、恢复清单的严格 JSON/必需字段/大小边界、记录归属与操作/路径/备份引用对应关系、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、带记录写入、策略拒绝及 Bash 权限；交叉核对公开会话/记录 ID、真实持久化状态与原字节备份，伪造关闭恢复等参数不能绕过记录。大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 

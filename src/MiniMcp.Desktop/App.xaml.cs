@@ -1,20 +1,25 @@
 using Microsoft.UI.Xaml;
+using MiniMcp.Desktop.ViewModels;
 
 namespace MiniMcp.Desktop;
 
 public partial class App : Application
 {
-    private Window? _window;
-    internal McpRuntime Runtime { get; } = new();
+    public McpRuntime Runtime { get; }
+    public SettingsEditor Settings { get; }
+    public MainWindow? MainWindow { get; private set; }
 
-    public App()
+    public App() : this(new McpRuntime(), new SettingsEditor()) { }
+
+    public App(McpRuntime runtime, SettingsEditor settings)
     {
+        Runtime = runtime; Settings = settings;
         InitializeComponent();
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow();
-        _window.Activate();
+        MainWindow = new MainWindow(Runtime, Settings);
+        MainWindow.Activate();
     }
 }

@@ -1,0 +1,35 @@
+<UserControl
+    x:Class="MiniMcp.Desktop.Views.OverviewView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="760" HorizontalAlignment="Stretch" Spacing="20" Padding="24,8,24,32">
+            <TextBlock Text="概览" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="MiniMcp 本机 MCP 服务" Style="{ThemeResource SubtitleTextBlockStyle}" />
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="StatusText" Text="已停止" Style="{ThemeResource BodyStrongTextBlockStyle}"
+                           AutomationProperties.LiveSetting="Polite" AutomationProperties.AutomationId="Status" />
+                <ProgressRing x:Name="BusyIndicator" Width="24" Height="24" IsActive="False" Visibility="Collapsed" HorizontalAlignment="Left" />
+                <TextBlock x:Name="ProjectText" Text="尚未启动项目" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="Project" />
+                <TextBlock x:Name="ConfigurationText" Text="实际端口、认证与执行模式将在启动后显示。" TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="Configuration" />
+                <TextBlock x:Name="AddressText" Text="服务没有监听地址" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="Address" />
+            </StackPanel>
+            <StackPanel Spacing="10">
+                <Button x:Name="StartButton" Content="按已保存配置启动" Click="OnStart" Style="{ThemeResource AccentButtonStyle}"
+                        HorizontalAlignment="Left" AutomationProperties.AutomationId="Start" />
+                <Button x:Name="StopButton" Content="停止服务" Click="OnStop" IsEnabled="False"
+                        HorizontalAlignment="Left" AutomationProperties.AutomationId="Stop" />
+                <Button x:Name="RestartButton" Content="重启并应用配置" Click="OnRestart" IsEnabled="False"
+                        HorizontalAlignment="Left" AutomationProperties.AutomationId="Restart" />
+            </StackPanel>
+            <TextBlock Text="{Binding DraftStatus}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="{Binding SavedMode}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ActiveDependencies}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="QueryDependencies" />
+            <TextBlock Text="本次运行的配置固定。修改草稿或保存文件不会切换运行模式；重启会先完成停止，再创建新会话。"
+                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="三种模式都暴露相同的 8 个工具，使用限制由服务端检查。补丁完整预演、写入前完整备份和失败回滚始终保留。"
+                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

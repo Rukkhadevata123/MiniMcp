@@ -1,6 +1,10 @@
+using System.ComponentModel;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using MiniMcp.Configuration;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.Windows.Storage.Pickers;
+using MiniMcp.Desktop.ViewModels;
+using MiniMcp.Diagnostics;
 using Windows.Graphics;
 
 namespace MiniMcp.Desktop;
@@ -8,102 +12,141 @@ namespace MiniMcp.Desktop;
 public sealed partial class MainWindow : Window
 {
     private readonly McpRuntime _runtime;
+    private readonly SettingsEditor _editor;
     private Task _operation = Task.CompletedTask;
     private CancellationTokenSource? _starting;
-    private bool _busy;
-    private bool _closing;
+    private Task _cancellingStart = Task.CompletedTask;
+    private ContentDialog? _dialog;
+    private bool _busy, _uiAction, _closing;
+    private string? _status;
 
-    public MainWindow()
+    public MainWindow() : this(((App)Application.Current).Runtime, ((App)Application.Current).Settings) { }
+
+    public MainWindow(McpRuntime runtime, SettingsEditor editor)
     {
-        _runtime = ((App)Application.Current).Runtime;
+        _runtime = runtime; _editor = editor;
         InitializeComponent();
+        Navigation.DataContext = _editor;
+        _editor.PropertyChanged += OnEditorChanged;
+        Navigation.SelectedItem = OverviewNavigation;
         AppWindow.Closing += OnClosing;
-        try
-        {
-            var paths = ConfigurationPaths.ForCurrentUser();
-            ConfigPathText.Text = paths.SettingsFile;
-            PolicyPathText.Text = paths.PolicyFile;
-        }
-        catch (Exception exception) { ShowError("无法定位配置", exception); }
     }
 
-    private void OnRootLoaded(object sender, RoutedEventArgs args)
+    private async void OnRootLoaded(object sender, RoutedEventArgs args)
     {
         Root.Loaded -= OnRootLoaded;
         var scale = Root.XamlRoot.RasterizationScale;
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-        var area = display.WorkArea;
-        var margin = (int)Math.Round(16 * scale);
-        var width = Math.Min((int)Math.Round(800 * scale), Math.Max(1, area.Width - 2 * margin));
-        var height = Math.Min((int)Math.Round(700 * scale), Math.Max(1, area.Height - 2 * margin));
+        var area = display.WorkArea; var margin = (int)Math.Round(16 * scale);
+        var width = Math.Min((int)Math.Round(1040 * scale), Math.Max(1, area.Width - 2 * margin));
+        var height = Math.Min((int)Math.Round(780 * scale), Math.Max(1, area.Height - 2 * margin));
         AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - width) / 2,
             area.Y + (area.Height - height) / 2, width, height), display);
-    }
-
-    private async void OnStartClicked(object sender, RoutedEventArgs args) => await BeginOperationAsync(start: true);
-    private async void OnStopClicked(object sender, RoutedEventArgs args) => await BeginOperationAsync(start: false);
-
-    private Task BeginOperationAsync(bool start)
-    {
-        if (_busy || _closing) return Task.CompletedTask;
-        _busy = true;
-        ErrorBar.IsOpen = false;
-        StatusText.Text = start ? "正在读取配置…" : "正在停止…";
+        _operation = _editor.LoadAsync(_editor.DefaultSettingsPath);
+        await _operation;
+        if (!_closing && (!_editor.HasSavedSettings || _editor.HasError)) Navigation.SelectedItem = SettingsNavigation;
         UpdateControls();
-        _operation = ExecuteAsync(start);
-        return _operation;
     }
 
-    private async Task ExecuteAsync(bool start)
+    private void OnNavigationChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        var source = start ? new CancellationTokenSource() : null;
-        _starting = source;
+        if (Overview is null || Settings is null) return;
+        var settings = (args.SelectedItem as NavigationViewItem)?.Tag as string == "settings";
+        Overview.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
+        Settings.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+        if (sender.DisplayMode != NavigationViewDisplayMode.Expanded) sender.IsPaneOpen = false;
+    }
+
+    private async void OnSettingsAction(object? sender, string action)
+    {
+        if (_busy || _uiAction || _closing || _editor.IsBusy) return;
+        _uiAction = true; _editor.SetInteractionBusy(true); UpdateControls();
+        _operation = SettingsActionAsync(action);
+        try { await _operation; }
+        catch (Exception error) { ShowError("设置操作失败", error); }
+        finally { _uiAction = false; _editor.SetInteractionBusy(false); UpdateControls(); }
+    }
+
+    private async Task SettingsActionAsync(string action)
+    {
+        switch (action)
+        {
+            case "choose-file":
+                var picker = new FileOpenPicker(AppWindow.Id) { CommitButtonText = "选择配置" };
+                var file = await picker.PickSingleFileAsync();
+                if (file is null || _closing) return;
+                if (!await ConfirmDiscardAsync()) return;
+                _editor.RequestedPath = file.Path;
+                await _editor.LoadAsync(file.Path);
+                break;
+            case "choose-project":
+                var folder = await new FolderPicker(AppWindow.Id) { CommitButtonText = "选择项目目录" }.PickSingleFolderAsync();
+                if (folder is not null && !_closing) _editor.ProjectRoot = folder.Path;
+                break;
+            case "default-path":
+                if (!await ConfirmDiscardAsync()) return;
+                _editor.RequestedPath = _editor.DefaultSettingsPath;
+                await _editor.LoadAsync(_editor.RequestedPath);
+                break;
+            case "load":
+                if (await ConfirmDiscardAsync()) await _editor.LoadAsync(_editor.RequestedPath);
+                break;
+            case "save-settings": await _editor.SaveSettingsAsync(); break;
+            case "save-policy": await _editor.SavePolicyAsync(); break;
+            case "check": await _editor.CheckDraftAsync(); break;
+        }
+    }
+
+    private async Task<bool> ConfirmDiscardAsync(string title = "放弃未保存的草稿？")
+    {
+        if (!_editor.HasUnsavedChanges) return !_closing;
+        _dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot, Title = title,
+            Content = "当前运行配置或本机策略有未保存的草稿。继续将放弃这些草稿，已保存文件不会因此改变。",
+            PrimaryButtonText = "放弃草稿并继续", CloseButtonText = "保留草稿", DefaultButton = ContentDialogButton.Close
+        };
+        try { return await _dialog.ShowAsync() == ContentDialogResult.Primary; }
+        finally { _dialog = null; }
+    }
+
+    private async void OnLifecycleAction(object? sender, string action)
+    {
+        if (_busy || _uiAction || _closing || _editor.IsBusy) return;
+        _busy = true; _status = action == "stop" ? "正在停止…" : "正在读取已保存配置…";
+        _editor.SetSessionBusy(true); ErrorBar.IsOpen = false; UpdateControls();
+        _operation = LifecycleAsync(action);
+        await _operation;
+    }
+
+    private async Task LifecycleAsync(string action)
+    {
+        var cancellation = action == "stop" ? null : new CancellationTokenSource();
+        _starting = cancellation;
+        _cancellingStart = Task.CompletedTask;
         try
         {
-            if (start)
-            {
-                var token = source!.Token;
-                // File metadata and dependency checks also run off the UI thread.
-                var loaded = await Task.Run(async () =>
-                {
-                    var configuration = await new ConfigurationStore().LoadAsync(
-                        path: null, workingDirectory: AppContext.BaseDirectory, cancellationToken: token);
-                    var rg = CanLocate(() => ExternalProgramLocator.FindRipgrep(configuration.Settings.RgPath,
-                        configuration.SettingsFilePath, configuration.Settings.ProjectRoot));
-                    var git = CanLocate(() => ExternalProgramLocator.FindGit(configuration.Settings.GitPath,
-                        configuration.SettingsFilePath, configuration.Settings.ProjectRoot));
-                    return (Configuration: configuration, Ripgrep: rg, Git: git);
-                }, token);
-                token.ThrowIfCancellationRequested();
-                if (!_closing)
-                {
-                    StatusText.Text = "正在启动…";
-                    QueryDependenciesText.Text = $"启动时定位：rg {(loaded.Ripgrep ? "已找到程序文件" : "未找到，文本搜索不可用")}；"
-                        + $"Git {(loaded.Git ? "已找到程序文件" : "未找到，Git 查询不可用")}。仅检查文件，版本与仓库限制由实际查询核验。";
-                }
-                await _runtime.StartAsync(loaded.Configuration, token);
-            }
+            if (action == "stop") await _runtime.StopAsync();
             else
             {
-                await _runtime.StopAsync();
+                var token = cancellation!.Token;
+                var saved = await _editor.ReadSavedForStartupAsync(token);
+                token.ThrowIfCancellationRequested();
+                _status = action == "restart" ? "正在停止旧会话并启动新会话…" : "正在启动…";
+                UpdateControls();
+                if (action == "restart") await _runtime.RestartAsync(saved.Configuration, token);
+                else await _runtime.StartAsync(saved.Configuration, token);
+                _editor.SetRuntime(_runtime.Snapshot, saved);
             }
-            if (!_closing) StatusText.Text = StateText(_runtime.Snapshot.State);
         }
-        catch (OperationCanceledException) when (source?.IsCancellationRequested == true)
-        {
-            if (!_closing) StatusText.Text = "启动已取消";
-        }
-        catch (Exception exception)
-        {
-            if (!_closing) ShowError(start ? "启动失败" : "停止失败", exception);
-        }
+        catch (OperationCanceledException) when (cancellation?.IsCancellationRequested == true) { _status = "启动已取消"; }
+        catch (Exception error) { ShowError("服务操作失败", error); }
         finally
         {
-            _starting = null;
-            source?.Dispose();
-            _busy = false;
-            UpdateSnapshot();
-            UpdateControls();
+            try { await _cancellingStart; }
+            catch (Exception error) { ShowError("启动取消回调失败", error); }
+            _starting = null; cancellation?.Dispose();
+            _busy = false; _status = null; _editor.SetSessionBusy(false); _editor.SetRuntime(_runtime.Snapshot); UpdateControls();
         }
     }
 
@@ -111,73 +154,42 @@ public sealed partial class MainWindow : Window
     {
         args.Cancel = true;
         if (_closing) return;
-        _closing = true;
-        StatusText.Text = "正在关闭…";
-        ErrorBar.IsOpen = false;
-        UpdateControls();
+        // The native picker owns its modal interaction; keep this window/resources alive until
+        // the user returns from it. Never abandon an outstanding picker/confirmation task.
+        if (_uiAction && _dialog is null && !_editor.IsBusy)
+        { _status = "请先完成或取消文件选择窗口，再关闭 MiniMcp。"; UpdateControls(); return; }
+        _closing = true; UpdateControls();
         try
         {
-            _starting?.Cancel();
-            await _operation;
-            await _runtime.DisposeAsync();
+            if (_dialog is not null) { _dialog.Hide(); await _operation; }
+            if (_editor.HasUnsavedChanges && !await ConfirmDiscardAsync("退出并放弃未保存的草稿？"))
+            { _closing = false; UpdateControls(); return; }
+            _status = "正在关闭并清理服务…"; UpdateControls();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            _cancellingStart = _starting?.CancelAsync() ?? Task.CompletedTask;
+            var cancellingEditor = _editor.CancelPendingAsync();
+            await Task.WhenAll(_operation, _editor.PendingOperation, _cancellingStart, cancellingEditor).WaitAsync(deadline.Token);
+            await _runtime.DisposeAsync(deadline.Token);
+            _editor.PropertyChanged -= OnEditorChanged;
             AppWindow.Closing -= OnClosing;
             Close();
         }
-        catch (Exception exception)
+        catch (Exception error)
         {
-            _closing = false;
-            ShowError("无法关闭服务", exception);
-            UpdateSnapshot();
-            UpdateControls();
+            _closing = false; _status = null;
+            ShowError("关闭未完成，可重试关闭", error); UpdateControls();
         }
     }
 
-    private void ShowError(string title, Exception exception)
-    {
-        StatusText.Text = title;
-        ErrorBar.Title = title;
-        ErrorBar.Message = exception.Message;
-        ErrorBar.IsOpen = true;
-    }
-
-    private static bool CanLocate(Func<string?> locate)
-    {
-        try { return locate() is not null; }
-        catch (Exception exception) when (exception is IOException or ArgumentException or UnauthorizedAccessException) { return false; }
-    }
-
+    private void OnEditorChanged(object? sender, PropertyChangedEventArgs args) => UpdateControls();
     private void UpdateControls()
     {
-        var busy = _busy || _closing;
-        var state = _runtime.Snapshot.State;
-        StartButton.IsEnabled = !busy && state is RuntimeState.Stopped or RuntimeState.Faulted;
-        StopButton.IsEnabled = !busy && state is RuntimeState.Running or RuntimeState.Faulted;
-        BusyIndicator.IsActive = busy;
-        BusyIndicator.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        if (Overview is null) return;
+        Overview.ShowStatus(_runtime.Snapshot, _busy || _uiAction || _closing || _editor.IsBusy,
+            _editor.HasSavedSettings, _status);
     }
-
-    private void UpdateSnapshot()
+    private void ShowError(string title, Exception error)
     {
-        var snapshot = _runtime.Snapshot;
-        if (snapshot.Configuration is { } configuration)
-        {
-            ProjectText.Text = configuration.Settings.ProjectRoot;
-            ConfigurationText.Text = $"端口 {configuration.Settings.Port} · 认证配置 {configuration.Settings.Authentication.Mode} · 执行配置 {configuration.Policy.Mode}";
-        }
-        AddressText.Text = snapshot.Address is { } address
-            ? (snapshot.State == RuntimeState.Running ? "" : "上次绑定地址（需清理）：\n")
-                + $"MCP：{new Uri(address, "mcp").AbsoluteUri}\n健康检查：{new Uri(address, "healthz").AbsoluteUri}"
-            : "服务没有监听地址";
+        ErrorBar.Title = title; ErrorBar.Message = RuntimeDiagnosticText.Sanitize(error.Message); ErrorBar.IsOpen = true;
     }
-
-    private static string StateText(RuntimeState state) => state switch
-    {
-        RuntimeState.Stopped => "已停止",
-        RuntimeState.Starting => "正在启动…",
-        RuntimeState.Running => "运行中",
-        RuntimeState.Stopping => "正在停止…",
-        RuntimeState.Faulted => "服务故障",
-        RuntimeState.Disposed => "已释放",
-        _ => "状态未知"
-    };
 }

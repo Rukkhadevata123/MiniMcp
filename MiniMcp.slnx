@@ -8,5 +8,6 @@
     <Project Path="tests/MiniMcp.Checks/MiniMcp.Checks.csproj" />
     <Project Path="tests/MiniMcp.ProtocolChecks/MiniMcp.ProtocolChecks.csproj" />
     <Project Path="tests/MiniMcp.RuntimeChecks/MiniMcp.RuntimeChecks.csproj" />
+    <Project Path="tests/MiniMcp.DesktopChecks/MiniMcp.DesktopChecks.csproj" />
   </Folder>
 </Solution>
