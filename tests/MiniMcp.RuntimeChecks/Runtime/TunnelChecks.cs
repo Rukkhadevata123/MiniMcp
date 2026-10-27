@@ -50,15 +50,17 @@ internal static class TunnelChecks
             using var slow = fixture.Runtime.SubscribeLogs();
             await fixture.Runtime.StartAsync(fixture.Configuration);
             await TunnelChild.WaitUntilAsync(() => File.Exists(Path.Combine(fixture.DirectoryPath, "flood.done")), TimeSpan.FromSeconds(20));
+            await fixture.HealthyAsync();
+            // Stop the producer and drain its redirected output before measuring the
+            // queued backlog. Reading concurrently would count newly arriving logs too.
+            await fixture.Runtime.StopAsync();
             var retained = fixture.Runtime.GetLogs();
             Assert(retained.Entries.Length <= 1000 && retained.CharacterCount <= 512 * 1024, "Bounded retained output");
             Assert(!retained.Entries.Any(entry => entry.Message.Contains("private-")), "No credential fragments");
             Assert(retained.Entries.Any(entry => entry.Category.StartsWith("MiniMcp.Tunnel.")), "Output routed through diagnostics");
             var queued = new List<RuntimeLogEntry>();
             while (slow.Reader.TryRead(out var entry)) queued.Add(entry);
-            Assert(queued.Count <= 128, "Slow observer bounded");
-            await fixture.HealthyAsync();
-            await fixture.Runtime.StopAsync();
+            Assert(queued.Count <= RuntimeDiagnostics.LogSubscriptionCapacity, "Slow observer bounded");
         });
 
         await check("tunnel: independent stop and start preserve the MCP session and isolate process attempts", async () =>

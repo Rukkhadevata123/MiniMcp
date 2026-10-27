@@ -352,6 +352,9 @@ internal static class GitQueryChecks
                 using var child = await RuntimeCallChecks.ObserveChildAsync(fixture.PathOf("git-query-child.pid"), query);
                 try
                 {
+                    // Do not let malformed/flood output terminate the process before the
+                    // test has obtained the real descendant's process handle.
+                    fixture.Put("git-query-observed", "ready");
                     if (operation == "cancel") cancel.Cancel();
                     if (operation == "stop") await runtime.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
                     if (operation is "cancel" or "stop") await Reject<OperationCanceledException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
@@ -372,6 +375,8 @@ internal static class GitQueryChecks
         start.ArgumentList.Add("--execution-child"); start.ArgumentList.Add(marker);
         using var child = Process.Start(start)!;
         while (!File.Exists(marker)) await Task.Delay(10);
+        while (!File.Exists(Path.Combine(Environment.CurrentDirectory, "git-query-observed")))
+            await Task.Delay(10);
         var mode = await File.ReadAllTextAsync(Path.Combine(Environment.CurrentDirectory, ".git-query-control"));
         if (mode == "malformed") { Console.Write("invalid\0"); await Console.Out.FlushAsync(); }
         if (mode == "flood") while (true) { Console.Write(new string('x', 4096)); Console.Error.Write(new string('e', 4096)); }
