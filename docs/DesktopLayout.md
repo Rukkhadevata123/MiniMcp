@@ -22,4 +22,6 @@
 
 原生进入效果采用微软的 [Page transitions](https://learn.microsoft.com/en-us/windows/apps/develop/motion/page-transitions) 和 [EntranceNavigationTransitionInfo](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.animation.entrancenavigationtransitioninfo) 定义。技能参考以本地 winui-design、winui-xaml-patterns 为主；也核对了微软 [Windows development skills](https://github.com/microsoft/win-dev-skills) 的维护位置，不额外安装 CLI 或引入运行依赖。
 
-真实窗口检查覆盖三页的页头位置/宽度一致、缓存实例与滚动保留、快速切换、无返回栈增长、系统动画偏好、缓存页主题资源、日志虚拟化以及既有配置/隧道/关闭路径。测试截图只使用临时配置，不使用用户的 settings、policy 或 token。
+真实窗口检查覆盖四页的页头位置/宽度一致、缓存实例与滚动保留、快速切换、无返回栈增长、系统动画偏好、缓存页主题资源、日志虚拟化以及既有配置/隧道/关闭路径。测试截图只使用临时配置，不使用用户的 settings、policy 或 token。
+
+README 图片由 `dotnet run --project tests/MiniMcp.DesktopChecks -- --readme-screenshots docs/images artifacts` 生成，使用独立示例项目和内存数据保护密钥。检查程序复用正式应用的 PerMonitorV2 清单，按窗口实际缩放导出 PNG，文档图片最低为 2 倍渲染密度；编码保留像素尺寸和对应 DPI。高于当前缩放的导出直接重新渲染 XAML。导出器会检查 GPU 返回尺寸，避免缩放两次或纹理上限造成的降采样。

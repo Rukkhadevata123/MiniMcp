@@ -8,8 +8,10 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ApplicationManifest>../../src/MiniMcp.Desktop/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MiniMcp.Desktop/MiniMcp.Desktop.csproj" />
+    <None Update="PickerAutomation.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

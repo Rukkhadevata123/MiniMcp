@@ -36,7 +36,7 @@
                 <TextBlock Text="运行配置" Style="{StaticResource WorkspaceSectionTitleStyle}" />
                 <TextBox Header="项目目录" Text="{Binding ProjectRoot, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          AutomationProperties.AutomationId="ProjectRootEditor" />
-                <Button Content="选择项目目录…" Click="OnChooseProject" HorizontalAlignment="Left" />
+                <Button Content="选择项目目录…" Click="OnChooseProject" HorizontalAlignment="Left" AutomationProperties.AutomationId="ChooseProject" />
                 <TextBox Header="本机监听端口（1–65535）" Text="{Binding PortText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          MaxWidth="240" HorizontalAlignment="Left" InputScope="Number" AutomationProperties.AutomationId="PortEditor" />
                 <ComboBox Header="认证方式" SelectedIndex="{Binding AuthenticationIndex, Mode=TwoWay}"

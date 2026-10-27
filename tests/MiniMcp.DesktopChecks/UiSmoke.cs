@@ -99,6 +99,7 @@ internal static class UiSmoke
                         await Until(() => runtime.Snapshot.State == RuntimeState.Running && Find<Button>("Stop").IsEnabled);
                         var firstRun = runtime.Snapshot.RunId;
                         Assert(Find<TextBlock>("Configuration").Text.Contains("ReadOnly"), "Overview shows actual mode");
+                        Assert(Walk(root).OfType<TextBlock>().Single(block => block.Name == "PublicAddress").Text == "未配置公网地址", "Empty public origin is not displayed as /mcp");
                         Assert(runtime.DiagnosticSubscriberCounts == (1, 1), "One subscription pair for the whole window");
                         using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
                         (await http.GetAsync(new Uri(runtime.Address!, "ui-logger"))).EnsureSuccessStatusCode();
@@ -234,6 +235,7 @@ internal static class UiSmoke
                         Invoke(primary);
                         await Until(() => !fixture.Editor.IsBusy && fixture.Editor.PortText == "8099");
                         Assert(!fixture.Editor.HasUnsavedChanges && !fixture.Editor.HasError, "Confirmed reload loads external settings");
+                        await DesktopAcceptanceChecks.Run(window, root, fixture, Find<FrameworkElement>, Navigate, Invoke);
                         var designScale = root.XamlRoot.RasterizationScale;
                         window.AppWindow.Resize(new((int)(1440 * designScale), (int)(900 * designScale)));
                         await Task.Delay(160);

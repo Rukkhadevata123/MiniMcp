@@ -46,7 +46,8 @@ public sealed partial class OverviewView : Page
             (snapshot.Tunnel.ExitCode is { } exit ? $" · 退出码 {exit}" : "");
         TunnelError.Text = snapshot.Tunnel.Error ?? "";
         TunnelError.Visibility = string.IsNullOrEmpty(snapshot.Tunnel.Error) ? Visibility.Collapsed : Visibility.Visible;
-        PublicAddress.Text = snapshot.Configuration?.Settings.Authentication.PublicOrigin is { } origin
+        var origin = snapshot.Configuration?.Settings.Authentication.PublicOrigin;
+        PublicAddress.Text = !string.IsNullOrWhiteSpace(origin)
             ? $"配置的公网 MCP 地址（待验证）：{origin.TrimEnd('/')}/mcp" : "未配置公网地址";
         AddressText.Text = snapshot.Address is { } address
             ? (snapshot.State == RuntimeState.Running ? "" : "上次绑定地址（需清理）：\n") + $"MCP：{new Uri(address, "mcp")}\n健康检查：{new Uri(address, "healthz")}"

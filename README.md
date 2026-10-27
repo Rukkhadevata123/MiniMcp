@@ -6,6 +6,27 @@ CLI 与桌面窗口直接控制 Runtime 的启动和停止。`/mcp` 提供 state
 
 MCP 固定提供 `read_file`、`list_files`、`search_text`、`git_status`、`git_diff`、`git_log`、`apply_patch` 和 `bash`，八个工具使用同一个会话执行入口。所有模式允许文件/Git 查询和补丁预演；ProjectEdit 允许普通补丁，直接拒绝受限批次；FullAccess 允许全部通过基础检查的补丁和 Bash，每次实际补丁提交均保存恢复记录。
 
+## 界面预览
+
+截图使用示例配置，按 Windows 200% 缩放保存为原始 PNG；点击可查看大图。
+
+[![MiniMcp 桌面概览](docs/images/overview.png)](docs/images/overview.png)
+
+[![修改记录与完整反向预览](docs/images/recovery.png)](docs/images/recovery.png)
+
+<details>
+<summary>运行日志、设置与深色界面</summary>
+
+[![运行日志](docs/images/logs.png)](docs/images/logs.png)
+
+[![运行配置](docs/images/settings.png)](docs/images/settings.png)
+
+[![本机权限策略](docs/images/permissions.png)](docs/images/permissions.png)
+
+[![深色概览](docs/images/overview-dark.png)](docs/images/overview-dark.png)
+
+</details>
+
 ## 项目结构
 
 ```text
@@ -249,7 +270,9 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 运行检查需要 Bash、rg 和 Git，检查程序通过共用定位器查找常见安装目录和 PATH；Windows 自动识别 Git Bash，Linux 还需要 util-linux 的 `/usr/bin/setsid`。自定义安装可通过仅供检查程序使用的 `MINIMCP_TEST_BASH_PATH` 指定 Bash 路径，显式路径无效时报错。
 
-Windows 桌面检查直接引用 Desktop 和 Runtime 程序集，使用独立临时配置存储：`dotnet run --project tests/MiniMcp.DesktopChecks` 验证草稿/保存/冲突/取消/依赖、真实 Runtime 重启及日志状态的慢展示/容量/过滤/脱敏/导出/清空/退订。追加 `-- --ui` 启动实际 WinUI 检查窗口，操作原生控件验证绑定、导航、保存/冲突/确认/重启、主题/窄窗口/键盘焦点、日志虚拟化/筛选/自动滚动、受控假隧道及关闭清理；记录页检查完整预览、只读模式、取消、确认后冲突、混合文件操作/原字节恢复、再次撤销与停止状态的维护操作。日志悬停检查会短暂激活和置顶测试窗口、移动鼠标，结束后还原位置与置顶状态。测试使用临时配置与 token 样例；完整高对比度、多显示器/DPI、系统剪贴板/保存 picker 的人工操作另行验收。
+Runtime 检查中有将自身用作 rg/Git 子程序的场景，完整检查请使用上述 `dotnet run` 命令或构建生成的 apphost。
+
+Windows 桌面检查直接引用 Desktop 和 Runtime 程序集，使用独立临时配置存储：`dotnet run --project tests/MiniMcp.DesktopChecks` 验证草稿/保存/冲突/取消/依赖、真实 Runtime 重启及日志状态的慢展示/容量/过滤/脱敏/导出/清空/退订。追加 `-- --ui` 启动实际 WinUI 检查窗口，操作原生控件验证绑定、导航、保存/冲突/确认/重启、主题/窄窗口/键盘焦点、日志虚拟化/筛选/自动滚动、受控假隧道及关闭清理；记录页检查完整预览、只读模式、取消、确认后冲突、混合文件操作/原字节恢复、再次撤销与停止状态的维护操作。检查还会打开文件、文件夹和保存选择器，在临时目录验证日志导出，并检查当前显示器的 DPI、明暗主题和按钮无障碍名称。日志悬停和键盘检查会短暂激活测试窗口、移动鼠标，结束后还原位置与置顶状态。测试使用临时配置与 token 样例；完整高对比度、多显示器/DPI 和系统剪贴板操作需另行验收。
 
 核心检查覆盖文件/路径限制、UTF-8、补丁预演与提交、提交结果及回滚/清理错误、提交取消边界、格式保留、完整 diff 重建及预算边界、风险分类与批量阈值、三模式整批决定和执行阻塞原因、内存恢复草稿的原字节/前后路径状态/权限/哈希、恢复清单的严格 JSON/必需字段/大小边界、记录归属与操作/路径/备份引用对应关系、真实命令输出、超时和取消。协议检查使用实际 MCP SDK，通过内存流和统一执行入口验证三种模式的工具输入/输出 schema、读取、预演、带记录写入、策略拒绝及 Bash 权限；交叉核对公开会话/记录 ID、真实持久化状态与原字节备份，伪造关闭恢复等参数不能绕过记录。大型 diff 在结构化及文本输出中完整保留，超限错误不暴露部分预览或内部计划，拒绝和预演不修改文件或创建恢复目录。它不验证 HTTP、OAuth 或公网 Tunnel。
 

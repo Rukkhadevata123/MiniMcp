@@ -4,6 +4,9 @@ using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Recovery;
 
+if (args is ["--cli-recovery-terminal", var terminalAction] && terminalAction is "restore" or "cancel" or "interrupt")
+    return await CliRecoveryTerminalChecks.RunAsync(terminalAction);
+
 if (args.Length > 0 && args[0] == "--no-config") return await WorkspaceQueryChecks.ChildAsync(args);
 if (args.Length > 0 && args[0] == "--no-pager") return await GitQueryChecks.ChildAsync(args);
 if (args is ["--git-helper", var gitMarker]) { await File.WriteAllTextAsync(gitMarker, "helper executed"); return 0; }
