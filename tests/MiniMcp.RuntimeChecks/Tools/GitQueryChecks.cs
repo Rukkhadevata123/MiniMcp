@@ -165,43 +165,62 @@ internal static class GitQueryChecks
             await using var noRepository = fixture.CreateExecution(plain);
             await Reject<WorkspaceException>(() => noRepository.GitStatusAsync());
         });
-        await check("git queries: repository helpers and include/redirect configuration are rejected before they can execute", async () =>
+        await check("git queries: common local settings and included configuration work in every mode", async () =>
+        {
+            foreach (var mode in Enum.GetValues<ExecutionMode>())
+            {
+                await using var fixture = new Fixture(mode);
+                fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+                var included = Path.Combine(fixture.DirectoryPath, "included-config");
+                File.WriteAllText(included, "[pull]\nrebase = true\n");
+                await fixture.Git("config", "--local", "include.path", included);
+                await fixture.Git("config", "--local", "branch.main.vscode-merge-base", "origin/main");
+                await fixture.Git("config", "--local", "branch.feature/topic.vscode-merge-base", "origin/feature/topic");
+                await fixture.Git("config", "--local", "commit.gpgsign", "true");
+                Assert((await fixture.Git("config", "--local", "--includes", "--get", "pull.rebase")).Trim() == "true", "Git loads the included configuration");
+                var before = fixture.Snapshot();
+                Assert((await fixture.Execution.GitStatusAsync()).Entries.Any(entry => entry.Path == "a.txt"), "Status with common config in " + mode);
+                Assert((await fixture.Execution.GitDiffAsync()).Files.Single().Lines.Contains("+two"), "Diff with common config in " + mode);
+                Assert((await fixture.Execution.GitLogAsync()).Commits.Single().Subject == "initial", "Log with common config in " + mode);
+                Assert(before.SequenceEqual(fixture.Snapshot()) && !Directory.Exists(fixture.Recovery), "Ordinary query leaves repository unchanged in " + mode);
+            }
+        });
+        await check("git queries: local clean filters can execute outside the project in every mode", async () =>
+        {
+            foreach (var mode in Enum.GetValues<ExecutionMode>())
+            {
+                await using var fixture = new Fixture(mode);
+                fixture.Put(".gitattributes", "*.txt filter=demo\n");
+                fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+                var marker = Path.Combine(fixture.DirectoryPath, "filter-ran");
+                await fixture.Git("config", "--local", "filter.demo.clean", HelperCommand(marker));
+                Assert(!File.Exists(marker), "No marker before querying");
+                _ = await fixture.Execution.GitDiffAsync();
+                Assert(File.Exists(marker) && File.ReadAllText(marker) == "helper executed", "Git invoked the configured helper outside the project in " + mode);
+                Assert(!Directory.Exists(fixture.Recovery), "Filter effects do not create patch recovery records");
+                File.Delete(marker);
+                await using var runtime = new McpRuntime(0);
+                await runtime.StartAsync(fixture.Configuration);
+                using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
+                await using var client = await McpHttpChecks.ConnectAsync(runtime.Address!, http);
+                var result = await client.CallToolAsync("git_diff", new Dictionary<string, object?>());
+                Assert(result.IsError != true && result.StructuredContent is not null && File.Exists(marker), "Real MCP git_diff invokes the configured helper in " + mode);
+                Assert(!Directory.Exists(fixture.Recovery), "MCP filter effects do not create patch recovery records");
+            }
+        });
+        await check("git queries: fixed options still disable local external diff, textconv and fsmonitor", async () =>
         {
             await using var fixture = new Fixture();
-            fixture.Put("a.txt", "one\n"); await fixture.Commit("initial");
-            fixture.Put("a.txt", "two\n");
-            fixture.Put(".gitattributes", "*.txt filter=attack diff=attack\n");
-            var marker = Path.Combine(fixture.DirectoryPath, "helper-ran");
+            fixture.Put(".gitattributes", "*.txt diff=demo\n");
+            fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+            var marker = Path.Combine(fixture.DirectoryPath, "disabled-helper-ran");
             var helper = HelperCommand(marker);
-            await fixture.Git("-c", "filter.attack.clean=" + helper, "hash-object", "--path=a.txt", "a.txt");
-            Assert(File.Exists(marker), "The malicious helper fixture really executes when allowed by ordinary Git");
-            File.Delete(marker);
-            var config = File.ReadAllBytes(fixture.ConfigFile);
-            var outside = Path.Combine(fixture.DirectoryPath, "outside-config");
-            File.WriteAllText(outside, "[filter \"attack\"]\nclean = " + helper + "\n");
-            foreach (var (key, value) in new[]
-            {
-                ("filter.attack.clean", helper), ("filter.attack.smudge", helper), ("filter.attack.process", helper),
-                ("diff.external", helper), ("diff.attack.textconv", helper), ("core.fsmonitor", helper),
-                ("include.path", outside), ("includeIf.gitdir:*/.path", outside), ("core.worktree", fixture.DirectoryPath),
-                ("extensions.partialClone", "origin"), ("remote.origin.promisor", "true"), ("core.hooksPath", fixture.DirectoryPath)
-            })
-            {
-                File.WriteAllBytes(fixture.ConfigFile, config);
-                await fixture.Git("config", "--local", key, value);
-                foreach (var query in fixture.Queries())
-                {
-                    var error = await Reject<WorkspaceException>(query);
-                    Assert(error.Message.Contains("Unsupported repository configuration"), "Preflight config rejection: " + key);
-                }
-                Assert(!File.Exists(marker), "No helper process: " + key);
-            }
-            File.WriteAllBytes(fixture.ConfigFile, config);
-            File.WriteAllText(outside, "[invalid unfinished config");
-            await fixture.Git("config", "--local", "include.path", outside);
-            var rejectedInclude = await Reject<WorkspaceException>(() => fixture.Execution.GitStatusAsync());
-            Assert(rejectedInclude.Message.Contains("Unsupported repository configuration"), "Malformed included file was never read during config inspection/setup");
-            File.WriteAllBytes(fixture.ConfigFile, config);
+            await fixture.Git("config", "--local", "core.fsmonitor", helper);
+            await fixture.Git("config", "--local", "diff.external", helper);
+            await fixture.Git("config", "--local", "diff.demo.textconv", helper);
+            var before = fixture.Snapshot();
+            foreach (var query in fixture.Queries()) await query();
+            Assert(!File.Exists(marker) && before.SequenceEqual(fixture.Snapshot()), "Explicitly disabled helpers do not run or write the repository");
         });
         await check("git queries: inherited config/helpers/paths are ignored and cannot redirect a query", async () =>
         {
@@ -290,13 +309,14 @@ internal static class GitQueryChecks
             Assert((await client.CallToolAsync("git_status", new Dictionary<string, object?>())).IsError == true, "Tool-level dependency error");
             Assert((await client.CallToolAsync("list_files", new Dictionary<string, object?>())).IsError != true && runtime.Snapshot.State == RuntimeState.Running, "Other tools/Host unaffected");
         });
-        await check("git queries: all modes expose the same eight real MCP tools and Git queries never create writes", async () =>
+        await check("git queries: all modes expose the same eight real MCP tools and ordinary queries leave files unchanged", async () =>
         {
             string? catalog = null;
             foreach (var mode in Enum.GetValues<ExecutionMode>())
             {
                 await using var fixture = new Fixture(mode);
                 fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+                await fixture.Git("config", "--local", "branch.main.vscode-merge-base", "origin/main");
                 await using var runtime = new McpRuntime(0);
                 await runtime.StartAsync(fixture.Configuration);
                 using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
@@ -305,7 +325,11 @@ internal static class GitQueryChecks
                 var current = JsonSerializer.Serialize(tools.OrderBy(tool => tool.Name).Select(tool => tool.ProtocolTool));
                 catalog ??= current; Assert(current == catalog && tools.Count == 8, "Schemas/descriptions/annotations identical");
                 foreach (var tool in tools.Where(tool => tool.Name.StartsWith("git_", StringComparison.Ordinal)))
+                {
                     Assert(tool.ProtocolTool.Annotations is { ReadOnlyHint: true, DestructiveHint: false, OpenWorldHint: false }, "Git annotations");
+                    Assert(tool.ProtocolTool.Description is { } description && description.Contains("external programs") && description.Contains("even in ReadOnly"),
+                        "Git description states the external-program behavior in " + mode);
+                }
                 var before = fixture.Snapshot();
                 foreach (var name in new[] { "git_status", "git_diff", "git_log" })
                 {
@@ -343,7 +367,6 @@ internal static class GitQueryChecks
     internal static async Task<int> ChildAsync(string[] arguments)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
-        if (arguments.Contains("config")) { Console.Write("core.repositoryformatversion\n0\0core.bare\nfalse\0"); return 0; }
         var marker = Path.Combine(Environment.CurrentDirectory, "git-query-child.pid");
         var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("--execution-child"); start.ArgumentList.Add(marker);

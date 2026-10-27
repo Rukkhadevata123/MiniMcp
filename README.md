@@ -12,6 +12,8 @@ MiniMcp 是运行在自己电脑上的 MCP 服务。它通过 Streamable HTTP �
 
 每次实际补丁提交都会保存恢复记录。可在本机查看完整反向预览并确认恢复；记录不覆盖 Bash 或网络操作。客户端的确认提示不会改变服务端权限。详情见 [工具使用](docs/usage.md)和[权限与安全边界](docs/security.md)。
 
+Git 查询会读取仓库本地配置，可能触发其中配置的外部程序；这一点适用于三种模式，外部程序的副作用不包含在恢复记录中。
+
 ## 开始使用
 
 需要 .NET 10 SDK。搜索需要单独安装 ripgrep，Git 查询需要 Git；FullAccess 需要 Bash，受管 Tunnel 需要 cloudflared。Linux 的 Bash、受管隧道和文本搜索还需要 `/usr/bin/setsid`。项目不自动下载这些程序。

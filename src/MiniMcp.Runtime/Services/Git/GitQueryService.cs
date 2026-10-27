@@ -20,7 +20,7 @@ public sealed record GitLogResult(string Scope, string? Head, ImmutableArray<Git
 
 internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfiguration configuration, ReadOnlyQueryRunner runner)
 {
-    private const string ScopeNotice = "Scope: literal project paths; private paths, links and submodule contents excluded; no external helpers, global/system config or network; live observation, not a transaction snapshot.";
+    private const string ScopeNotice = "Scope: literal project paths; private paths, links and submodule contents excluded; default global/system Git configuration ignored. Repository configuration can include other files and invoke external programs with the service account's permissions. Live observation, not a transaction snapshot.";
 
     internal Task<GitStatusResult> StatusAsync(string path, int maxEntries, CancellationToken cancellationToken)
     {

@@ -63,7 +63,7 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
         var stopped = false;
         void Walk(string directory, int depth)
         {
-            if (depth == maxDepth) { notices.Add("DepthLimit: boundary directories were not expanded."); return; }
+            if (depth == maxDepth) { notices.Add("DepthLimit: boundary directories were not expanded. This notice does not indicate a listing failure."); return; }
             try
             {
                 workspace.Resolve(workspace.Relative(directory));

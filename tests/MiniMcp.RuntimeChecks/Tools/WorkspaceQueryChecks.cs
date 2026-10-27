@@ -17,13 +17,23 @@ internal static class WorkspaceQueryChecks
             fixture.Put("src/deep/item.cs", "hello\n");
             fixture.Put(".hidden/note.txt", "hidden\n");
             fixture.Put("node_modules/package.txt", "dependency\n");
+            System.IO.Directory.CreateDirectory(fixture.PathOf("empty"));
             var shallow = await fixture.Execution.ListFilesAsync(maxDepth: 1, format: "tree");
-            Assert(shallow.Entries.All(item => item.Depth == 1) && shallow.Truncated && shallow.Tree!.Contains("[not expanded]"), "Depth boundary");
+            Assert(shallow.Entries.Any(item => item.Path == "sample.txt") && shallow.Entries.All(item => item.Depth == 1), "Direct children listed");
+            Assert(shallow.Entries.Single(item => item.Path == "src") is { Kind: "directory", Expanded: false } &&
+                shallow.Entries.Single(item => item.Path == "empty") is { Kind: "directory", Expanded: false }, "Boundary directories remain unexpanded, including empty directories");
+            Assert(!shallow.Complete && shallow.Truncated && shallow.Tree!.Contains("[not expanded]") &&
+                shallow.Notices.Any(notice => notice.StartsWith("DepthLimit:") && notice.Contains("does not indicate a listing failure")), "Depth boundary describes coverage, not listing failure");
             Assert(!shallow.Entries.Any(item => item.Path.StartsWith('.') || item.Path.StartsWith("node_modules")), "Default scope");
             var full = await fixture.Execution.ListFilesAsync(maxDepth: 8, includeHidden: true, format: "tree");
             Assert(full.Entries.Any(item => item.Path == ".hidden/note.txt") && full.Entries.Any(item => item.Path == "src/deep/item.cs"), "Explicit hidden traversal");
             Assert((await fixture.Execution.ListFilesAsync("node_modules")).Entries.Single().Path == "node_modules/package.txt", "Explicit generated root");
-            Assert((await fixture.Execution.ListFilesAsync(maxDepth: 0)).Entries.IsEmpty, "Root depth zero");
+            var zero = await fixture.Execution.ListFilesAsync(maxDepth: 0);
+            Assert(zero.Entries.IsEmpty && !zero.Complete && zero.Truncated && zero.Notices.Any(notice => notice.StartsWith("DepthLimit:")), "Root depth zero is not expanded");
+            await using var filesOnly = new Fixture();
+            var complete = await filesOnly.Execution.ListFilesAsync(maxDepth: 1);
+            Assert(complete.Complete && !complete.Truncated && complete.Entries.Single().Path == "sample.txt" &&
+                !complete.Notices.Any(notice => notice.StartsWith("DepthLimit:")), "A root with only files is complete at depth one");
         });
         await check("queries: private paths are hard exclusions in lists and rg even under inclusive globs", async () =>
         {

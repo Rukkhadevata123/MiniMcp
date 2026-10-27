@@ -42,7 +42,11 @@ Local 模式的客户端地址为 `http://127.0.0.1:8000/mcp`，按配置端口�
 
 `list_files` 深度最大 8、结果最多 2000 项；默认跳过隐藏项和常见生成目录，不解析 gitignore。`search_text` 深度最大 32、结果最多 1000 个匹配行，遵守选定根以内的 ignore 文件及 rg 对隐藏和二进制文件的过滤，不使用父级或全局 ignore。两者遍历和输出有上限；查看 `complete`、`truncated` 和 `notices`，必要时缩小路径或深度。查询输出最多 256 KiB，`read_file` 的正文最多 16000 个 UTF-16 字符单元。
 
-Git 查询要求项目根本身是含真实 `.git` 目录的标准工作树。它们不遍历子模块，不读取外部 gitdir、linked worktree 或 partial clone，也不执行 Git 助手或联网。`git_diff` 不显示未跟踪文件正文，查询 diff 可能截断；补丁预演则要求完整 diff。Git 查询与搜索共用 10 秒预算和有限并发。
+例如 `list_files` 的 `max_depth=1` 会列出所选目录的直接子项，不展开其中的子目录。遇到边界目录时，返回项标记 `expanded=false`，结果同时报告 `DepthLimit`、`complete=false` 和 `truncated=true`。这说明子树未被完整遍历，直接子项仍可能已经列全；查看其他 `notices`，可以判断是否还有条目因数量、时间或访问问题被省略。`max_depth=0` 不展开所选目录。
+
+Git 查询要求项目根本身是含真实 `.git` 目录的标准工作树。它们不遍历子模块，也不支持外部 gitdir、linked worktree 或 partial clone。查询读取本地 Git 配置及其 include；例如 `git_diff` 可能触发配置的 clean filter，外部程序的副作用不受执行模式或补丁恢复记录约束。Git 的外部 diff、textconv、fsmonitor、自动获取对象和索引刷新写入由固定参数禁用。详见 [Git 配置与外部程序](security.md#git-配置与外部程序)。
+
+`git_diff` 不显示未跟踪文件正文，查询 diff 可能截断；补丁预演则要求完整 diff。Git 查询与搜索共用 10 秒预算和有限并发。
 
 ## 预演与提交补丁
 

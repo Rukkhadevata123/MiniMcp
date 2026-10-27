@@ -20,7 +20,7 @@ OAuth 登录失败时核对 Allowed redirect URIs、客户端显示的实际回�
 
 查看返回的 `complete`、`truncated` 和 `notices`。缩小 `path`、深度或匹配范围；目录列表默认不解析 gitignore，搜索则使用选定范围内的 ignore 文件。私密路径、链接、过大文件和部分不可读取的内容会跳过或触发错误。
 
-Git 工具要求项目根是标准工作树，`.git` 为实际目录。linked worktree、外部 gitdir、partial clone、助手、include 等配置不在支持范围；使用普通仓库及受支持配置，或在可信环境自行使用 Git。查询 diff 不包含未跟踪文件正文，且允许截断。
+Git 工具要求项目根是标准工作树，`.git` 为实际目录；linked worktree、外部 gitdir 和 partial clone 不在支持范围。查询会读取本地 Git 配置及其 include，检查配置和外部 filter 是否可用；运行这些程序的权限范围见 [安全边界](security.md#git-配置与外部程序)。查询 diff 不包含未跟踪文件正文，且允许截断。
 
 ## 补丁被拒绝或恢复有冲突
 

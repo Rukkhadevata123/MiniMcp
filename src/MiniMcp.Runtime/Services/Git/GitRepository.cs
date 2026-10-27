@@ -52,16 +52,6 @@ internal sealed class GitRepository : IDisposable
             repository = new(workspace, executable);
             await Task.Run(() => repository.InspectMetadata(token), token).ConfigureAwait(false);
             repository.CaptureControlFiles();
-            // `git config` performs gentle repository discovery before parsing --file. Run inside
-            // the inspected object directory with a ceiling at its parent, so even that setup
-            // cannot read an ambient/target repository config before --no-includes takes effect.
-            var inspectionEnvironment = new Dictionary<string, string>(EnvironmentValues)
-            { ["GIT_CEILING_DIRECTORIES"] = repository.GitDirectory };
-            var result = await ReadOnlyQueryRunner.RunAsync(executable, Path.Combine(repository.GitDirectory, "objects"),
-                ["--no-pager", "--no-optional-locks", "--no-lazy-fetch", "config", "--null", "--no-includes",
-                    "--file", Path.Combine(repository.GitDirectory, "config"), "--list"], '\0', 65536, 128 * 1024,
-                record => { ValidateConfig(record); return true; }, token, inspectionEnvironment).ConfigureAwait(false);
-            CheckResult(result);
             repository.Validate();
             return repository;
         }
@@ -110,7 +100,7 @@ internal sealed class GitRepository : IDisposable
         if (allowLimited && result.OutputLimited) return;
         if (result.OutputLimited) throw new WorkspaceException("Git metadata exceeded its inspection limit; no complete query result is available.");
         if (result.ExitCode != 0 || result.HasErrors)
-            throw new WorkspaceException("Git query failed: unsupported arguments/configuration, unreadable metadata or missing/corrupt local objects. No fetch or external helper was attempted.");
+            throw new WorkspaceException("Git query failed: unsupported arguments/configuration, unreadable metadata or missing/corrupt local objects. Check the repository and its Git configuration.");
     }
 
     private void Validate()
@@ -211,32 +201,6 @@ internal sealed class GitRepository : IDisposable
         catch (IOException) when (!File.Exists(path) && !Directory.Exists(path)) { return null; }
     }
     private sealed record MetadataFact(RecoveryFileIdentity Identity, long Length, DateTime Modified);
-
-    private static void ValidateConfig(string record)
-    {
-        var separator = record.IndexOf('\n');
-        var key = (separator < 0 ? record : record[..separator]).ToLowerInvariant();
-        var value = separator < 0 ? "true" : record[(separator + 1)..];
-        bool Boolean(params string[] allowed) => allowed.Contains(value.ToLowerInvariant(), StringComparer.Ordinal);
-        var safe = key switch
-        {
-            "core.repositoryformatversion" => value is "0" or "1",
-            "core.bare" => Boolean("false", "no", "off", "0"),
-            "core.fsmonitor" or "core.sparsecheckout" or "core.sparsecheckoutcone" => Boolean("false", "no", "off", "0"),
-            "core.filemode" or "core.logallrefupdates" or "core.symlinks" or "core.ignorecase" or "core.precomposeunicode" or
-                "core.quotepath" or "core.protectntfs" or "core.protecthfs" => Boolean("false", "true", "yes", "no", "on", "off", "0", "1"),
-            "core.autocrlf" => Boolean("true", "false", "input"),
-            "core.eol" => value is "lf" or "crlf" or "native",
-            "core.safecrlf" => Boolean("true", "false", "warn"),
-            "extensions.objectformat" => value is "sha1" or "sha256",
-            "user.name" or "user.email" or "user.signingkey" => true,
-            _ => (key.StartsWith("remote.", StringComparison.Ordinal) && (key.EndsWith(".url", StringComparison.Ordinal) ||
-                    key.EndsWith(".pushurl", StringComparison.Ordinal) || key.EndsWith(".fetch", StringComparison.Ordinal) || key.EndsWith(".tagopt", StringComparison.Ordinal))) ||
-                (key.StartsWith("branch.", StringComparison.Ordinal) && (key.EndsWith(".remote", StringComparison.Ordinal) ||
-                    key.EndsWith(".merge", StringComparison.Ordinal) || key.EndsWith(".rebase", StringComparison.Ordinal)))
-        };
-        if (!safe) throw new WorkspaceException("Unsupported repository configuration: read-only queries permit only documented basic core/user/branch/remote settings. Includes, external filters/diff/fsmonitor, redirects and unknown settings are rejected before querying.");
-    }
 
     public void Dispose() => _config.Dispose();
 }
