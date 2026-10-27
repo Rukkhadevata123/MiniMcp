@@ -172,8 +172,14 @@ internal static class RuntimeCallChecks
     {
         for (var i = 0; i < 150; i++)
         {
-            var stat = $"/proc/{child.Id}/stat";
-            if (child.HasExited || (OperatingSystem.IsLinux() && File.Exists(stat) && File.ReadAllText(stat).Contains(") Z "))) return;
+            try
+            {
+                var stat = $"/proc/{child.Id}/stat";
+                if (child.HasExited || (OperatingSystem.IsLinux() && File.ReadAllText(stat).Contains(") Z "))) return;
+            }
+            // A disappearing /proc entry may fail with ENOENT or ESRCH. Retry the process
+            // observation instead of treating an arbitrary read failure as successful cleanup.
+            catch (IOException) when (OperatingSystem.IsLinux()) { }
             await Task.Delay(20);
         }
         throw new Exception($"Bash descendant {child.Id} is still running.");

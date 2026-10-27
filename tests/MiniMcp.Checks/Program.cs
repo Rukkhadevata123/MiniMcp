@@ -288,10 +288,12 @@ static async Task AssertStopped(int pid)
         {
             using var child = Process.GetProcessById(pid);
             var stat = $"/proc/{pid}/stat";
-            if (child.HasExited || (File.Exists(stat) && File.ReadAllText(stat).Contains(") Z "))) return;
+            if (child.HasExited || File.ReadAllText(stat).Contains(") Z ")) return;
         }
         catch (ArgumentException) { return; }
-        catch (FileNotFoundException) { return; }
+        // /proc can disappear after HasExited, including ESRCH during the read itself.
+        // An I/O failure alone is not proof of exit; recheck the process on the next attempt.
+        catch (IOException) { }
         await Task.Delay(20);
     }
     throw new Exception($"Child process {pid} is still running.");

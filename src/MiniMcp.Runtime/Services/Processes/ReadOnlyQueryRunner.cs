@@ -113,7 +113,7 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                     var frame = new StringBuilder();
                     var total = 0;
                     int count;
-                    while ((count = await lifetime.StandardOutput.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+                    while (!limited && (count = await lifetime.StandardOutput.ReadAsync(buffer).ConfigureAwait(false)) > 0)
                     {
                         for (var index = 0; index < count && !limited; index++)
                         {
@@ -124,7 +124,14 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                             frame.Clear();
                         }
                     }
-                    if (!limited && !cancellationToken.IsCancellationRequested && frame.Length != 0)
+                    if (limited)
+                    {
+                        // Quota cancellation can kill the writer halfway through a UTF-8 character.
+                        // No more records will be accepted: drain discarded bytes without flushing
+                        // StreamReader's strict decoder on that intentionally incomplete tail.
+                        await lifetime.StandardOutput.BaseStream.CopyToAsync(Stream.Null, 4096).ConfigureAwait(false);
+                    }
+                    else if (!cancellationToken.IsCancellationRequested && frame.Length != 0)
                         throw new WorkspaceException("The query program returned an incomplete output record.");
                 }
                 catch (DecoderFallbackException)

@@ -189,12 +189,22 @@ internal static class HttpSecurityChecks
                     request.Version = HttpVersion.Version11;
                     request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
                     request.Content = chunked ? new UnknownLengthContent(new byte[size]) : new ByteArrayContent(new byte[size]);
-                    using var response = await fixture.Client.SendAsync(request);
-                    // Kestrel includes chunk prefixes/suffixes in the limit, unlike Content-Length payloads.
-                    var fits = size < limit || (!chunked && size == limit);
-                    var expected = fits ? HttpStatusCode.NoContent : HttpStatusCode.RequestEntityTooLarge;
-                    if (response.StatusCode != expected)
-                        throw new Exception($"{mode}, chunked={chunked}, bytes={size}: expected {(int)expected}, got {(int)response.StatusCode}; {await response.Content.ReadAsStringAsync()}");
+                    // Kestrel rejects an oversized Content-Length before consuming the body.
+                    // Wait for that response instead of racing a 2 MiB upload against its close.
+                    if (!chunked && size > limit) request.Headers.ExpectContinue = true;
+                    try
+                    {
+                        using var response = await fixture.Client.SendAsync(request);
+                        // Kestrel includes chunk prefixes/suffixes in the limit, unlike Content-Length payloads.
+                        var fits = size < limit || (!chunked && size == limit);
+                        var expected = fits ? HttpStatusCode.NoContent : HttpStatusCode.RequestEntityTooLarge;
+                        if (response.StatusCode != expected)
+                            throw new Exception($"{mode}, chunked={chunked}, bytes={size}: expected {(int)expected}, got {(int)response.StatusCode}; {await response.Content.ReadAsStringAsync()}");
+                    }
+                    catch (HttpRequestException error)
+                    {
+                        throw new HttpRequestException($"{mode}, chunked={chunked}, bytes={size}: HTTP request failed.", error);
+                    }
                 }
             }
         });

@@ -83,9 +83,27 @@ internal static class TunnelChecks
             await fixture.Runtime.StopTunnelAsync();
         });
 
-        await check("tunnel: OS creation failure cleans the initial Host and permits a fresh startup", async () =>
+        await check("tunnel: invalid executable during initial startup cleans the Host and permits a fresh startup", async () =>
         {
-            await using var fixture = new TunnelFixture();
+            TunnelFixture? fixture = null;
+            var waitingForInvalidProgram = true;
+            var checks = new TunnelCheckpoints
+            {
+                AfterStart = async () =>
+                {
+                    // Linux starts setsid first, so an invalid target executable can fail only
+                    // after process creation. Make its exit observable before checking startup.
+                    if (!waitingForInvalidProgram || !OperatingSystem.IsLinux()) return;
+                    var pid = fixture!.Runtime.Snapshot.Tunnel.ProcessId ?? throw new Exception("Missing tunnel process ID.");
+                    try
+                    {
+                        using var process = Process.GetProcessById(pid);
+                        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                    }
+                    catch (ArgumentException) { } // It may already have been reaped.
+                }
+            };
+            await using var owned = fixture = new TunnelFixture(checks: checks);
             var invalid = Path.Combine(fixture.DirectoryPath, "not a program.exe");
             File.WriteAllText(invalid, "This is not an executable image.");
             if (OperatingSystem.IsLinux()) File.SetUnixFileMode(invalid, UnixFileMode.UserRead | UnixFileMode.UserExecute);
@@ -93,6 +111,7 @@ internal static class TunnelChecks
             await Reject<Exception>(() => fixture.Runtime.StartAsync(configuration));
             Assert(fixture.Runtime.Snapshot is { State: RuntimeState.Faulted, Address: null } && fixture.Runtime.Execution is null &&
                 fixture.Runtime.Snapshot.Tunnel.ProcessId is null, "Failed startup releases all ownership");
+            waitingForInvalidProgram = false;
             await fixture.Runtime.StartAsync(fixture.Configuration);
             await fixture.ReportAsync();
             await fixture.HealthyAsync();

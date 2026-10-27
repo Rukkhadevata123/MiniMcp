@@ -4,6 +4,9 @@ using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Recovery;
 
+if (args is ["--query-output-child", var outputMode, var outputMarker])
+    return await QueryOutputChecks.ChildAsync(outputMode, outputMarker);
+
 if (args is ["--cli-recovery-terminal", var terminalAction] && terminalAction is "restore" or "cancel" or "interrupt")
     return await CliRecoveryTerminalChecks.RunAsync(terminalAction);
 
@@ -296,6 +299,7 @@ await ConfigurationValidatorChecks.RunAsync(Check);
 await ConfigurationValueChecks.RunAsync(Check);
 await AuthenticationRegistrationChecks.RunAsync(Check);
 await ToolExecutionChecks.RunAsync(Check);
+await QueryOutputChecks.RunAsync(Check);
 await WorkspaceQueryChecks.RunAsync(Check);
 await GitQueryChecks.RunAsync(Check);
 await ConfigurationDependencyChecks.RunAsync(Check);
