@@ -16,11 +16,11 @@
 
 完整反向 diff 使用独立的只读、可选择文本区域，可按正文需求提供横向/纵向滚动。记录列表摘要可以截短，但待确认的完整预览不能使用摘要、MaxLines、日志缓存或截断文本替代。冲突、无法完整生成预览、只读模式或记录状态不允许时，恢复动作应按后端结果禁用。
 
-恢复确认属于用户主动选择某条记录后的具体操作。先完成完整预览，再明确确认并调用同一个恢复核心；不添加通用待审批页、远程 confirmed 参数或自动恢复。布局统一不改变强制备份、冲突检查和失败回滚约束。
+恢复确认属于用户主动选择某条记录后的具体操作。先完成完整预览，再明确确认并调用同一个恢复核心；恢复过程保留强制备份、冲突检查和失败回滚。
 
 ## 参考与验证
 
-原生进入效果采用微软的 [Page transitions](https://learn.microsoft.com/en-us/windows/apps/develop/motion/page-transitions) 和 [EntranceNavigationTransitionInfo](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.animation.entrancenavigationtransitioninfo) 定义。技能参考以本地 winui-design、winui-xaml-patterns 为主；也核对了微软 [Windows development skills](https://github.com/microsoft/win-dev-skills) 的维护位置，不额外安装 CLI 或引入运行依赖。
+原生进入效果采用微软的 [Page transitions](https://learn.microsoft.com/en-us/windows/apps/develop/motion/page-transitions) 和 [EntranceNavigationTransitionInfo](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.animation.entrancenavigationtransitioninfo) 定义。
 
 真实窗口检查覆盖四页的页头位置/宽度一致、缓存实例与滚动保留、快速切换、无返回栈增长、系统动画偏好、缓存页主题资源、日志虚拟化以及既有配置/隧道/关闭路径。测试截图只使用临时配置，不使用用户的 settings、policy 或 token。
 

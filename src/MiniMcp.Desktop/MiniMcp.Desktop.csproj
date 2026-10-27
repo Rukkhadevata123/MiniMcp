@@ -19,4 +19,13 @@
     <ProjectReference Include="../MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
+  <Target Name="IncludeDesktopResourceIndexInPublish" AfterTargets="ComputeFilesToPublish">
+    <Error Condition="!Exists('$(TargetDir)$(AssemblyName).pri')" Text="Desktop resource index is missing from the build output." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri">
+        <RelativePath>$(AssemblyName).pri</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>
