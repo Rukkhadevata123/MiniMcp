@@ -193,7 +193,7 @@ internal static class RecoveryManifestReplacementChecks
             File.WriteAllText(Path.Combine(outside, "sentinel"), "outside data");
             var probe = Path.Combine(fixture.DirectoryPath, "probe");
             try { Directory.CreateSymbolicLink(probe, outside); }
-            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { Console.WriteLine("SKIP manifest replacement link check: symbolic link permission unavailable."); return; }
+            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             Directory.Delete(probe);
             RecoveryStore.PreparedRecord? record = null;
             var detached = Path.Combine(fixture.DirectoryPath, "detached-record");

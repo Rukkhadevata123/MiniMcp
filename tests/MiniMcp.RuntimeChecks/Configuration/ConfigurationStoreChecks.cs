@@ -7,11 +7,26 @@ internal static class ConfigurationStoreChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-configuration-{Guid.NewGuid():N}");
-        var paths = new ConfigurationPaths(Path.Combine(temporary, "user config"), Path.Combine(temporary, "user state"));
-        var loader = new ConfigurationStore(paths);
-        var selected = Path.Combine(temporary, "project", "settings.json");
-        Directory.CreateDirectory(Path.GetDirectoryName(selected)!);
+        string temporary = "", selected = "";
+        ConfigurationPaths paths = null!;
+        ConfigurationStore loader = null!;
+        async Task Case(string name, Func<Task> action)
+        {
+            await check(name, async () =>
+            {
+                temporary = Path.Combine(Path.GetTempPath(), $"minimcp-configuration-{Guid.NewGuid():N}");
+                paths = new ConfigurationPaths(Path.Combine(temporary, "user config"), Path.Combine(temporary, "user state"));
+                loader = new ConfigurationStore(paths);
+                selected = Path.Combine(temporary, "project", "settings.json");
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(selected)!);
+                    await action();
+                }
+                finally { CheckRunner.Cleanup(temporary, () =>
+                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }); }
+            });
+        }
         void Assert(bool condition)
         {
             if (!condition) throw new Exception("Configuration file loading assertion failed.");
@@ -23,9 +38,8 @@ internal static class ConfigurationStoreChecks
             throw new Exception($"Expected {typeof(TException).Name} while loading configuration.");
         }
 
-        try
         {
-            await check("configuration loader reads UTF-8 with BOM and fingerprints the exact original bytes", async () =>
+            await Case("configuration loader reads UTF-8 with BOM and fingerprints the exact original bytes", async () =>
             {
                 const string json = """{"projectRoot":"./项目 with spaces","authentication":{"mode":"Local"}}""";
                 await File.WriteAllTextAsync(selected, json, new UTF8Encoding(true));
@@ -38,8 +52,9 @@ internal static class ConfigurationStoreChecks
                 Assert((await File.ReadAllBytesAsync(selected)).SequenceEqual(bytes));
             });
 
-            await check("missing local policy defaults to read-only without reading a neighboring project policy", async () =>
+            await Case("missing local policy defaults to read-only without reading a neighboring project policy", async () =>
             {
+                await File.WriteAllTextAsync(selected, "{}");
                 await File.WriteAllTextAsync(Path.Combine(temporary, "project", "policy.json"), """{"mode":"FullAccess"}""");
                 var policy = await loader.ReadPolicyAsync();
                 Assert(policy.FilePath == paths.PolicyFile && policy.Value.Mode == ExecutionMode.ReadOnly);
@@ -49,7 +64,7 @@ internal static class ConfigurationStoreChecks
                 Assert((await loader.ReadPolicyAsync()).Value.Mode == ExecutionMode.ReadOnly);
             });
 
-            await check("configuration loader uses default settings and the fixed local policy file", async () =>
+            await Case("configuration loader uses default settings and the fixed local policy file", async () =>
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
                 await File.WriteAllTextAsync(paths.SettingsFile, """{"port":8123}""");
@@ -59,10 +74,11 @@ internal static class ConfigurationStoreChecks
                 Assert(policy.Value.Mode == ExecutionMode.ProjectEdit && policy.Revision is not null);
             });
 
-            await check("missing settings, invalid policy and policy read errors are reported instead of defaulted", async () =>
+            await Case("missing settings, invalid policy and policy read errors are reported instead of defaulted", async () =>
             {
                 var missing = await Reject<ConfigurationLoadException>(() => loader.ReadSettingsAsync("missing.json", temporary));
                 Assert(missing.InnerException is FileNotFoundException);
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
                 foreach (var json in new[] { "", "{", """{"mode":"Unknown"}""", """{"schemaVersion":99}""" })
                 {
                     await File.WriteAllTextAsync(paths.PolicyFile, json);
@@ -81,7 +97,7 @@ internal static class ConfigurationStoreChecks
                 finally { Directory.Delete(paths.PolicyFile); }
             });
 
-            await check("configuration loader enforces a byte limit and strict UTF-8 encoding", async () =>
+            await Case("configuration loader enforces a byte limit and strict UTF-8 encoding", async () =>
             {
                 await File.WriteAllTextAsync(selected, "{}" + new string(' ', ConfigurationStore.MaxFileBytes - 2), new UTF8Encoding(false));
                 Assert((await loader.ReadSettingsAsync(selected, temporary)).Revision is not null);
@@ -95,7 +111,7 @@ internal static class ConfigurationStoreChecks
                 await Reject<ConfigurationLoadException>(() => loader.ReadSettingsAsync(selected, temporary));
             });
 
-            await check("file loading errors identify their source and retain JSON field and position diagnostics", async () =>
+            await Case("file loading errors identify their source and retain JSON field and position diagnostics", async () =>
             {
                 await File.WriteAllTextAsync(selected, "{\n  \"port\": \"8000\"\n}");
                 var failure = await Reject<ConfigurationLoadException>(() => loader.ReadSettingsAsync(selected, temporary));
@@ -103,7 +119,7 @@ internal static class ConfigurationStoreChecks
                 Assert(failure.InnerException is JsonException { Path: "$.port", LineNumber: 1, BytePositionInLine: > 0 });
             });
 
-            await check("configuration revisions change after external edits without changing earlier snapshots", async () =>
+            await Case("configuration revisions change after external edits without changing earlier snapshots", async () =>
             {
                 await File.WriteAllTextAsync(selected, """{"port":8000}""");
                 var before = await loader.ReadSettingsAsync(selected, temporary);
@@ -112,7 +128,7 @@ internal static class ConfigurationStoreChecks
                 Assert(before.Value.Port == 8000 && after.Value.Port == 9000 && before.Revision != after.Revision);
             });
 
-            await check("cancelled configuration loads propagate cancellation without applying defaults", async () =>
+            await Case("cancelled configuration loads propagate cancellation without applying defaults", async () =>
             {
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
@@ -124,6 +140,5 @@ internal static class ConfigurationStoreChecks
                 Assert(!Directory.Exists(Path.GetDirectoryName(absentPaths.PolicyFile)));
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
     }
 }

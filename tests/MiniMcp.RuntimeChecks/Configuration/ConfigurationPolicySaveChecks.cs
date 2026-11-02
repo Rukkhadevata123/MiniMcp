@@ -6,21 +6,38 @@ internal static class ConfigurationPolicySaveChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-policy-save-{Guid.NewGuid():N}");
-        var root = Path.Combine(temporary, "project");
-        var source = Path.Combine(temporary, "settings.json");
-        var paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "state"));
-        var store = new ConfigurationStore(paths);
+        // Each selected check sets up its own files; no policy state leaks between cases.
+        string temporary = "", root = "", source = "";
+        ConfigurationPaths paths = null!;
+        ConfigurationStore store = null!;
         var draft = new AppSettings
         {
             ProjectRoot = "./project", BashPath = "./tools/bash",
             Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
         };
-        Directory.CreateDirectory(root);
-        Directory.CreateDirectory(Path.Combine(temporary, "tools"));
-        var bash = Path.Combine(temporary, "tools", "bash");
-        File.WriteAllText(bash, "Dependency fixture; never execute this file.");
-        if (OperatingSystem.IsLinux()) File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        async Task Case(string name, Func<Task> action)
+        {
+            await check(name, async () =>
+            {
+                temporary = Path.Combine(Path.GetTempPath(), $"minimcp-policy-save-{Guid.NewGuid():N}");
+                root = Path.Combine(temporary, "project");
+                source = Path.Combine(temporary, "settings.json");
+                paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "state"));
+                store = new ConfigurationStore(paths);
+                try
+                {
+                    Directory.CreateDirectory(root);
+                    Directory.CreateDirectory(Path.Combine(temporary, "tools"));
+                    var bash = Path.Combine(temporary, "tools", "bash");
+                    File.WriteAllText(bash, "Dependency fixture; never execute this file.");
+                    if (OperatingSystem.IsLinux())
+                        File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                    await action();
+                }
+                finally { CheckRunner.Cleanup(temporary, () =>
+                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }); }
+            });
+        }
         void Assert(bool condition)
         {
             if (!condition) throw new Exception("Policy save assertion failed.");
@@ -36,10 +53,14 @@ internal static class ConfigurationPolicySaveChecks
             await File.WriteAllTextAsync(source, ConfigurationJson.SerializeSettings(draft));
             return await store.ReadSettingsAsync(source, temporary);
         }
-        void NoTemporaryFiles() => Assert(!Directory.EnumerateFiles(temporary, ".minimcp-config-*.tmp", SearchOption.AllDirectories).Any());
-        try
+        async Task SeedPolicy(ConfigurationFile<AppSettings> settings)
         {
-            await check("policy saves create only the fixed local file and preserve relative recovery paths", async () =>
+            var original = await store.ReadPolicyAsync();
+            await store.SavePolicyAsync(original, settings);
+        }
+        void NoTemporaryFiles() => Assert(!Directory.EnumerateFiles(temporary, ".minimcp-config-*.tmp", SearchOption.AllDirectories).Any());
+        {
+            await Case("policy saves create only the fixed local file and preserve relative recovery paths", async () =>
             {
                 var settings = await Settings();
                 var original = await store.ReadPolicyAsync();
@@ -56,7 +77,7 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("policy updates support each execution mode without changing saved settings", async () =>
+            await Case("policy updates support each execution mode without changing saved settings", async () =>
             {
                 var settings = await Settings();
                 var oldSettings = await File.ReadAllBytesAsync(source);
@@ -70,9 +91,10 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("policy saves reject alternate destinations and contexts without a saved revision", async () =>
+            await Case("policy saves reject alternate destinations and contexts without a saved revision", async () =>
             {
                 var settings = await Settings();
+                await SeedPolicy(settings);
                 var original = await store.ReadPolicyAsync();
                 var oldPolicy = await File.ReadAllBytesAsync(paths.PolicyFile);
                 foreach (var path in new[] { "policy.json", source, Path.Combine(root, "policy.json") })
@@ -86,10 +108,11 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("policy saves reject changed, deleted or unexpectedly created policy files", async () =>
+            await Case("policy saves reject changed, deleted or unexpectedly created policy files", async () =>
             {
                 var settings = await Settings();
                 var original = await store.ReadPolicyAsync();
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
                 await File.WriteAllTextAsync(paths.PolicyFile, "{}");
                 await Reject<ConfigurationConflictException>(() => store.SavePolicyAsync(original, settings));
                 Assert(await File.ReadAllTextAsync(paths.PolicyFile) == "{}");
@@ -106,9 +129,10 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("policy saves detect settings changes before and after staging", async () =>
+            await Case("policy saves detect settings changes before and after staging", async () =>
             {
                 var settings = await Settings();
+                await SeedPolicy(settings);
                 var original = await store.ReadPolicyAsync();
                 var oldPolicy = await File.ReadAllBytesAsync(paths.PolicyFile);
                 await File.WriteAllTextAsync(source, "invalid externally edited JSON");
@@ -121,9 +145,10 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("policy validation uses persisted settings and rejects invalid modes or recovery boundaries", async () =>
+            await Case("policy validation uses persisted settings and rejects invalid modes or recovery boundaries", async () =>
             {
                 var settings = await Settings();
+                await SeedPolicy(settings);
                 var original = await store.ReadPolicyAsync();
                 var oldPolicy = await File.ReadAllBytesAsync(paths.PolicyFile);
                 foreach (var value in new[]
@@ -141,9 +166,10 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("cancelled or failed policy saves leave the original file and clean temporary storage", async () =>
+            await Case("cancelled or failed policy saves leave the original file and clean temporary storage", async () =>
             {
                 var settings = await Settings();
+                await SeedPolicy(settings);
                 var original = await store.ReadPolicyAsync();
                 var oldPolicy = await File.ReadAllBytesAsync(paths.PolicyFile);
                 using var cancelled = new CancellationTokenSource();
@@ -161,7 +187,7 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("concurrent policy saves across store instances allow one writer per revision", async () =>
+            await Case("concurrent policy saves across store instances allow one writer per revision", async () =>
             {
                 var settings = await Settings();
                 var original = await store.ReadPolicyAsync();
@@ -181,6 +207,5 @@ internal static class ConfigurationPolicySaveChecks
                 NoTemporaryFiles();
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
     }
 }

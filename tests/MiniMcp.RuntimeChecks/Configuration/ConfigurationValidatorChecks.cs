@@ -101,40 +101,39 @@ internal static class ConfigurationValidatorChecks
             });
 
             var link = Path.Combine(temporary, "project-link");
-            var linksAvailable = true;
-            try { Directory.CreateSymbolicLink(link, root); }
-            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
+            void RequireLink()
             {
-                linksAvailable = false;
-                Console.WriteLine("SKIP configuration link checks: Windows symbolic link creation requires Developer Mode or permission.");
+                if (Directory.Exists(link)) return;
+                try { Directory.CreateSymbolicLink(link, root); }
+                catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
+                { CheckRunner.Skip("Windows symbolic link creation requires Developer Mode or permission."); }
             }
-            if (linksAvailable)
+            await check("project and recovery reject both direct links and linked ancestors", () =>
             {
-                await check("project and recovery reject both direct links and linked ancestors", () =>
-                {
-                    Directory.CreateDirectory(Path.Combine(root, "child"));
-                    foreach (var path in new[] { link, Path.Combine(link, "child") })
-                        Reject("projectRoot", () => validator.NormalizePaths(settings with { ProjectRoot = path }, source, policy));
-                    foreach (var path in new[] { link, Path.Combine(link, "absent", "recovery") })
-                        Reject("recoveryDirectory", () => validator.NormalizePaths(settings, source, policy with { RecoveryDirectory = path }));
-                    return Task.CompletedTask;
-                });
-                await check("configuration validation rejects file links, dangling policy links and linked policy directories", () =>
-                {
-                    File.WriteAllText(source, "{}");
-                    var fileLink = Path.Combine(temporary, "settings-link.json");
-                    File.CreateSymbolicLink(fileLink, source);
-                    Reject("settingsFile", () => validator.NormalizePaths(settings, fileLink, policy));
-                    Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
-                    File.CreateSymbolicLink(paths.PolicyFile, Path.Combine(temporary, "missing.json"));
-                    try { Reject("policyFile", () => validator.NormalizePaths(settings, source, policy)); }
-                    finally { File.Delete(paths.PolicyFile); }
-                    var linkedPolicy = new ConfigurationValidator(new ConfigurationPaths(link, Path.Combine(temporary, "state")));
-                    Reject("policyFile", () => linkedPolicy.NormalizePaths(settings, source, policy));
-                    Assert(File.ReadAllText(source) == "{}");
-                    return Task.CompletedTask;
-                });
-            }
+                RequireLink();
+                Directory.CreateDirectory(Path.Combine(root, "child"));
+                foreach (var path in new[] { link, Path.Combine(link, "child") })
+                    Reject("projectRoot", () => validator.NormalizePaths(settings with { ProjectRoot = path }, source, policy));
+                foreach (var path in new[] { link, Path.Combine(link, "absent", "recovery") })
+                    Reject("recoveryDirectory", () => validator.NormalizePaths(settings, source, policy with { RecoveryDirectory = path }));
+                return Task.CompletedTask;
+            });
+            await check("configuration validation rejects file links, dangling policy links and linked policy directories", () =>
+            {
+                RequireLink();
+                File.WriteAllText(source, "{}");
+                var fileLink = Path.Combine(temporary, "settings-link.json");
+                File.CreateSymbolicLink(fileLink, source);
+                Reject("settingsFile", () => validator.NormalizePaths(settings, fileLink, policy));
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
+                File.CreateSymbolicLink(paths.PolicyFile, Path.Combine(temporary, "missing.json"));
+                try { Reject("policyFile", () => validator.NormalizePaths(settings, source, policy)); }
+                finally { File.Delete(paths.PolicyFile); }
+                var linkedPolicy = new ConfigurationValidator(new ConfigurationPaths(link, Path.Combine(temporary, "state")));
+                Reject("policyFile", () => linkedPolicy.NormalizePaths(settings, source, policy));
+                Assert(File.ReadAllText(source) == "{}");
+                return Task.CompletedTask;
+            });
         }
         finally { Directory.Delete(temporary, recursive: true); }
     }

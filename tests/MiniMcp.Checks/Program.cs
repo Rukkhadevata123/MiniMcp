@@ -8,13 +8,13 @@ using MiniMcp.Configuration;
 var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-checks-{Guid.NewGuid():N}");
 var root = Path.Combine(temporary, "project with spaces");
 Directory.CreateDirectory(root);
-var bashPath = ExternalProgramLocator.FindBash(Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
-    Path.Combine(Environment.CurrentDirectory, "settings.json")) ?? throw new InvalidOperationException("Bash is required for core checks.");
 var workspace = new ProjectWorkspace(root);
 var patches = new PatchService(workspace);
-var bash = new BashRunner(workspace, bashPath);
-var passed = 0;
-var failed = 0;
+var bash = new Lazy<BashRunner>(() => new BashRunner(workspace,
+    ExternalProgramLocator.FindBash(Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
+        Path.Combine(Environment.CurrentDirectory, "settings.json")) ??
+    throw new InvalidOperationException("Bash is required for real shell checks.")));
+var runner = new CheckRunner("core", args);
 
 async Task<PatchResult> Patch(string body, bool dry = false, CancellationToken ct = default)
 {
@@ -23,11 +23,7 @@ async Task<PatchResult> Patch(string body, bool dry = false, CancellationToken c
 }
 void Put(string path, string text) => File.WriteAllText(Path.Combine(root, path), text, new UTF8Encoding(false));
 string Get(string path) => File.ReadAllText(Path.Combine(root, path));
-async Task Check(string name, Func<Task> action)
-{
-    try { await action(); passed++; Console.WriteLine($"PASS {name}"); }
-    catch (Exception exception) { failed++; Console.WriteLine($"FAIL {name}: {exception}"); }
-}
+var Check = runner.InGroup("workspace");
 
 try
 {
@@ -167,7 +163,13 @@ try
         Assert(!File.Exists(Path.Combine(root, "cancelled.txt")));
         Assert(!Directory.EnumerateFiles(root, ".minimcp-*", SearchOption.AllDirectories).Any());
     });
-    if (!OperatingSystem.IsWindows())
+    if (OperatingSystem.IsWindows())
+        await Check("file, directory, dangling and move-target symlinks rejected", () =>
+        {
+            CheckRunner.Skip("This symlink matrix currently requires Unix filesystem semantics.");
+            return Task.CompletedTask;
+        });
+    else
     {
         await Check("file, directory, dangling and move-target symlinks rejected", async () =>
         {
@@ -196,20 +198,20 @@ try
     });
     await Check("real Bash supports pipelines, multiline commands, quoting and Unicode", async () =>
     {
-        var result = await bash.RunAsync("printf '%s\\n' '你好 👋' | cat\nprintf '%s' 'a b; $literal'\nprintf 'diagnostic' >&2\nexit 7");
+        var result = await bash.Value.RunAsync("printf '%s\\n' '你好 👋' | cat\nprintf '%s' 'a b; $literal'\nprintf 'diagnostic' >&2\nexit 7");
         Assert(result.ExitCode == 7 && !result.TimedOut && result.Stdout == "你好 👋\na b; $literal" && result.Stderr == "diagnostic");
     });
     await Check("workdir is validated and shell state does not persist", async () =>
     {
         Directory.CreateDirectory(Path.Combine(root, "cwd"));
-        Assert((await bash.RunAsync("pwd", "cwd")).Stdout.TrimEnd().EndsWith("/cwd"));
-        await bash.RunAsync("export MINIMCP_TEST_STATE=hello; cd cwd");
-        var next = await bash.RunAsync("printf '%s' \"${MINIMCP_TEST_STATE-unset}\"; pwd");
+        Assert((await bash.Value.RunAsync("pwd", "cwd")).Stdout.TrimEnd().EndsWith("/cwd"));
+        await bash.Value.RunAsync("export MINIMCP_TEST_STATE=hello; cd cwd");
+        var next = await bash.Value.RunAsync("printf '%s' \"${MINIMCP_TEST_STATE-unset}\"; pwd");
         Assert(next.Stdout.StartsWith("unset") && next.Stdout.TrimEnd().EndsWith("project with spaces"));
-        await RejectAsync<WorkspaceException>(() => bash.RunAsync("pwd", ".."));
-        await RejectAsync<WorkspaceException>(() => bash.RunAsync("pwd", "missing"));
-        await RejectAsync<WorkspaceException>(() => bash.RunAsync("pwd", timeoutSeconds: 0));
-        await RejectAsync<WorkspaceException>(() => bash.RunAsync(new string('a', 65_537)));
+        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync("pwd", ".."));
+        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync("pwd", "missing"));
+        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync("pwd", timeoutSeconds: 0));
+        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync(new string('a', 65_537)));
     });
     await Check("stdin is closed and application secrets are not automatically inherited", async () =>
     {
@@ -220,7 +222,7 @@ try
             Put("startup.sh", "printf unexpected-startup");
             Environment.SetEnvironmentVariable("MINIMCP_CHECK_SECRET", "test-only-secret");
             Environment.SetEnvironmentVariable("BASH_ENV", Path.Combine(root, "startup.sh"));
-            var result = await bash.RunAsync("if read -r x; then exit 9; fi; printf '%s' \"${MINIMCP_CHECK_SECRET-unset}\"");
+            var result = await bash.Value.RunAsync("if read -r x; then exit 9; fi; printf '%s' \"${MINIMCP_CHECK_SECRET-unset}\"");
             Assert(result.ExitCode == 0 && result.Stdout == "unset");
         }
         finally
@@ -231,52 +233,65 @@ try
     });
     await Check("large stdout and stderr are drained and bounded independently", async () =>
     {
-        var result = await bash.RunAsync("for ((i=0; i<3000; i++)); do printf 'abcdefghijklmnopqrstuvwxyz\\n'; printf 'abcdefghijklmnopqrstuvwxyz\\n' >&2; done");
+        var result = await bash.Value.RunAsync("for ((i=0; i<3000; i++)); do printf 'abcdefghijklmnopqrstuvwxyz\\n'; printf 'abcdefghijklmnopqrstuvwxyz\\n' >&2; done");
         Assert(result.ExitCode == 0 && result.OutputTruncated && result.Stdout.Length == 16_000 && result.Stderr.Length == 16_000);
     });
     await Check("timeout returns partial output and releases the mutation lock", async () =>
     {
-        var result = await bash.RunAsync("printf started; sleep 30", timeoutSeconds: 1);
+        var result = await bash.Value.RunAsync("printf started; sleep 30", timeoutSeconds: 1);
         Assert(result.TimedOut && result.ExitCode is null && result.Stdout == "started");
         await Patch("*** Add File: after-timeout.txt\n+ok");
-        Assert((await bash.RunAsync("exit 0")).ExitCode == 0);
+        Assert((await bash.Value.RunAsync("exit 0")).ExitCode == 0);
     });
     await Check("client cancellation cleans up and releases the mutation lock", async () =>
     {
         using var cancelled = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-        await RejectAsync<OperationCanceledException>(() => bash.RunAsync("sleep 30", cancellationToken: cancelled.Token));
-        Assert((await bash.RunAsync("exit 0")).ExitCode == 0);
+        await RejectAsync<OperationCanceledException>(() => bash.Value.RunAsync("sleep 30", cancellationToken: cancelled.Token));
+        Assert((await bash.Value.RunAsync("exit 0")).ExitCode == 0);
     });
     if (OperatingSystem.IsLinux())
     {
         foreach (var normalExit in new[] { false, true })
             await Check(normalExit ? "normal shell exit cleans up background children" : "timeout kills descendants", async () =>
             {
-                var result = await bash.RunAsync("sleep 30 & child=$!; printf '%s' \"$child\"; " + (normalExit ? "exit 0" : "wait"), timeoutSeconds: 1);
+                var result = await bash.Value.RunAsync("sleep 30 & child=$!; printf '%s' \"$child\"; " + (normalExit ? "exit 0" : "wait"), timeoutSeconds: 1);
                 Assert(normalExit ? result.ExitCode == 0 : result.TimedOut);
                 await AssertStopped(int.Parse(result.Stdout));
             });
         await Check("client cancellation kills an observed child process", async () =>
         {
             using var cancelled = new CancellationTokenSource();
-            var running = bash.RunAsync("sleep 30 & printf '%s' \"$!\" > cancel-child.pid; wait", cancellationToken: cancelled.Token);
+            var running = bash.Value.RunAsync("sleep 30 & printf '%s' \"$!\" > cancel-child.pid; wait", cancellationToken: cancelled.Token);
             for (var i = 0; i < 200 && !File.Exists(Path.Combine(root, "cancel-child.pid")); i++) await Task.Delay(10);
             cancelled.Cancel();
             await RejectAsync<OperationCanceledException>(() => running);
             await AssertStopped(int.Parse(Get("cancel-child.pid")));
         });
     }
-    await PatchPlanChecks.RunAsync(Check);
-    await PatchCommitOutcomeChecks.RunAsync(Check);
-    await PatchDiffChecks.RunAsync(Check);
-    await PatchRiskChecks.RunAsync(Check);
-    await PatchBatchChecks.RunAsync(Check);
-    await PatchWritePolicyChecks.RunAsync(Check);
-    await RecoveryDraftChecks.RunAsync(Check);
-    await RecoveryManifestJsonChecks.RunAsync(Check);
-    await RecoveryManifestValidationChecks.RunAsync(Check);
-    Console.WriteLine($"\n{passed} passed, {failed} failed.");
-    return failed == 0 ? 0 : 1;
+    else
+    {
+        foreach (var normalExit in new[] { false, true })
+            await Check(normalExit ? "normal shell exit cleans up background children" : "timeout kills descendants", () =>
+            {
+                CheckRunner.Skip("Linux process-group and /proc semantics required.");
+                return Task.CompletedTask;
+            });
+        await Check("client cancellation kills an observed child process", () =>
+        {
+            CheckRunner.Skip("Linux process-group and /proc semantics required.");
+            return Task.CompletedTask;
+        });
+    }
+    await PatchPlanChecks.RunAsync(runner.InGroup("patch.plan"));
+    await PatchCommitOutcomeChecks.RunAsync(runner.InGroup("patch.outcome"));
+    await PatchDiffChecks.RunAsync(runner.InGroup("patch.diff"));
+    await PatchRiskChecks.RunAsync(runner.InGroup("patch.risk"));
+    await PatchBatchChecks.RunAsync(runner.InGroup("patch.batch"));
+    await PatchWritePolicyChecks.RunAsync(runner.InGroup("patch.write-policy"));
+    await RecoveryDraftChecks.RunAsync(runner.InGroup("recovery.draft"));
+    await RecoveryManifestJsonChecks.RunAsync(runner.InGroup("recovery.json"));
+    await RecoveryManifestValidationChecks.RunAsync(runner.InGroup("recovery.validation"));
+    return runner.Finish();
 }
 finally { Directory.Delete(temporary, recursive: true); }
 

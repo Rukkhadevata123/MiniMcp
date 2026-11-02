@@ -6,13 +6,29 @@ internal static class ConfigurationSaveChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-save-{Guid.NewGuid():N}");
-        var root = Path.Combine(temporary, "project");
-        var source = Path.Combine(temporary, "settings.json");
-        var paths = new ConfigurationPaths(Path.Combine(temporary, "local config"), Path.Combine(temporary, "state"));
-        var store = new ConfigurationStore(paths);
+        // Check callbacks are executed sequentially; each selected case gets an independent fixture.
+        string temporary = "", root = "", source = "";
+        ConfigurationPaths paths = null!;
+        ConfigurationStore store = null!;
         var draft = new AppSettings { ProjectRoot = "./project", Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } };
-        Directory.CreateDirectory(root);
+        async Task Case(string name, Func<Task> action)
+        {
+            await check(name, async () =>
+            {
+                temporary = Path.Combine(Path.GetTempPath(), $"minimcp-save-{Guid.NewGuid():N}");
+                root = Path.Combine(temporary, "project");
+                source = Path.Combine(temporary, "settings.json");
+                paths = new ConfigurationPaths(Path.Combine(temporary, "local config"), Path.Combine(temporary, "state"));
+                store = new ConfigurationStore(paths);
+                try
+                {
+                    Directory.CreateDirectory(root);
+                    await action();
+                }
+                finally { CheckRunner.Cleanup(temporary, () =>
+                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }); }
+            });
+        }
         void Assert(bool condition)
         {
             if (!condition) throw new Exception("Configuration save assertion failed.");
@@ -29,9 +45,8 @@ internal static class ConfigurationSaveChecks
             return await store.ReadSettingsAsync(source, temporary);
         }
         void NoTemporaryFiles() => Assert(!Directory.EnumerateFiles(temporary, ".minimcp-config-*.tmp", SearchOption.AllDirectories).Any());
-        try
         {
-            await check("settings saves create UTF-8 files and preserve draft paths with accurate revisions", async () =>
+            await Case("settings saves create UTF-8 files and preserve draft paths with accurate revisions", async () =>
             {
                 var path = Path.Combine(temporary, "new", "nested", "settings.json");
                 var value = draft with { ProjectRoot = "../../project" };
@@ -51,7 +66,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("settings updates replace a complete file and return the revision needed for another save", async () =>
+            await Case("settings updates replace a complete file and return the revision needed for another save", async () =>
             {
                 var original = await Seed();
                 if (OperatingSystem.IsLinux())
@@ -67,7 +82,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("settings saves reject changed, deleted and unexpectedly created targets", async () =>
+            await Case("settings saves reject changed, deleted and unexpectedly created targets", async () =>
             {
                 var original = await Seed();
                 var external = Encoding.UTF8.GetBytes(ConfigurationJson.SerializeSettings(draft));
@@ -83,7 +98,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("settings and policy revisions are rechecked after staging", async () =>
+            await Case("settings and policy revisions are rechecked after staging", async () =>
             {
                 var original = await Seed();
                 var external = ConfigurationJson.SerializeSettings(draft with { Port = 9000 });
@@ -100,7 +115,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("cancelled settings saves keep the old file and remove staged files and unused directories", async () =>
+            await Case("cancelled settings saves keep the old file and remove staged files and unused directories", async () =>
             {
                 var original = await Seed();
                 var oldBytes = await File.ReadAllBytesAsync(source);
@@ -120,7 +135,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("failed preparation and replacement preserve the old settings and clean temporary files", async () =>
+            await Case("failed preparation and replacement preserve the old settings and clean temporary files", async () =>
             {
                 var original = await Seed();
                 var oldBytes = await File.ReadAllBytesAsync(source);
@@ -142,7 +157,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("invalid and oversized settings are rejected before creating storage or changing existing files", async () =>
+            await Case("invalid and oversized settings are rejected before creating storage or changing existing files", async () =>
             {
                 var original = await Seed();
                 var oldBytes = await File.ReadAllBytesAsync(source);
@@ -159,6 +174,7 @@ internal static class ConfigurationSaveChecks
                         new ConfigurationFile<AppSettings>(reserved, draft with { ProjectRoot = root }, null)));
                     Assert(failure.Field == "settingsFile");
                 }
+                Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
                 await File.WriteAllTextAsync(paths.PolicyFile, """{"mode":"Unknown"}""");
                 try { await Reject<ConfigurationLoadException>(() => store.SaveSettingsAsync(original)); }
                 finally { await File.WriteAllTextAsync(paths.PolicyFile, "{}"); }
@@ -166,7 +182,7 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
 
-            await check("concurrent saves across store instances allow one writer per original revision", async () =>
+            await Case("concurrent saves across store instances allow one writer per original revision", async () =>
             {
                 var original = await Seed();
                 async Task<bool> Attempt(int port)
@@ -184,6 +200,5 @@ internal static class ConfigurationSaveChecks
                 NoTemporaryFiles();
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
     }
 }

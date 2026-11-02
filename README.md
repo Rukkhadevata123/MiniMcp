@@ -77,6 +77,8 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 Windows 还可执行 `dotnet run --project tests/MiniMcp.DesktopChecks`，加上 `-- --ui` 运行实际窗口交互检查。检查需要相关的 Bash、ripgrep 和 Git；Runtime 检查使用 `dotnet run` 或生成的 apphost 启动受控子进程。
 
+四个检查入口都支持按组、用例 ID、子串筛选和列表模式，并分别报告 Pass/Fail/Skip、耗时和清理错误。外部程序仅由需要它的检查使用；纯逻辑检查不依赖 Bash。详细用法和首批按组运行基线参见 [测试说明](tests/README.md)。
+
 ## 实现参考与许可证
 
 补丁引擎和进程执行代码使用 C# 实现：补丁格式参考 [OpenAI Codex apply-patch 解析器](https://github.com/openai/codex/blob/main/codex-rs/apply-patch/src/parser.rs)（Apache-2.0）；一次性 Bash 的接口设计参考 [DeepSeek Harness tool-bash](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/shell/tool-bash/README.md)（MIT）。进程清理使用 Linux [setsid](https://man7.org/linux/man-pages/man1/setsid.1.html) 和 Windows [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)。

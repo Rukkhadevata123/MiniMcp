@@ -210,6 +210,10 @@ internal static class PatchCommitOutcomeChecks
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => System.IO.Path.GetRelativePath(Root, path) + ":" + (Directory.Exists(path) ? "directory" :
                 Convert.ToBase64String(File.ReadAllBytes(path)) + ":" + (OperatingSystem.IsWindows() ? "" : ((int)File.GetUnixFileMode(path)).ToString(System.Globalization.CultureInfo.InvariantCulture)))).ToArray();
-        public void Dispose() { Workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose()
+        {
+            CheckRunner.Cleanup("outcome mutation gate", Workspace.Mutations.Dispose);
+            CheckRunner.Cleanup(DirectoryPath, () => CheckRunner.DeleteTemporaryDirectory(DirectoryPath));
+        }
     }
 }

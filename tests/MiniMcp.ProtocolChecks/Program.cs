@@ -11,14 +11,19 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 // Exercise the real SDK and shared execution boundary over in-memory JSON-RPC streams.
-var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-protocol-{Guid.NewGuid():N}");
-Directory.CreateDirectory(temporary);
-try
-{
-    foreach (var mode in Enum.GetValues<ExecutionMode>()) await CheckModeAsync(temporary, mode);
-    return 0;
-}
-finally { Directory.Delete(temporary, recursive: true); }
+var runner = new CheckRunner("protocol", args);
+foreach (var mode in Enum.GetValues<ExecutionMode>())
+    await runner.CheckAsync("mcp", mode.ToString(), async () =>
+    {
+        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-protocol-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(temporary);
+            await CheckModeAsync(temporary, mode);
+        }
+        finally { CheckRunner.Cleanup(temporary, () => CheckRunner.DeleteTemporaryDirectory(temporary)); }
+    });
+return runner.Finish();
 
 static async Task CheckModeAsync(string temporary, ExecutionMode mode)
 {
@@ -78,7 +83,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
                     .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
         }
-        Console.WriteLine($"PASS {mode}: MCP initialize, exact tool list and parameter schemas");
+        Console.WriteLine($"STEP {mode}: MCP initialize, exact tool list and parameter schemas");
 
         async Task<JsonElement> Call(string name, Dictionary<string, object?> arguments, bool error = false, string? message = null)
         {
@@ -144,7 +149,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             {
                 ["patch"] = patches[2], ["approved"] = true, ["mode"] = "FullAccess"
             }, error: true);
-        Console.WriteLine($"PASS {mode}: read boundaries, patch previews and locally denied writes");
+        Console.WriteLine($"STEP {mode}: read boundaries, patch previews and locally denied writes");
 
         var riskCases = new (string Body, string[] Reasons)[]
         {
@@ -171,7 +176,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 await Call("apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true },
                     error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
-        Console.WriteLine($"PASS {mode}: risk causes, batch thresholds, selected settings and mode decisions cannot be overridden by tool arguments");
+        Console.WriteLine($"STEP {mode}: risk causes, batch thresholds, selected settings and mode decisions cannot be overridden by tool arguments");
 
         var longLine = new string('x', 180_000) + "TAIL中👋\t\u001b";
         var large = await Call("apply_patch", new() { ["patch"] = "*** Begin Patch\n*** Add File: large.txt\n+" + longLine + "\n*** End Patch", ["dry_run"] = true });
@@ -179,7 +184,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         Assert(largeDiff.Length > 16_000 && largeDiff.Contains("TAIL中👋\\t\\u001b\\n\""), "Large preview remains complete and escaped");
         Assert(large.GetProperty("statistics").GetProperty("addedBytes").GetInt64() == System.Text.Encoding.UTF8.GetByteCount(longLine + "\n"), "Statistics use unescaped UTF-8 bytes");
         CheckReview(large, mode, "ChangedByteLimitExceeded");
-        Console.WriteLine($"PASS {mode}: complete large escaped diff survives structured and text serialization");
+        Console.WriteLine($"STEP {mode}: complete large escaped diff survives structured and text serialization");
 
         await Call("apply_patch", new()
         {
@@ -192,7 +197,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         var complex = "*** Begin Patch\n*** Update File: complex.txt\n@@\n" +
             string.Concat(Enumerable.Range(0, 1000).Select(i => $"-old{i}\n")) + string.Concat(Enumerable.Range(0, 1000).Select(i => $"+new{i}\n")) + "*** End Patch";
         await Call("apply_patch", new() { ["patch"] = complex, ["dry_run"] = true }, error: true, message: "computation limit");
-        Console.WriteLine($"PASS {mode}: oversized and complex previews return tool errors without partial content");
+        Console.WriteLine($"STEP {mode}: oversized and complex previews return tool errors without partial content");
 
         if (mode != ExecutionMode.FullAccess)
         {
@@ -217,13 +222,13 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             await Call("bash", new() { ["command"] = "pwd", ["timeout_seconds"] = 0 }, error: true);
             await Call("bash", new() { ["command"] = "pwd", ["workdir"] = ".." }, error: true, message: "outside");
         }
-        Console.WriteLine($"PASS {mode}: Bash permissions and account execution boundaries");
+        Console.WriteLine($"STEP {mode}: Bash permissions and account execution boundaries");
 
         // Tool errors leave the server usable; previews and denials must not create storage artifacts.
         Assert((await Call("read_file", new() { ["path"] = "sample.txt" })).GetProperty("content").GetString() == "first\nsecond\n",
             "Read after tool errors");
         Assert(before.SequenceEqual(Snapshot(directory)), "Tools changed files, directories, private data or recovery storage");
-        Console.WriteLine($"PASS {mode}: tool errors preserve service availability and leave files/directories unchanged");
+        Console.WriteLine($"STEP {mode}: tool errors preserve service availability and leave files/directories unchanged");
 
         var writes = new[] { "*** Add File: written.md\n+first", "*** Update File: written.md\n@@\n-first\n+second",
             "*** Update File: written.md\n*** Move to: committed/moved.md", "*** Delete File: committed/moved.md" };
@@ -255,7 +260,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         Assert(mode == ExecutionMode.ReadOnly ? !Directory.Exists(configuration.Policy.RecoveryDirectory) :
             Directory.EnumerateDirectories(configuration.Policy.RecoveryDirectory).Count() == ids.Count, "No unrecorded fallback or extra records");
         if (mode == ExecutionMode.ProjectEdit) Assert(File.ReadAllText(Path.Combine(root, "written.md")) == "second\n", "Approval denial preserves existing local output");
-        Console.WriteLine($"PASS {mode}: real recorded writes, original backups and unforgeable local policy");
+        Console.WriteLine($"STEP {mode}: real recorded writes, original backups and unforgeable local policy");
     }
     finally
     {

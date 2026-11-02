@@ -95,6 +95,7 @@ internal static class RecoveryRestoreFaultChecks
                 new[] { (PatchCommitStage.BeforeInstall, index), (PatchCommitStage.Installed, index) }));
             foreach (var boundary in boundaries)
             {
+                CheckRunner.Scenario($"restore-stage={boundary.Item1}, install-index={boundary.Item2}");
                 using var fixture = new PatchExecutionFixture(); Seed(fixture);
                 using var cancel = new CancellationTokenSource();
                 var armed = false; var failure = new IOException("Injected restore installation failure.");
@@ -157,6 +158,7 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var terminal in Enum.GetValues<PatchCommitState>())
                 foreach (var boundary in Enum.GetValues<RecoveryManifestReplacementStage>())
                 {
+                    CheckRunner.Scenario($"terminal={terminal}, replacement={boundary}");
                     using var fixture = new PatchExecutionFixture();
                     var armed = false; var finishing = false; var failOnce = true;
                     await using var execution = fixture.Execution((stage, _) =>

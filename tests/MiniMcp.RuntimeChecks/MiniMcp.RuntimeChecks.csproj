@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
+    <Compile Include="../CheckInfrastructure/CheckRunner.cs" Link="CheckRunner.cs" />
     <ProjectReference Include="../../src/MiniMcp.Cli/MiniMcp.Cli.csproj" />
     <None Include="../../examples/settings.local.json;../../examples/policy.readonly.json"
           Link="examples/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

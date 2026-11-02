@@ -249,7 +249,7 @@ internal static class GitQueryChecks
             }
             finally { foreach (var (key, value) in previous) Environment.SetEnvironmentVariable(key, value); }
         });
-        await check("git queries: external object stores/worktree layouts and metadata links are unsupported", async () =>
+        await check("git queries: external object stores and linked worktree layouts are unsupported", async () =>
         {
             await using var fixture = new Fixture();
             foreach (var relative in new[] { "commondir", "objects/info/alternates", "objects/info/http-alternates", "config.worktree", "objects/pack/test.promisor" })
@@ -268,12 +268,16 @@ internal static class GitQueryChecks
             var nested = Path.Combine(fixture.Root, "nested"); Directory.CreateDirectory(nested);
             await using var parentDiscovery = fixture.CreateExecution(nested);
             await Reject<WorkspaceException>(() => parentDiscovery.GitStatusAsync());
+        });
+        await check("git queries: linked index metadata cannot redirect local queries", async () =>
+        {
+            await using var fixture = new Fixture();
             var external = Path.Combine(fixture.DirectoryPath, "outside-index");
             File.WriteAllBytes(external, []);
             var index = Path.Combine(fixture.Root, ".git", "index");
             try { File.CreateSymbolicLink(index, external); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
-            { Console.WriteLine("SKIP Git metadata link checks: Developer Mode/permission required."); return; }
+            { CheckRunner.Skip("Windows Developer Mode or symbolic link permission required."); return; }
             try { foreach (var query in fixture.Queries()) await Reject<WorkspaceException>(query); }
             finally { File.Delete(index); }
         });

@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MiniMcp.Desktop/MiniMcp.Desktop.csproj" />
+    <Compile Include="../CheckInfrastructure/CheckRunner.cs" Link="CheckRunner.cs" />
     <None Update="PickerAutomation.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

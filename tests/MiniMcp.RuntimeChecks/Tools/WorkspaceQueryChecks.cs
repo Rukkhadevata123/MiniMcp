@@ -149,27 +149,6 @@ internal static class WorkspaceQueryChecks
         await check("queries: links, linked ignore files, special names and search depth stay within scope", async () =>
         {
             await using var fixture = new Fixture();
-            var outside = Path.Combine(fixture.Directory, "outside");
-            System.IO.Directory.CreateDirectory(outside);
-            File.WriteAllText(Path.Combine(outside, "secret.txt"), "outside-secret\n");
-            var link = fixture.PathOf("linked");
-            var links = true;
-            try { System.IO.Directory.CreateSymbolicLink(link, outside); }
-            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
-            { links = false; Console.WriteLine("SKIP query symlink checks: Windows Developer Mode/permission required."); }
-            if (links)
-            {
-                try
-                {
-                    Assert(!(await fixture.Execution.ListFilesAsync(includeHidden: true)).Entries.Any(item => item.Path == "linked"), "No link names or targets");
-                    Assert((await fixture.Execution.SearchTextAsync("outside-secret", glob: "**")).Matches.IsEmpty, "No link traversal");
-                    await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("outside-secret", "linked"));
-                    File.CreateSymbolicLink(fixture.PathOf(".rgignore"), Path.Combine(outside, "secret.txt"));
-                    try { await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("hello")); }
-                    finally { File.Delete(fixture.PathOf(".rgignore")); }
-                }
-                finally { System.IO.Directory.Delete(link); }
-            }
             fixture.Put("space [literal]/quote\".txt".Replace('"', '_'), "special-marker\n");
             fixture.Put("a/b/c.txt", "deep-marker\n");
             Assert((await fixture.Execution.SearchTextAsync("deep-marker", maxDepth: 1)).Matches.IsEmpty, "Depth excludes deeper files");
@@ -177,6 +156,27 @@ internal static class WorkspaceQueryChecks
             Assert((await fixture.Execution.SearchTextAsync("special-marker")).Matches.Single().Path.Contains("[literal]"), "Literal argument paths");
             File.WriteAllText(Path.Combine(fixture.Directory, ".ignore"), "sample.txt\n");
             Assert((await fixture.Execution.SearchTextAsync("hello")).Matches.Single().Path == "sample.txt", "External parent ignore disabled");
+        });
+        await check("queries: links and linked ignore files cannot escape the search scope", async () =>
+        {
+            await using var fixture = new Fixture();
+            var outside = Path.Combine(fixture.Directory, "outside");
+            System.IO.Directory.CreateDirectory(outside);
+            File.WriteAllText(Path.Combine(outside, "secret.txt"), "outside-secret\n");
+            var link = fixture.PathOf("linked");
+            try { System.IO.Directory.CreateSymbolicLink(link, outside); }
+            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
+            { CheckRunner.Skip("Windows Developer Mode or symbolic link permission required."); return; }
+            try
+            {
+                Assert(!(await fixture.Execution.ListFilesAsync(includeHidden: true)).Entries.Any(item => item.Path == "linked"), "No link names or targets");
+                Assert((await fixture.Execution.SearchTextAsync("outside-secret", glob: "**")).Matches.IsEmpty, "No link traversal");
+                await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("outside-secret", "linked"));
+                File.CreateSymbolicLink(fixture.PathOf(".rgignore"), Path.Combine(outside, "secret.txt"));
+                try { await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("hello")); }
+                finally { File.Delete(fixture.PathOf(".rgignore")); }
+            }
+            finally { System.IO.Directory.Delete(link); }
         });
         await check("queries: large serialized output is capped without silently calling it complete", async () =>
         {

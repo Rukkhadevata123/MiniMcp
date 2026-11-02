@@ -144,7 +144,7 @@ internal static class RecoveryStorageGuardChecks
             try { Directory.CreateSymbolicLink(fixture.Storage, outside); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
             {
-                Console.WriteLine("SKIP recovery link checks: Windows symbolic link creation requires Developer Mode or permission.");
+                CheckRunner.Skip("Windows symbolic link creation requires Developer Mode or permission.");
                 return Task.CompletedTask;
             }
             try { Reject<InvalidDataException>(() => guard.Inspect(512)); }

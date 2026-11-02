@@ -50,18 +50,11 @@ using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Allo
 {
     Timeout = TimeSpan.FromSeconds(3)
 };
-var passed = 0;
-var failed = 0;
-var checkFilter = args is ["--filter", var requestedFilter] ? requestedFilter : null;
+var runner = new CheckRunner("runtime", args);
 using var lifetimeFixture = new RuntimeLifetimeFixture();
 var configuration = lifetimeFixture.Configuration;
 
-async Task Check(string name, Func<Task> action)
-{
-    if (checkFilter is not null && !name.Contains(checkFilter, StringComparison.OrdinalIgnoreCase)) return;
-    try { await action(); passed++; Console.WriteLine($"PASS {name}"); }
-    catch (Exception exception) { failed++; Console.WriteLine($"FAIL {name}: {exception}"); }
-}
+var Check = runner.InGroup("host");
 
 async Task Healthy(McpRuntime runtime)
 {
@@ -292,57 +285,57 @@ await Check("configuration paths reject empty, malformed and ambiguous Windows p
     }
 });
 
-await ExternalProgramLocatorChecks.RunAsync(Check);
-await ConfigurationJsonChecks.RunAsync(Check);
-await ConfigurationStoreChecks.RunAsync(Check);
-await ConfigurationValidatorChecks.RunAsync(Check);
-await ConfigurationValueChecks.RunAsync(Check);
-await AuthenticationRegistrationChecks.RunAsync(Check);
-await ToolExecutionChecks.RunAsync(Check);
-await QueryOutputChecks.RunAsync(Check);
-await WorkspaceQueryChecks.RunAsync(Check);
-await GitQueryChecks.RunAsync(Check);
-await ConfigurationDependencyChecks.RunAsync(Check);
-await ConfigurationSerializationChecks.RunAsync(Check);
-await ConfigurationSaveChecks.RunAsync(Check);
-await ConfigurationPolicySaveChecks.RunAsync(Check);
-await ConfigurationPatchLimitChecks.RunAsync(Check);
-await RecoveryStorageGuardChecks.RunAsync(Check);
-await RecoveryStoreChecks.RunAsync(Check);
-await RecoveryLoadingChecks.RunAsync(Check);
-await RecoveryPreparationValidationChecks.RunAsync(Check);
-await RecoveryManifestReplacementChecks.RunAsync(Check);
-await RecoveryApplyingStateChecks.RunAsync(Check);
-await RecoveryCompletionChecks.RunAsync(Check);
-await RecoveryFinalizationChecks.RunAsync(Check);
-await RecordedPatchCommitChecks.RunAsync(Check);
-await RecordedPatchFaultChecks.RunAsync(Check);
-await RecordedPatchConcurrencyChecks.RunAsync(Check);
-await RecordedToolExecutionChecks.RunAsync(Check);
-await RecoveryPreviewChecks.RunAsync(Check);
-await RecoveryPreviewLifetimeChecks.RunAsync(Check);
-await RecoveryRestoreChecks.RunAsync(Check);
-await RecoveryRestoreFaultChecks.RunAsync(Check);
-await RecoveryRestoreLifetimeChecks.RunAsync(Check);
-await LocalRecoveryEntryChecks.RunAsync(Check);
-await RecordedToolLifetimeChecks.RunAsync(Check);
-await RuntimeConfigurationChecks.RunAsync(Check);
-await RuntimeSnapshotChecks.RunAsync(Check);
-await RuntimeDiagnosticsChecks.RunAsync(Check);
-await ProcessOutputReaderChecks.RunAsync(Check);
-await TunnelChecks.RunAsync(Check);
-await RuntimeSessionChecks.RunAsync(Check);
-await RuntimeCallChecks.RunAsync(Check);
-await HttpSecurityChecks.RunAsync(Check);
-await McpHttpChecks.RunAsync(Check);
-await RecordedToolHttpChecks.RunAsync(Check);
-await CliChecks.RunAsync(Check);
-await CliCheckCommandChecks.RunAsync(Check);
-await CliRunChecks.RunAsync(Check);
-await CliProcessChecks.RunAsync(Check);
+await CheckRunnerChecks.RunAsync(runner.InGroup("infrastructure.runner"));
+await ExternalProgramLocatorChecks.RunAsync(runner.InGroup("configuration.external-programs"));
+await ConfigurationJsonChecks.RunAsync(runner.InGroup("configuration.json"));
+await ConfigurationStoreChecks.RunAsync(runner.InGroup("configuration.store"));
+await ConfigurationValidatorChecks.RunAsync(runner.InGroup("configuration.validator"));
+await ConfigurationValueChecks.RunAsync(runner.InGroup("configuration.values"));
+await AuthenticationRegistrationChecks.RunAsync(runner.InGroup("tools.authentication"));
+await ToolExecutionChecks.RunAsync(runner.InGroup("tools.execution"));
+await QueryOutputChecks.RunAsync(runner.InGroup("tools.query-output"));
+await WorkspaceQueryChecks.RunAsync(runner.InGroup("tools.workspace-query"));
+await GitQueryChecks.RunAsync(runner.InGroup("tools.git-query"));
+await ConfigurationDependencyChecks.RunAsync(runner.InGroup("configuration.dependencies"));
+await ConfigurationSerializationChecks.RunAsync(runner.InGroup("configuration.serialization"));
+await ConfigurationSaveChecks.RunAsync(runner.InGroup("configuration.settings-save"));
+await ConfigurationPolicySaveChecks.RunAsync(runner.InGroup("configuration.policy-save"));
+await ConfigurationPatchLimitChecks.RunAsync(runner.InGroup("configuration.patch-limits"));
+await RecoveryStorageGuardChecks.RunAsync(runner.InGroup("recovery.storage-guard"));
+await RecoveryStoreChecks.RunAsync(runner.InGroup("recovery.store"));
+await RecoveryLoadingChecks.RunAsync(runner.InGroup("recovery.loading"));
+await RecoveryPreparationValidationChecks.RunAsync(runner.InGroup("recovery.preparation"));
+await RecoveryManifestReplacementChecks.RunAsync(runner.InGroup("recovery.manifest-replacement"));
+await RecoveryApplyingStateChecks.RunAsync(runner.InGroup("recovery.applying"));
+await RecoveryCompletionChecks.RunAsync(runner.InGroup("recovery.completion"));
+await RecoveryFinalizationChecks.RunAsync(runner.InGroup("recovery.finalization"));
+await RecordedPatchCommitChecks.RunAsync(runner.InGroup("recovery.patch-commit"));
+await RecordedPatchFaultChecks.RunAsync(runner.InGroup("recovery.patch-fault"));
+await RecordedPatchConcurrencyChecks.RunAsync(runner.InGroup("recovery.patch-concurrency"));
+await RecordedToolExecutionChecks.RunAsync(runner.InGroup("recovery.tool-execution"));
+await RecoveryPreviewChecks.RunAsync(runner.InGroup("recovery.preview"));
+await RecoveryPreviewLifetimeChecks.RunAsync(runner.InGroup("recovery.preview-lifetime"));
+await RecoveryRestoreChecks.RunAsync(runner.InGroup("recovery.restore"));
+await RecoveryRestoreFaultChecks.RunAsync(runner.InGroup("recovery.restore-fault"));
+await RecoveryRestoreLifetimeChecks.RunAsync(runner.InGroup("recovery.restore-lifetime"));
+await LocalRecoveryEntryChecks.RunAsync(runner.InGroup("recovery.local-entry"));
+await RecordedToolLifetimeChecks.RunAsync(runner.InGroup("recovery.tool-lifetime"));
+await RuntimeConfigurationChecks.RunAsync(runner.InGroup("host.configuration"));
+await RuntimeSnapshotChecks.RunAsync(runner.InGroup("host.snapshot"));
+await RuntimeDiagnosticsChecks.RunAsync(runner.InGroup("host.diagnostics"));
+await ProcessOutputReaderChecks.RunAsync(runner.InGroup("host.process-output"));
+await TunnelChecks.RunAsync(runner.InGroup("host.tunnel"));
+await RuntimeSessionChecks.RunAsync(runner.InGroup("host.session"));
+await RuntimeCallChecks.RunAsync(runner.InGroup("host.calls"));
+await HttpSecurityChecks.RunAsync(runner.InGroup("http.security"));
+await McpHttpChecks.RunAsync(runner.InGroup("http.mcp"));
+await RecordedToolHttpChecks.RunAsync(runner.InGroup("http.recorded-tools"));
+await CliChecks.RunAsync(runner.InGroup("cli.basic"));
+await CliCheckCommandChecks.RunAsync(runner.InGroup("cli.check-command"));
+await CliRunChecks.RunAsync(runner.InGroup("cli.run"));
+await CliProcessChecks.RunAsync(runner.InGroup("cli.process"));
 
-Console.WriteLine($"\n{passed} passed, {failed} failed.");
-return failed == 0 ? 0 : 1;
+return runner.Finish();
 
 static void Assert(bool condition)
 {

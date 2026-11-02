@@ -8,5 +8,6 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../src/MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
+    <Compile Include="../CheckInfrastructure/CheckRunner.cs" Link="CheckRunner.cs" />
   </ItemGroup>
 </Project>

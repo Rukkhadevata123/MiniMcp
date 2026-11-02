@@ -7,12 +7,8 @@ if (args is ["--ui-screenshots", var screenshotDirectory]) return UiSmoke.Run(sc
 if (args is ["--readme-screenshots", var documentationImages, var demoDirectory]) return ReadmeScreenshots.Run(documentationImages, demoDirectory);
 if (args is ["tunnel", "--no-autoupdate", "run", "--token-file", var tunnelTokenFile]) return await DesktopTunnelChild.Run(tunnelTokenFile);
 
-var passed = 0; var failed = 0;
-async Task Check(string name, Func<Task> action)
-{
-    try { await action(); passed++; Console.WriteLine("PASS " + name); }
-    catch (Exception error) { failed++; Console.WriteLine($"FAIL {name}: {error}"); }
-}
+var runner = new CheckRunner("desktop", args);
+var Check = runner.InGroup("settings");
 
 await Check("settings: missing files load restrictive drafts without creating configuration or recovery storage", async () =>
 {
@@ -161,9 +157,8 @@ await Check("settings: startup ignores unsaved drafts and selecting another sour
     Assert(fixture.Editor.SettingsPath == other && fixture.Editor.PolicyPath == fixture.Paths.PolicyFile && !fixture.Editor.HasUnsavedChanges, "Explicit selected source with fixed policy");
 });
 
-await MonitorChecks.Run(Check);
-await RecoveryHistoryChecks.Run(Check);
+await MonitorChecks.Run(runner.InGroup("monitor"));
+await RecoveryHistoryChecks.Run(runner.InGroup("recovery-history"));
 
-Console.WriteLine($"\n{passed} passed, {failed} failed.");
-return failed == 0 ? 0 : 1;
+return runner.Finish();
 static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }

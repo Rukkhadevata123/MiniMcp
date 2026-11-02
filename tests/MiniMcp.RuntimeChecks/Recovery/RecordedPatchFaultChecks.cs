@@ -19,6 +19,7 @@ internal static class RecordedPatchFaultChecks
                 .SelectMany(index => new[] { (PatchCommitStage.BeforeInstall, index), (PatchCommitStage.Installed, index) }));
             foreach (var boundary in boundaries)
             {
+                CheckRunner.Scenario($"engine-stage={boundary.Item1}, install-index={boundary.Item2}");
                 using var cancelled = new CancellationTokenSource();
                 var failure = new IOException("Injected mixed installation failure.");
                 using var fixture = new Fixture((stage, index) =>
@@ -332,6 +333,7 @@ internal static class RecordedPatchFaultChecks
             foreach (var terminal in Enum.GetValues<PatchCommitState>())
                 foreach (var boundary in Enum.GetValues<RecoveryManifestReplacementStage>())
                 {
+                    CheckRunner.Scenario($"terminal={terminal}, replacement={boundary}");
                     Fixture? fixtureRef = null;
                     using var fixture = new Fixture((stage, _) =>
                     {

@@ -272,7 +272,7 @@ internal static class RecoveryLoadingChecks
             using var fixture = new Fixture();
             var probe = Path.Combine(fixture.DirectoryPath, "probe");
             try { Directory.CreateSymbolicLink(probe, fixture.Root); }
-            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { Console.WriteLine("SKIP recovery loading link check: symbolic link permission unavailable."); return; }
+            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             Directory.Delete(probe);
             foreach (var kind in new[] { "record", "root", "ancestor", "backup", "manifest", "dangling" })
             {

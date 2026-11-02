@@ -76,6 +76,6 @@ internal sealed class PatchExecutionFixture : IDisposable
         if (!string.Equals(Path.GetDirectoryName(directory), Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
             !Path.GetFileName(directory).StartsWith("minimcp-patch-execution-", StringComparison.Ordinal)) throw new IOException("Unexpected test cleanup path.");
-        Directory.Delete(directory, recursive: true);
+        CheckRunner.Cleanup(directory, () => CheckRunner.DeleteTemporaryDirectory(directory));
     }
 }

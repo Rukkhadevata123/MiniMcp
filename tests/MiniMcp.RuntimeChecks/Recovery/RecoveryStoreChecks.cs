@@ -146,7 +146,7 @@ internal static class RecoveryStoreChecks
             File.WriteAllText(Path.Combine(outside, "before-0000.bin"), "outside data");
             var probe = Path.Combine(fixture.DirectoryPath, "link-probe");
             try { Directory.CreateSymbolicLink(probe, outside); }
-            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { Console.WriteLine("SKIP recovery cleanup link check: symbolic link permission unavailable."); return; }
+            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             Directory.Delete(probe);
             string? link = null;
             var store = fixture.Store((stage, draft) =>

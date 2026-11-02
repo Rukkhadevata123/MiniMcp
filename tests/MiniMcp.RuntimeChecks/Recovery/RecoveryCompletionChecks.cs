@@ -244,7 +244,7 @@ internal static class RecoveryCompletionChecks
             File.WriteAllText(target, "outside data");
             var probe = Path.Combine(fixture.Root, "probe");
             try { File.CreateSymbolicLink(probe, target); }
-            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { Console.WriteLine("SKIP commit observation link check: symbolic link permission unavailable."); return; }
+            catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             File.Delete(probe);
             var plan = await fixture.Plan();
             var result = await fixture.Service.CommitWithOutcomeAsync(plan);
@@ -268,6 +268,12 @@ internal static class RecoveryCompletionChecks
                 fixtureRef = fixture;
                 var result = await fixture.Service.CommitWithOutcomeAsync(await fixture.Plan()).WaitAsync(TimeSpan.FromSeconds(3));
                 Assert(result.State == PatchCommitState.Committed && result.VerifiedState == PatchCommitState.Incomplete, "No blocking FIFO read or false success");
+            });
+        else
+            await check("post-commit FIFO replacements are rejected before blocking file reads", () =>
+            {
+                CheckRunner.Skip("Linux FIFO support required.");
+                return Task.CompletedTask;
             });
     }
 

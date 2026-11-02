@@ -374,7 +374,7 @@ internal static class RecordedPatchCommitChecks
             if (!string.Equals(System.IO.Path.GetDirectoryName(directory), System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())),
                     OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
                 !System.IO.Path.GetFileName(directory).StartsWith("minimcp-recorded-commit-", StringComparison.Ordinal)) throw new IOException("Unexpected test cleanup path.");
-            Directory.Delete(directory, recursive: true);
+            CheckRunner.Cleanup(directory, () => CheckRunner.DeleteTemporaryDirectory(directory));
         }
     }
 }
