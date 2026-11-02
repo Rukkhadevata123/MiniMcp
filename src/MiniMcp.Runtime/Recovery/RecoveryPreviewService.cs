@@ -22,7 +22,9 @@ internal sealed class RecoveryPreviewService
         ArgumentNullException.ThrowIfNull(store);
         if (!string.Equals(workspace.Root, store.ProjectRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new ArgumentException("Recovery preview storage and workspace must refer to the same project.", nameof(store));
-        _workspace = workspace; _store = store; _checkpoint = checkpoint;
+        _workspace = workspace;
+        _store = store;
+        _checkpoint = checkpoint;
     }
 
     public async Task<RecoveryPreviewResult> PreviewAsync(Guid changeId, CancellationToken cancellationToken = default)
@@ -35,7 +37,10 @@ internal sealed class RecoveryPreviewService
         {
             return (await InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false)).Preview;
         }
-        finally { _workspace.Mutations.Release(); }
+        finally
+        {
+            _workspace.Mutations.Release();
+        }
     }
 
     internal bool IsFor(ProjectWorkspace workspace, RecoveryStore store) => ReferenceEquals(_workspace, workspace) && ReferenceEquals(_store, store);
@@ -49,7 +54,10 @@ internal sealed class RecoveryPreviewService
             var inspection = await InspectUnderLockAsync(changeId, token).ConfigureAwait(false);
             return RecoveryRecordDetails.Create(inspection.Record.Manifest, inspection.Preview);
         }
-        finally { _workspace.Mutations.Release(); }
+        finally
+        {
+            _workspace.Mutations.Release();
+        }
     }
 
     // The local preview or restore coordinator owns this exact workspace's mutation lock.
@@ -71,9 +79,11 @@ internal sealed class RecoveryPreviewService
                     var inverse = ReverseChanges(record, files, cancellationToken);
                     return (Changes: inverse, Diff: PatchDiffBuilder.Create(inverse, cancellationToken, forRecovery: true));
                 }, cancellationToken).ConfigureAwait(false);
-                changes = rendered.Changes; diff = rendered.Diff;
+                changes = rendered.Changes;
+                diff = rendered.Diff;
             }
         }
+
         await Checkpoint(RecoveryPreviewStage.BeforeReturn, null).ConfigureAwait(false);
         // Do not publish a clean preview from data changed while another path/diff was inspected.
         var latest = await _store.LoadAsync(changeId, cancellationToken).ConfigureAwait(false);
@@ -81,15 +91,29 @@ internal sealed class RecoveryPreviewService
         if (record.Manifest.State == RecoveryRecordState.Committed)
             _ = await ObserveAsync(record.Manifest, conflicts, reportCheckpoints: false, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
+        return CreateInspection(changeId, record, diff, changes, conflicts);
+    }
 
+    private RecoveryInspection CreateInspection(Guid changeId, RecoveryRecordSnapshot record, PatchDiff? diff,
+        ImmutableArray<PatchDiffChange> changes, List<RecoveryConflict> conflicts)
+    {
         var blockers = ImmutableArray.CreateBuilder<string>();
         if (_store.Mode == ExecutionMode.ReadOnly) blockers.Add("ReadOnlyMode");
         else if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess)) blockers.Add("UnknownMode");
         if (record.Manifest.State != RecoveryRecordState.Committed) blockers.Add("RecordNotCommitted");
-        if (conflicts.Count != 0) { blockers.Add("Conflicts"); diff = null; changes = []; }
-        var preview = new RecoveryPreviewResult(_store.RunId, changeId, record.Manifest.RunId, record.Manifest.State.ToString(), _store.Mode.ToString(),
-            diff?.Diff, diff?.Files.Select(file => new RecoveryFilePreview(file.Summary, file.Statistics)).ToImmutableArray() ?? [], diff?.Statistics,
-            conflicts.DistinctBy(conflict => (conflict.Path, conflict.Reason)).ToImmutableArray(), blockers.ToImmutable());
+        if (conflicts.Count != 0)
+        {
+            blockers.Add("Conflicts");
+            diff = null;
+            changes = [];
+        }
+        var preview = new RecoveryPreviewResult(
+            _store.RunId, changeId, record.Manifest.RunId, record.Manifest.State.ToString(), _store.Mode.ToString(),
+            diff?.Diff,
+            diff?.Files.Select(file => new RecoveryFilePreview(file.Summary, file.Statistics)).ToImmutableArray() ?? [],
+            diff?.Statistics,
+            conflicts.DistinctBy(conflict => (conflict.Path, conflict.Reason)).ToImmutableArray(),
+            blockers.ToImmutable());
         return new(preview, record, changes);
     }
 
@@ -107,10 +131,16 @@ internal sealed class RecoveryPreviewService
         {
             _workspace.Resolve(".");
             if (!Directory.Exists(_workspace.Root))
-            { conflicts.Add(new(".", "ProjectMissing", "The project root no longer exists.")); return files; }
+            {
+                conflicts.Add(new(".", "ProjectMissing", "The project root no longer exists."));
+                return files;
+            }
         }
         catch (WorkspaceException)
-        { conflicts.Add(new(".", "UnsafePath", "The project root or an ancestor is a link or is unsafe to inspect.")); return files; }
+        {
+            conflicts.Add(new(".", "UnsafePath", "The project root or an ancestor is a link or is unsafe to inspect."));
+            return files;
+        }
 
         foreach (var path in manifest.Paths)
         {
@@ -147,9 +177,14 @@ internal sealed class RecoveryPreviewService
             files.Add(path.Path, current);
             return null;
         }
-        catch (WorkspaceException error) { return new(path.Path, "UnsafeOrUnsupportedFile", error.Message); }
+        catch (WorkspaceException error)
+        {
+            return new(path.Path, "UnsafeOrUnsupportedFile", error.Message);
+        }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        { return new(path.Path, "UnsafeOrUnreadableFile", "This path could not be inspected safely; check links, file type and access permissions."); }
+        {
+            return new(path.Path, "UnsafeOrUnreadableFile", "This path could not be inspected safely; check links, file type and access permissions.");
+        }
     }
 
     private static FileAttributes? Attributes(string path)
@@ -171,17 +206,29 @@ internal sealed class RecoveryPreviewService
             var source = operation.MoveTo ?? operation.Path;
             files.TryGetValue(source, out var before);
             var after = original.BackupFile is { } backup ? backups[backup].Bytes : (ImmutableArray<byte>?)null;
-            var action = operation.Action switch { "add" => "delete", "delete" => "add", "move" => "move", _ => "update" };
-            changes.Add(new(new(action, source, operation.MoveTo is null ? null : operation.Path, before?.Bytes.Length ?? 0, after?.Length ?? 0),
-                before, after, original.Before?.UnixMode, AfterModeIsCreateRequest: false));
+            var action = operation.Action switch
+            {
+                "add" => "delete",
+                "delete" => "add",
+                "move" => "move",
+                _ => "update"
+            };
+            var summary = new PatchChange(action, source, operation.MoveTo is null ? null : operation.Path,
+                before?.Bytes.Length ?? 0, after?.Length ?? 0);
+            changes.Add(new(summary, before, after, original.Before?.UnixMode, AfterModeIsCreateRequest: false));
         }
         return changes.MoveToImmutable();
     }
 
-    private static bool SameRecord(RecoveryRecordSnapshot left, RecoveryRecordSnapshot right) =>
-        RecoveryManifestJson.Serialize(left.Manifest).AsSpan().SequenceEqual(RecoveryManifestJson.Serialize(right.Manifest)) &&
-        left.Backups.Length == right.Backups.Length && left.Backups.Zip(right.Backups).All(pair =>
+    private static bool SameRecord(RecoveryRecordSnapshot left, RecoveryRecordSnapshot right)
+    {
+        var leftManifest = RecoveryManifestJson.Serialize(left.Manifest);
+        var rightManifest = RecoveryManifestJson.Serialize(right.Manifest);
+        if (!leftManifest.AsSpan().SequenceEqual(rightManifest)) return false;
+        if (left.Backups.Length != right.Backups.Length) return false;
+        return left.Backups.Zip(right.Backups).All(pair =>
             pair.First.FileName == pair.Second.FileName && pair.First.Bytes.AsSpan().SequenceEqual(pair.Second.Bytes.AsSpan()));
+    }
 
     private Task Checkpoint(RecoveryPreviewStage stage, string? path) => _checkpoint?.Invoke(stage, path) ?? Task.CompletedTask;
 }

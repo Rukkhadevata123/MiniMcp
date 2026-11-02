@@ -13,7 +13,13 @@ internal sealed class RecoveryRestorePlan
     private readonly object _issuer;
     private int _started;
     internal RecoveryRestorePlan(RecoveryRestoreService owner, object issuer, RecoveryInspection inspection, PatchPlan plan)
-    { _owner = owner; _issuer = issuer; Preview = inspection.Preview; Source = inspection.Record; Plan = plan; }
+    {
+        _owner = owner;
+        _issuer = issuer;
+        Preview = inspection.Preview;
+        Source = inspection.Record;
+        Plan = plan;
+    }
     internal RecoveryPreviewResult Preview { get; }
     internal RecoveryRecordSnapshot Source { get; }
     internal PatchPlan Plan { get; }
@@ -44,11 +50,16 @@ internal sealed class RecoveryRestoreService
     private readonly RecoveryPreviewService _previews;
     public RecoveryRestoreService(ProjectWorkspace workspace, PatchService patches, RecoveryStore store, RecoveryPreviewService previews)
     {
-        ArgumentNullException.ThrowIfNull(workspace); ArgumentNullException.ThrowIfNull(patches);
-        ArgumentNullException.ThrowIfNull(store); ArgumentNullException.ThrowIfNull(previews);
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(patches);
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(previews);
         if (!patches.OwnsWorkspace(workspace) || !previews.IsFor(workspace, store))
             throw new ArgumentException("Restore execution must share the exact workspace, patch service and recovery store used for preview.");
-        _workspace = workspace; _patches = patches; _store = store; _previews = previews;
+        _workspace = workspace;
+        _patches = patches;
+        _store = store;
+        _previews = previews;
     }
 
     public async Task<RecoveryRestorePlan> PrepareAsync(Guid changeId, CancellationToken cancellationToken = default)
@@ -61,17 +72,17 @@ internal sealed class RecoveryRestoreService
             var inspection = await _previews.InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false);
             if (!inspection.Preview.Blockers.IsEmpty || inspection.Preview.Diff is null)
                 throw new WorkspaceException("Restoration requires a complete conflict-free committed-record preview. Blocking reasons: " + string.Join(", ", inspection.Preview.Blockers));
-            var changes = inspection.Changes.Select(change => new PlannedPatchChange(
-                _workspace.Resolve(change.Summary.Path), _workspace.Resolve(change.Summary.MoveTo ?? change.Summary.Path),
-                change.Before, change.After, change.Summary, change.AfterMode)).ToImmutableArray();
-            var plan = new PatchPlan(_patches, changes);
+            var plan = CreatePatchPlan(inspection.Changes);
             var executable = await Task.Run(() => PatchDiffBuilder.Create(plan, cancellationToken), cancellationToken).ConfigureAwait(false);
             if (executable.Diff != inspection.Preview.Diff || executable.Statistics != inspection.Preview.Statistics)
                 throw new InvalidOperationException("The restore plan does not reproduce the complete reviewed diff.");
             cancellationToken.ThrowIfCancellationRequested();
             return new(this, _issuer, inspection, plan);
         }
-        finally { _workspace.Mutations.Release(); }
+        finally
+        {
+            _workspace.Mutations.Release();
+        }
     }
 
     public async Task<RecoveryRestoreCommit> CommitAsync(RecoveryRestorePlan preparation, CancellationToken cancellationToken = default)
@@ -88,12 +99,25 @@ internal sealed class RecoveryRestoreService
                 token => _previews.ValidateRecordAsync(preparation.Source, token), cancellationToken).ConfigureAwait(false);
             return new(preparation.Source.Manifest.ChangeId, commit);
         }
-        finally { _workspace.Mutations.Release(); }
+        finally
+        {
+            _workspace.Mutations.Release();
+        }
+    }
+
+    private PatchPlan CreatePatchPlan(ImmutableArray<PatchDiffChange> changes)
+    {
+        var planned = changes.Select(change => new PlannedPatchChange(
+            _workspace.Resolve(change.Summary.Path), _workspace.Resolve(change.Summary.MoveTo ?? change.Summary.Path),
+            change.Before, change.After, change.Summary, change.AfterMode)).ToImmutableArray();
+        return new PatchPlan(_patches, planned);
     }
 
     private void EnsureWritable()
     {
-        if (_store.Mode == ExecutionMode.ReadOnly) throw new WorkspaceException("ReadOnly mode does not allow recovery writes.");
-        if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess)) throw new WorkspaceException("Unknown execution mode; recovery writes are denied.");
+        if (_store.Mode == ExecutionMode.ReadOnly)
+            throw new WorkspaceException("ReadOnly mode does not allow recovery writes.");
+        if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess))
+            throw new WorkspaceException("Unknown execution mode; recovery writes are denied.");
     }
 }

@@ -60,7 +60,10 @@ internal sealed partial class RecoveryStore
             var before = _guard.Inspect(recordBytes, cancellationToken);
             return await WriteRecordAsync(draft, manifest, recordBytes, before, cancellationToken).ConfigureAwait(false);
         }
-        finally { Writes.Release(); }
+        finally
+        {
+            Writes.Release();
+        }
     }
 
     public void ValidateOwnership(PreparedRecord record, PatchPlan plan)
@@ -93,6 +96,7 @@ internal sealed partial class RecoveryStore
                 await WriteFileAsync(Path.Combine(directory, backup.FileName), backup.Bytes.AsMemory(), files, cancellationToken).ConfigureAwait(false);
                 await Checkpoint(RecoveryPreparationStage.BackupWritten, draft).ConfigureAwait(false);
             }
+
             await Checkpoint(RecoveryPreparationStage.BeforeManifest, draft).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             CheckDirectory(directory, directoryIdentity.Value, cancellationToken);
@@ -100,6 +104,7 @@ internal sealed partial class RecoveryStore
             await Checkpoint(RecoveryPreparationStage.ManifestWritten, draft).ConfigureAwait(false);
             RecoveryFileSystem.FlushDirectory(directory);
             RecoveryFileSystem.FlushDirectory(_configuration.Policy.RecoveryDirectory);
+
             await Checkpoint(RecoveryPreparationStage.BeforeReturn, draft).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             CheckDirectory(directory, directoryIdentity.Value, cancellationToken);
@@ -122,26 +127,42 @@ internal sealed partial class RecoveryStore
         {
             if (directoryIdentity is null) throw;
             var errors = new List<Exception> { failure };
-            try
-            {
-                CheckDirectory(directory, directoryIdentity.Value, CancellationToken.None);
-                foreach (var file in files.AsEnumerable().Reverse())
-                {
-                    try
-                    {
-                        using (var current = RecoveryFileSystem.OpenFile(file.Path, FileMode.Open))
-                            if (RecoveryFileSystem.FileIdentity(current) != file.Identity) throw new IOException("A created recovery file was replaced; cleanup refused to delete it.");
-                        File.Delete(file.Path);
-                    }
-                    catch (Exception error) when (error is IOException or UnauthorizedAccessException) { errors.Add(error); }
-                }
-                CheckDirectory(directory, directoryIdentity.Value, CancellationToken.None);
-                Directory.Delete(directory, recursive: false); // Never remove unknown files or an old record tree.
-                RecoveryFileSystem.FlushDirectory(_configuration.Policy.RecoveryDirectory);
-            }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { errors.Add(error); }
-            if (errors.Count > 1) throw new AggregateException("Recovery preparation failed and cleanup was incomplete; inspect the partial record locally.", errors);
+            CleanupPreparedRecord(directory, directoryIdentity.Value, files, errors);
+            if (errors.Count > 1)
+                throw new AggregateException("Recovery preparation failed and cleanup was incomplete; inspect the partial record locally.", errors);
             throw;
+        }
+    }
+
+    private void CleanupPreparedRecord(string directory, RecoveryFileIdentity directoryIdentity,
+        List<(string Path, RecoveryFileIdentity Identity)> files, List<Exception> errors)
+    {
+        try
+        {
+            CheckDirectory(directory, directoryIdentity, CancellationToken.None);
+            foreach (var file in files.AsEnumerable().Reverse())
+            {
+                try
+                {
+                    using (var current = RecoveryFileSystem.OpenFile(file.Path, FileMode.Open))
+                    {
+                        if (RecoveryFileSystem.FileIdentity(current) != file.Identity)
+                            throw new IOException("A created recovery file was replaced; cleanup refused to delete it.");
+                    }
+                    File.Delete(file.Path);
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    errors.Add(error);
+                }
+            }
+            CheckDirectory(directory, directoryIdentity, CancellationToken.None);
+            Directory.Delete(directory, recursive: false); // Never remove unknown files or an old record tree.
+            RecoveryFileSystem.FlushDirectory(_configuration.Policy.RecoveryDirectory);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            errors.Add(error);
         }
     }
 
@@ -216,8 +237,12 @@ internal sealed partial class RecoveryStore
         internal PreparedRecord(RecoveryStore owner, RecoveryDraft draft, string path, RecoveryFileIdentity identity,
             RecoveryFileIdentity storageIdentity, ImmutableDictionary<string, RecoveryFileIdentity> fileIdentities)
         {
-            Owner = owner; Plan = draft.Plan; DirectoryPath = path; Identity = identity;
-            StorageIdentity = storageIdentity; _revision = new(draft.Manifest, fileIdentities);
+            Owner = owner;
+            Plan = draft.Plan;
+            DirectoryPath = path;
+            Identity = identity;
+            StorageIdentity = storageIdentity;
+            _revision = new(draft.Manifest, fileIdentities);
         }
         private sealed record Revision(RecoveryManifest Manifest, ImmutableDictionary<string, RecoveryFileIdentity> FileIdentities,
             PatchExecutionContext? Context = null);
@@ -247,7 +272,9 @@ internal sealed partial class RecoveryStore
         internal void AcceptVerifiedReplacement(RecoveryManifestReplacement replacement)
         {
             var current = Volatile.Read(ref _revision);
-            var context = current.Context ?? (replacement.Manifest.State == RecoveryRecordState.Applying ? new PatchExecutionContext(Plan) : null);
+            var context = current.Context;
+            if (context is null && replacement.Manifest.State == RecoveryRecordState.Applying)
+                context = new PatchExecutionContext(Plan);
             var next = new Revision(replacement.Manifest, current.FileIdentities.SetItem(ManifestFileName, replacement.Identity), context);
             Volatile.Write(ref _revision, next);
         }

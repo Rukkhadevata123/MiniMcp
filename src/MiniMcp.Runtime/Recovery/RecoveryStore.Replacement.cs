@@ -44,7 +44,10 @@ internal sealed partial class RecoveryStore
             before.EnsureCanReplaceManifest(current.Files.Sum(file => (long)file.Bytes.Length), oldBytes, bytes.Length);
             return await ReplaceManifestCoreAsync(record, plan, replacement, bytes, before, oldBytes, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
         }
-        finally { Writes.Release(); }
+        finally
+        {
+            Writes.Release();
+        }
     }
 
     private byte[] ValidateReplacement(RecoveryManifest original, RecoveryManifest replacement)
@@ -58,13 +61,28 @@ internal sealed partial class RecoveryStore
         var normalized = replacement with
         {
             State = original.State,
-            Paths = replacement.Paths.Select((path, index) => original.Paths[index] is { Before: null, After.UnixModeIsCreateRequest: true } old &&
-                path.After is { UnixModeIsCreateRequest: false }
-                ? path with { After = path.After with { UnixMode = old.After.UnixMode, UnixModeIsCreateRequest = true } } : path).ToImmutableArray()
+            Paths = NormalizeCreationModes(original, replacement)
         };
         if (!RecoveryManifestJson.Serialize(normalized).AsSpan().SequenceEqual(RecoveryManifestJson.Serialize(original)))
             throw new InvalidDataException("Replacement must preserve prepared identity, operations, file contents and backups.");
         return bytes;
+    }
+
+    private static ImmutableArray<RecoveryPathState> NormalizeCreationModes(RecoveryManifest original, RecoveryManifest replacement)
+    {
+        var paths = ImmutableArray.CreateBuilder<RecoveryPathState>(replacement.Paths.Length);
+        for (var index = 0; index < replacement.Paths.Length; index++)
+        {
+            var path = replacement.Paths[index];
+            if (original.Paths[index] is { Before: null, After.UnixModeIsCreateRequest: true } requested &&
+                path.After is { UnixModeIsCreateRequest: false } actual)
+            {
+                var after = actual with { UnixMode = requested.After.UnixMode, UnixModeIsCreateRequest = true };
+                path = path with { After = after };
+            }
+            paths.Add(path);
+        }
+        return paths.MoveToImmutable();
     }
 
     private void EnsureManifestWritesAllowed()
@@ -105,19 +123,14 @@ internal sealed partial class RecoveryStore
             CheckReplacementLocation(record, cancellationToken);
             attempted = true;
             RecoveryFileSystem.ReplaceFile(path, target);
+
             // Complete verification once replacement begins, even if cancellation arrives afterwards.
             await ReplacementCheckpoint(RecoveryManifestReplacementStage.Replaced, path).ConfigureAwait(false);
             await VerifyReplacementFileAsync(target, temporary.Identity, bytes, flush: true, CancellationToken.None).ConfigureAwait(false);
             RecoveryFileSystem.FlushDirectory(record.DirectoryPath);
             await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeReturn, path).ConfigureAwait(false);
             var after = await LoadRecordCoreAsync(record.Manifest.ChangeId, rootIdentity, CancellationToken.None).ConfigureAwait(false);
-            foreach (var file in after.Files)
-            {
-                var expectedIdentity = file.Name == ManifestFileName ? temporary.Identity : record.FileIdentities[file.Name];
-                if (file.Identity != expectedIdentity) throw new IOException("A recovery file was replaced after the manifest replacement.");
-            }
-            if (!after.Files.Single(file => file.Name == ManifestFileName).Bytes.AsSpan().SequenceEqual(bytes))
-                throw new IOException("The final recovery manifest does not match the replacement.");
+            ValidateReplacementReadback(record, after, temporary, bytes);
             var usage = _guard.Measure();
             if (usage.RecordSlots != before.RecordSlots || usage.Bytes != checked(before.Bytes - oldBytes + bytes.Length))
                 throw new IOException("Recovery usage changed after manifest replacement.");
@@ -136,16 +149,33 @@ internal sealed partial class RecoveryStore
                 {
                     CheckReplacementLocation(record, CancellationToken.None);
                     using (var stream = RecoveryFileSystem.OpenRead(path))
+                    {
                         if (RecoveryFileSystem.FileIdentity(stream) != files.Single().Identity)
                             throw new IOException("The temporary manifest was replaced; cleanup preserved it.");
+                    }
                     File.Delete(path);
                     RecoveryFileSystem.FlushDirectory(record.DirectoryPath);
                 }
-                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException) { errors.Add(error); }
+                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    errors.Add(error);
+                }
             }
             if (errors.Count != 0) throw new RecoveryManifestReplacementException(false, path, failure, errors.ToImmutable());
             throw;
         }
+    }
+
+    private static void ValidateReplacementReadback(PreparedRecord record, LoadedRecord after, LoadedFile temporary, byte[] bytes)
+    {
+        foreach (var file in after.Files)
+        {
+            var expectedIdentity = file.Name == ManifestFileName ? temporary.Identity : record.FileIdentities[file.Name];
+            if (file.Identity != expectedIdentity)
+                throw new IOException("A recovery file was replaced after the manifest replacement.");
+        }
+        if (!after.Files.Single(file => file.Name == ManifestFileName).Bytes.AsSpan().SequenceEqual(bytes))
+            throw new IOException("The final recovery manifest does not match the replacement.");
     }
 
     private void CheckReplacementLocation(PreparedRecord record, CancellationToken cancellationToken)
