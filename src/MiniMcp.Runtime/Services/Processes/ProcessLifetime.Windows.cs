@@ -69,8 +69,9 @@ internal sealed partial class ProcessLifetime
             input.DisposeLocalCopyOfClientHandle();
             output.DisposeLocalCopyOfClientHandle();
             error.DisposeLocalCopyOfClientHandle();
-            return new(process, job, new StreamReader(output, new UTF8Encoding(false)),
-                new StreamReader(error, new UTF8Encoding(false)));
+            // Preserve the caller's decoder fallback, including strict UTF-8 for query output.
+            return new(process, job, new StreamReader(output, start.StandardOutputEncoding ?? new UTF8Encoding(false)),
+                new StreamReader(error, start.StandardErrorEncoding ?? new UTF8Encoding(false)));
         }
         catch
         {
