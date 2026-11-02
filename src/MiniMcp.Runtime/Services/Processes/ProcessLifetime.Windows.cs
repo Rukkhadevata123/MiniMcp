@@ -59,10 +59,34 @@ internal sealed partial class ProcessLifetime
             var arguments = new StringBuilder(QuoteArgument(start.FileName));
             foreach (var argument in start.ArgumentList) arguments.Append(' ').Append(QuoteArgument(argument));
             if (arguments.Length >= 32767) throw new IOException("The managed process command line is too long.");
-            if (!CreateProcess(start.FileName, arguments, IntPtr.Zero, IntPtr.Zero, true,
-                0x80000 | 0x4 | (start.CreateNoWindow ? 0x8000000u : 0x10u) | 0x400,
-                environment, start.WorkingDirectory, ref startup, out created))
+
+            // Hidden console creation does not suppress Windows loader error dialogs. Keep this
+            // synchronous scope on the same thread and preserve the caller's other error flags.
+            const uint failCriticalErrors = 0x0001;
+            if (!SetThreadErrorMode(GetThreadErrorMode() | failCriticalErrors, out var previousErrorMode))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
+            Win32Exception? startError = null, restoreError = null;
+            try
+            {
+                if (!CreateProcess(start.FileName, arguments, IntPtr.Zero, IntPtr.Zero, true,
+                    0x80000 | 0x4 | (start.CreateNoWindow ? 0x8000000u : 0x10u) | 0x400,
+                    environment, start.WorkingDirectory, ref startup, out created))
+                    startError = new Win32Exception(Marshal.GetLastWin32Error());
+            }
+            finally
+            {
+                // Restore even if process creation throws. Report failures outside finally so
+                // restoration cannot hide the original CreateProcess error (CA2219).
+                if (!SetThreadErrorMode(previousErrorMode, out _))
+                    restoreError = new Win32Exception(Marshal.GetLastWin32Error(),
+                        "Could not restore the caller's Windows thread error mode.");
+            }
+            if (startError is not null && restoreError is not null)
+                throw new AggregateException("Process creation and thread error mode restoration both failed.",
+                    startError, restoreError);
+            if (startError is not null) throw startError;
+            if (restoreError is not null) throw restoreError;
+
             process = Process.GetProcessById(created.ProcessId);
             _ = process.Handle; // Keep its process identity alive independently of the PID.
             if (ResumeThread(created.Thread) == uint.MaxValue) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -132,6 +156,13 @@ internal sealed partial class ProcessLifetime
         public IntPtr Process, Thread;
         public int ProcessId, ThreadId;
     }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetThreadErrorMode();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetThreadErrorMode(uint mode, out uint previousMode);
 
     [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

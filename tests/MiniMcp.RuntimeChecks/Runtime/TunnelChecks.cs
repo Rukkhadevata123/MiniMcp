@@ -1,7 +1,9 @@
 using MiniMcp;
 using MiniMcp.Diagnostics;
 using MiniMcp.Services.Processes;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 internal static class TunnelChecks
@@ -85,6 +87,51 @@ internal static class TunnelChecks
             await fixture.Runtime.StopTunnelAsync();
         });
 
+        await check("tunnel: Windows startup restores thread error mode after successful and invalid launches", async () =>
+        {
+            if (!OperatingSystem.IsWindows()) CheckRunner.Skip("Windows thread error modes only.");
+            await using var fixture = new TunnelFixture(enabled: false);
+            var invalid = Path.Combine(fixture.DirectoryPath, "not a program.exe");
+            File.WriteAllText(invalid, "This is not an executable image.");
+            var start = new ProcessStartInfo(fixture.Configuration.Settings.Tunnel.ExecutablePath)
+            {
+                WorkingDirectory = fixture.DirectoryPath,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            start.ArgumentList.Add("--execution-child");
+            start.ArgumentList.Add(Path.Combine(fixture.DirectoryPath, "child.pid"));
+            ProcessLifetime? child = null;
+            try
+            {
+                AssertThreadErrorModeRestored(() => child = ProcessLifetime.Start(start));
+                start.FileName = invalid;
+                start.ArgumentList.Clear();
+                AssertThreadErrorModeRestored(() =>
+                {
+                    try
+                    {
+                        using var unexpected = ProcessLifetime.Start(start);
+                    }
+                    catch (Win32Exception error) when (error.NativeErrorCode is 193 or 216)
+                    {
+                        return;
+                    }
+                    throw new Exception("Expected an invalid-image Win32 error.");
+                });
+            }
+            finally
+            {
+                if (child is not null)
+                {
+                    using (child) await child.TerminateAsync();
+                }
+            }
+        });
+
         await check("tunnel: invalid executable during initial startup cleans the Host and permits a fresh startup", async () =>
         {
             TunnelFixture? fixture = null;
@@ -110,9 +157,14 @@ internal static class TunnelChecks
             File.WriteAllText(invalid, "This is not an executable image.");
             if (OperatingSystem.IsLinux()) File.SetUnixFileMode(invalid, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             var configuration = fixture.WithExecutable(invalid);
-            await Reject<Exception>(() => fixture.Runtime.StartAsync(configuration));
-            Assert(fixture.Runtime.Snapshot is { State: RuntimeState.Faulted, Address: null } && fixture.Runtime.Execution is null &&
-                fixture.Runtime.Snapshot.Tunnel.ProcessId is null, "Failed startup releases all ownership");
+            var startupError = await Reject<Exception>(() => fixture.Runtime.StartAsync(configuration));
+            var failed = fixture.Runtime.Snapshot;
+            Assert(failed is { State: RuntimeState.Faulted, Address: null } && fixture.Runtime.Execution is null &&
+                failed.Tunnel.ProcessId is null,
+                $"Failed startup releases all ownership. Snapshot: {failed}; execution retained: {fixture.Runtime.Execution is not null}; startup error: {startupError}");
+            if (OperatingSystem.IsWindows())
+                Assert(startupError is Win32Exception { NativeErrorCode: 193 or 216 },
+                    "Invalid-image startup must report its Win32 error, not a wait timeout or cleanup failure: " + startupError);
             waitingForInvalidProgram = false;
             await fixture.Runtime.StartAsync(fixture.Configuration);
             await fixture.ReportAsync();
@@ -478,6 +530,30 @@ internal static class TunnelChecks
             finally { RuntimeCallChecks.KillIfRunning(owner); }
         });
     }
+
+    private static void AssertThreadErrorModeRestored(Action action)
+    {
+        var previous = GetThreadErrorMode();
+        // Require startup to add its own suppression while preserving an unrelated caller flag.
+        var callerMode = (previous | 0x8000u) & ~0x0001u;
+        if (!SetThreadErrorMode(callerMode, out _)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        try
+        {
+            action();
+            Assert(GetThreadErrorMode() == callerMode, "Process startup must restore the caller thread error mode.");
+        }
+        finally
+        {
+            if (!SetThreadErrorMode(previous, out _)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetThreadErrorMode();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetThreadErrorMode(uint mode, out uint previousMode);
 
     private static void Assert(bool condition, string reason)
     {
