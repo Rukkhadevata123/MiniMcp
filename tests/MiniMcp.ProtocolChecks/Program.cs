@@ -64,6 +64,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             cancellationToken: timeout.Token);
         var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
         Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "git_diff", "git_log", "git_status", "list_files", "read_file", "search_text" }), "Exactly eight tools");
+        // The SDK contract is transport- and policy-independent: check all fields once.
+        // Every mode still discovers the exact same public tool catalog above.
+        if (mode == ExecutionMode.FullAccess)
         foreach (var tool in tools)
         {
             var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order().ToArray();
@@ -127,15 +130,20 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         var actions = new[] { "add", "update", "move", "delete" };
         var expectedStatistics = new[] { new PatchStatistics(1, 0, 6, 0), new PatchStatistics(1, 1, 8, 6),
             new PatchStatistics(0, 0, 0, 0), new PatchStatistics(0, 2, 0, 13) };
-        for (var i = 0; i < patches.Length; i++)
+        // FullAccess owns the detailed four-operation SDK preview contract. Other modes
+        // only need a representative serialized preview and the local denial mapping.
+        for (var i = 0; i < (mode == ExecutionMode.FullAccess ? patches.Length : 1); i++)
         {
             var preview = await Call("apply_patch", new() { ["patch"] = patches[i], ["dry_run"] = true });
             Assert(preview.GetProperty("dryRun").GetBoolean() &&
                 preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("action").GetString() == actions[i], "Patch preview: " + actions[i]);
             Assert(preview.GetProperty("diff").GetString()!.Contains("# action: " + actions[i]), "Complete diff action");
-            var expected = JsonSerializer.SerializeToElement(expectedStatistics[i], new JsonSerializerOptions(JsonSerializerDefaults.Web));
-            Assert(JsonElement.DeepEquals(preview.GetProperty("statistics"), expected) &&
-                JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total statistics");
+            if (mode == ExecutionMode.FullAccess)
+            {
+                var expected = JsonSerializer.SerializeToElement(expectedStatistics[i], new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                Assert(JsonElement.DeepEquals(preview.GetProperty("statistics"), expected) &&
+                    JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total statistics");
+            }
             CheckReview(preview, mode, actions[i] is "move" ? ["Move"] : actions[i] is "delete" ? ["Delete"] : []);
             Assert(preview.GetProperty("changes")[0].GetProperty("risk").GetProperty("kind").GetString() == "Ordinary", "File kind is a string");
             Assert(preview.GetProperty("commit").ValueKind == JsonValueKind.Null, "Preview has no commit record or authorization");
@@ -144,7 +152,10 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                     message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         // Agent-supplied approval or mode fields cannot grant write permissions.
-        if (mode != ExecutionMode.FullAccess)
+        if (mode == ExecutionMode.ProjectEdit)
+            await Call("apply_patch", new() { ["patch"] = patches[2], ["approved"] = true, ["mode"] = "FullAccess" },
+                error: true, message: "ProjectEdit restrictions");
+        else if (mode == ExecutionMode.ReadOnly)
             await Call("apply_patch", new()
             {
                 ["patch"] = patches[2], ["approved"] = true, ["mode"] = "FullAccess"
@@ -160,7 +171,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             ("*** Add File: bytes.md\n+" + new string('x', 65536), ["ChangedByteLimitExceeded"]),
             ("*** Update File: custom.md\n@@\n-  \"port\": 8000,\n+  \"port\": 8123,", ["CriticalFile"])
         };
-        foreach (var (body, reasons) in riskCases)
+        foreach (var (body, reasons) in mode == ExecutionMode.FullAccess ? riskCases : riskCases.Take(1))
         {
             var patch = "*** Begin Patch\n" + body + "\n*** End Patch";
             var preview = await Call("apply_patch", new()
@@ -178,26 +189,29 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         }
         Console.WriteLine($"STEP {mode}: risk causes, batch thresholds, selected settings and mode decisions cannot be overridden by tool arguments");
 
-        var longLine = new string('x', 180_000) + "TAIL中👋\t\u001b";
-        var large = await Call("apply_patch", new() { ["patch"] = "*** Begin Patch\n*** Add File: large.txt\n+" + longLine + "\n*** End Patch", ["dry_run"] = true });
-        var largeDiff = large.GetProperty("diff").GetString()!;
-        Assert(largeDiff.Length > 16_000 && largeDiff.Contains("TAIL中👋\\t\\u001b\\n\""), "Large preview remains complete and escaped");
-        Assert(large.GetProperty("statistics").GetProperty("addedBytes").GetInt64() == System.Text.Encoding.UTF8.GetByteCount(longLine + "\n"), "Statistics use unescaped UTF-8 bytes");
-        CheckReview(large, mode, "ChangedByteLimitExceeded");
-        Console.WriteLine($"STEP {mode}: complete large escaped diff survives structured and text serialization");
+        if (mode == ExecutionMode.FullAccess)
+        {
+            var longLine = new string('x', 180_000) + "TAIL中👋\t\u001b";
+            var large = await Call("apply_patch", new() { ["patch"] = "*** Begin Patch\n*** Add File: large.txt\n+" + longLine + "\n*** End Patch", ["dry_run"] = true });
+            var largeDiff = large.GetProperty("diff").GetString()!;
+            Assert(largeDiff.Length > 16_000 && largeDiff.Contains("TAIL中👋\\t\\u001b\\n\""), "Large preview remains complete and escaped");
+            Assert(large.GetProperty("statistics").GetProperty("addedBytes").GetInt64() == System.Text.Encoding.UTF8.GetByteCount(longLine + "\n"), "Statistics use unescaped UTF-8 bytes");
+            CheckReview(large, mode, "ChangedByteLimitExceeded");
+            Console.WriteLine($"STEP {mode}: complete large escaped diff survives structured and text serialization");
 
-        await Call("apply_patch", new()
-        {
-            ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["dry_run"] = true
-        }, error: true, message: "display limit");
-        await Call("apply_patch", new()
-        {
-            ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["approved"] = true
-        }, error: true, message: "display limit");
-        var complex = "*** Begin Patch\n*** Update File: complex.txt\n@@\n" +
-            string.Concat(Enumerable.Range(0, 1000).Select(i => $"-old{i}\n")) + string.Concat(Enumerable.Range(0, 1000).Select(i => $"+new{i}\n")) + "*** End Patch";
-        await Call("apply_patch", new() { ["patch"] = complex, ["dry_run"] = true }, error: true, message: "computation limit");
-        Console.WriteLine($"STEP {mode}: oversized and complex previews return tool errors without partial content");
+            await Call("apply_patch", new()
+            {
+                ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["dry_run"] = true
+            }, error: true, message: "display limit");
+            await Call("apply_patch", new()
+            {
+                ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["approved"] = true
+            }, error: true, message: "display limit");
+            var complex = "*** Begin Patch\n*** Update File: complex.txt\n@@\n" +
+                string.Concat(Enumerable.Range(0, 1000).Select(i => $"-old{i}\n")) + string.Concat(Enumerable.Range(0, 1000).Select(i => $"+new{i}\n")) + "*** End Patch";
+            await Call("apply_patch", new() { ["patch"] = complex, ["dry_run"] = true }, error: true, message: "computation limit");
+            Console.WriteLine($"STEP {mode}: oversized and complex previews return tool errors without partial content");
+        }
 
         if (mode != ExecutionMode.FullAccess)
         {
@@ -208,8 +222,6 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             {
                 ["command"] = deniedCommand["command"], ["approved"] = true, ["mode"] = "FullAccess"
             }, error: true);
-            await Call("bash", deniedCommand, error: true,
-                message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
         }
         else
         {
@@ -243,8 +255,7 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 // ReadOnly has no written.md, so use a valid fresh add for each denial.
                 if (mode == ExecutionMode.ReadOnly) arguments["patch"] = patches[0];
                 await Call("apply_patch", arguments, error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
-                if (mode == ExecutionMode.ProjectEdit) break;
-                continue;
+                break;
             }
             var written = await Call("apply_patch", arguments);
             var commit = written.GetProperty("commit");

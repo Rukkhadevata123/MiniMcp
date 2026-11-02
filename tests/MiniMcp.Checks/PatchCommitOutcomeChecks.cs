@@ -45,77 +45,57 @@ internal static class PatchCommitOutcomeChecks
             Assert(fixture.Workspace.Mutations.CurrentCount == 1, "Initial rejection releases the lock");
         });
 
-        await check("cancellation after staging reports completed cleanup and preserves legacy cancellation", async () =>
+        await check("cancellation after staging reports completed cleanup", async () =>
         {
-            foreach (var legacy in new[] { false, true })
-            {
-                using var fixture = new Fixture();
-                using var cancelled = new CancellationTokenSource();
-                var service = fixture.Service((stage, _) => { if (stage == PatchCommitStage.Staged) cancelled.Cancel(); return Task.CompletedTask; });
-                var plan = await fixture.Plan(service, "*** Add File: nested/new.md\n+new\n*** Update File: sample.md\n@@\n-old\n+new");
-                var before = fixture.Snapshot();
-                if (legacy) await Reject<OperationCanceledException>(() => service.CommitAsync(plan, cancelled.Token));
-                else
-                {
-                    var outcome = await service.CommitWithOutcomeAsync(plan, cancelled.Token);
-                    Assert(outcome.State == PatchCommitState.RolledBack && outcome.Failure is OperationCanceledException &&
-                        outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.IsEmpty, "Cancellation is reported after cleanup");
-                }
-                Assert(before.SequenceEqual(fixture.Snapshot()) && fixture.Workspace.Mutations.CurrentCount == 1, "All staging and created directories removed");
-            }
+            using var fixture = new Fixture();
+            using var cancelled = new CancellationTokenSource();
+            var service = fixture.Service((stage, _) => { if (stage == PatchCommitStage.Staged) cancelled.Cancel(); return Task.CompletedTask; });
+            var plan = await fixture.Plan(service, "*** Add File: nested/new.md\n+new\n*** Update File: sample.md\n@@\n-old\n+new");
+            var before = fixture.Snapshot();
+            var outcome = await service.CommitWithOutcomeAsync(plan, cancelled.Token);
+            Assert(outcome.State == PatchCommitState.RolledBack && outcome.Failure is OperationCanceledException &&
+                outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.IsEmpty, "Cancellation is reported after cleanup");
+            Assert(before.SequenceEqual(fixture.Snapshot()) && fixture.Workspace.Mutations.CurrentCount == 1, "All staging and created directories removed");
         });
 
         await check("mid-commit failure restores raw originals despite cancellation and retains the original exception", async () =>
         {
-            foreach (var legacy in new[] { false, true })
+            using var fixture = new Fixture();
+            fixture.Put("sample.md", "\ufeffold\r\n");
+            var failure = new IOException("Misleading original error: rollback was incomplete.");
+            using var cancelled = new CancellationTokenSource();
+            var service = fixture.Service((stage, index) =>
             {
-                using var fixture = new Fixture();
-                fixture.Put("sample.md", "\ufeffold\r\n");
-                var failure = new IOException("Misleading original error: rollback was incomplete.");
-                using var cancelled = new CancellationTokenSource();
-                var service = fixture.Service((stage, index) =>
-                {
-                    if (stage != PatchCommitStage.Installed || index != 1) return Task.CompletedTask;
-                    Assert(fixture.Get("sample.md") == "new\r\n" && fixture.Get("nested/new.md") == "new\n", "Some target changes really installed");
-                    cancelled.Cancel();
-                    return Task.FromException(failure);
-                });
-                var plan = await fixture.Plan(service, "*** Add File: nested/new.md\n+new\n*** Update File: sample.md\n@@\n-old\n+new");
-                var before = fixture.Snapshot();
-                if (legacy) Assert(ReferenceEquals(await Reject<IOException>(() => service.CommitAsync(plan, cancelled.Token)), failure), "Legacy API rethrows the exact original error");
-                else
-                {
-                    var outcome = await service.CommitWithOutcomeAsync(plan, cancelled.Token);
-                    Assert(outcome.State == PatchCommitState.RolledBack && ReferenceEquals(outcome.Failure, failure) &&
-                        outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.IsEmpty, "Classification follows actual rollback, not error text");
-                }
-                Assert(before.SequenceEqual(fixture.Snapshot()) && fixture.Workspace.Mutations.CurrentCount == 1, "Original BOM, bytes, directories and Unix permissions restored");
-            }
+                if (stage != PatchCommitStage.Installed || index != 1) return Task.CompletedTask;
+                Assert(fixture.Get("sample.md") == "new\r\n" && fixture.Get("nested/new.md") == "new\n", "Some target changes really installed");
+                cancelled.Cancel();
+                return Task.FromException(failure);
+            });
+            var plan = await fixture.Plan(service, "*** Add File: nested/new.md\n+new\n*** Update File: sample.md\n@@\n-old\n+new");
+            var before = fixture.Snapshot();
+            var outcome = await service.CommitWithOutcomeAsync(plan, cancelled.Token);
+            Assert(outcome.State == PatchCommitState.RolledBack && ReferenceEquals(outcome.Failure, failure) &&
+                outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.IsEmpty, "Classification follows actual rollback, not error text");
+            Assert(before.SequenceEqual(fixture.Snapshot()) && fixture.Workspace.Mutations.CurrentCount == 1, "Original BOM, bytes, directories and Unix permissions restored");
         });
 
         await check("real rollback failure is incomplete and retains original backups and each rollback error", async () =>
         {
-            foreach (var legacy in new[] { false, true })
+            using var fixture = new Fixture();
+            var failure = new IOException("Injected installation failure.");
+            var service = fixture.Service((stage, index) =>
             {
-                using var fixture = new Fixture();
-                var failure = new IOException("Injected installation failure.");
-                var service = fixture.Service((stage, index) =>
-                {
-                    if (stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
-                    File.Delete(fixture.Path("sample.md"));
-                    Directory.CreateDirectory(fixture.Path("sample.md")); // Occupancy makes the real rollback delete fail.
-                    return Task.FromException(failure);
-                });
-                var plan = await fixture.Plan(service);
-                if (legacy) _ = await Reject<WorkspaceException>(() => service.CommitAsync(plan));
-                else
-                {
-                    var outcome = await service.CommitWithOutcomeAsync(plan);
-                    Assert(outcome.State == PatchCommitState.Incomplete && ReferenceEquals(outcome.Failure, failure) && outcome.RollbackErrors.Length == 1, "Original and rollback errors kept separately");
-                }
-                var backup = fixture.Artifacts().Single(path => path.EndsWith(".bak", StringComparison.Ordinal));
-                Assert(File.ReadAllText(backup) == "old\n" && Directory.Exists(fixture.Path("sample.md")) && fixture.Workspace.Mutations.CurrentCount == 1, "Backup and occupying directory preserved; lock released");
-            }
+                if (stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
+                File.Delete(fixture.Path("sample.md"));
+                Directory.CreateDirectory(fixture.Path("sample.md")); // Occupancy makes the real rollback delete fail.
+                return Task.FromException(failure);
+            });
+            var plan = await fixture.Plan(service);
+            var outcome = await service.CommitWithOutcomeAsync(plan);
+            Assert(outcome.State == PatchCommitState.Incomplete && ReferenceEquals(outcome.Failure, failure) &&
+                outcome.RollbackErrors.Length == 1, "Original and rollback errors kept separately");
+            var backup = fixture.Artifacts().Single(path => path.EndsWith(".bak", StringComparison.Ordinal));
+            Assert(File.ReadAllText(backup) == "old\n" && Directory.Exists(fixture.Path("sample.md")) && fixture.Workspace.Mutations.CurrentCount == 1, "Backup and occupying directory preserved; lock released");
         });
 
         await check("failed staging cleanup is incomplete even when no target was installed", async () =>
@@ -139,48 +119,131 @@ internal static class PatchCommitOutcomeChecks
 
         await check("successful installation remains committed when only old-backup cleanup fails", async () =>
         {
-            foreach (var legacy in new[] { false, true })
+            using var fixture = new Fixture();
+            var saved = System.IO.Path.Combine(fixture.DirectoryPath, "saved-original");
+            var service = fixture.Service((stage, _) =>
             {
-                using var fixture = new Fixture();
-                var saved = System.IO.Path.Combine(fixture.DirectoryPath, "saved-original");
-                var service = fixture.Service((stage, _) =>
-                {
-                    if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
-                    var backup = fixture.Artifacts().Single(path => path.EndsWith(".bak", StringComparison.Ordinal));
-                    File.Move(backup, saved);
-                    Directory.CreateDirectory(backup);
-                    return Task.CompletedTask;
-                });
-                var plan = await fixture.Plan(service);
-                if (legacy) Assert(!(await service.CommitAsync(plan)).DryRun, "Legacy successful result retained");
-                else
-                {
-                    var outcome = await service.CommitWithOutcomeAsync(plan);
-                    Assert(outcome.State == PatchCommitState.Committed && outcome.Failure is null && outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.Length == 1,
-                        "Cleanup diagnostics do not misreport an installed patch as rolled back");
-                }
-                Assert(fixture.Get("sample.md") == "new\n" && File.ReadAllText(saved) == "old\n", "Installed result and saved original intact");
-            }
+                if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
+                var backup = fixture.Artifacts().Single(path => path.EndsWith(".bak", StringComparison.Ordinal));
+                File.Move(backup, saved);
+                Directory.CreateDirectory(backup);
+                return Task.CompletedTask;
+            });
+            var plan = await fixture.Plan(service);
+            var outcome = await service.CommitWithOutcomeAsync(plan);
+            Assert(outcome.State == PatchCommitState.Committed && outcome.Failure is null && outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.Length == 1,
+                "Cleanup diagnostics do not misreport an installed patch as rolled back");
+            Assert(fixture.Get("sample.md") == "new\n" && File.ReadAllText(saved) == "old\n", "Installed result and saved original intact");
         });
 
         await check("cancellation past the install boundary finishes the whole patch and returns committed", async () =>
         {
             foreach (var boundary in new[] { PatchCommitStage.BeforeInstall, PatchCommitStage.Installed })
-                foreach (var legacy in new[] { false, true })
-                {
-                    using var fixture = new Fixture();
-                    using var cancelled = new CancellationTokenSource();
-                    var service = fixture.Service((stage, index) => { if (stage == boundary && index == 0) cancelled.Cancel(); return Task.CompletedTask; });
-                    var plan = await fixture.Plan(service, "*** Update File: sample.md\n@@\n-old\n+new\n*** Add File: nested/new.md\n+added");
-                    if (legacy) Assert(!(await service.CommitAsync(plan, cancelled.Token)).DryRun, "Late cancellation cannot replace successful return");
-                    else
-                    {
-                        var outcome = await service.CommitWithOutcomeAsync(plan, cancelled.Token);
-                        Assert(outcome.State == PatchCommitState.Committed && outcome.Failure is null && outcome.RollbackErrors.IsEmpty && outcome.CleanupErrors.IsEmpty, "Late cancellation does not interrupt installation");
-                    }
-                    Assert(cancelled.IsCancellationRequested && fixture.Get("sample.md") == "new\n" && fixture.Get("nested/new.md") == "added\n" &&
-                        !fixture.Artifacts().Any() && fixture.Workspace.Mutations.CurrentCount == 1, "Whole patch committed and lock released");
-                }
+            {
+                using var fixture = new Fixture();
+                using var cancelled = new CancellationTokenSource();
+                var service = fixture.Service((stage, index) => { if (stage == boundary && index == 0) cancelled.Cancel(); return Task.CompletedTask; });
+                var plan = await fixture.Plan(service, "*** Update File: sample.md\n@@\n-old\n+new\n*** Add File: nested/new.md\n+added");
+                var outcome = await service.CommitWithOutcomeAsync(plan, cancelled.Token);
+                Assert(outcome.State == PatchCommitState.Committed && outcome.Failure is null && outcome.RollbackErrors.IsEmpty &&
+                    outcome.CleanupErrors.IsEmpty, "Late cancellation does not interrupt installation: " + boundary);
+                Assert(cancelled.IsCancellationRequested && fixture.Get("sample.md") == "new\n" && fixture.Get("nested/new.md") == "added\n" &&
+                    !fixture.Artifacts().Any() && fixture.Workspace.Mutations.CurrentCount == 1, "Whole patch committed and lock released: " + boundary);
+            }
+        });
+
+        await check("CommitAsync compatibility returns a successful result without a second engine matrix", async () =>
+        {
+            using var fixture = new Fixture();
+            var service = fixture.Service();
+            var result = await service.CommitAsync(await fixture.Plan(service));
+            Assert(!result.DryRun && fixture.Get("sample.md") == "new\n" && !fixture.Artifacts().Any(),
+                "Legacy adapter converts a committed outcome to a successful patch result");
+        });
+
+        await check("CommitAsync compatibility preserves staged cancellation", async () =>
+        {
+            using var fixture = new Fixture();
+            using var cancelled = new CancellationTokenSource();
+            var service = fixture.Service((stage, _) =>
+            {
+                if (stage == PatchCommitStage.Staged) cancelled.Cancel();
+                return Task.CompletedTask;
+            });
+            var original = fixture.Snapshot();
+            var plan = await fixture.Plan(service);
+            await Reject<OperationCanceledException>(() => service.CommitAsync(plan, cancelled.Token));
+            Assert(cancelled.IsCancellationRequested && original.SequenceEqual(fixture.Snapshot()),
+                "Legacy cancellation propagates after completed rollback");
+        });
+
+        await check("CommitAsync compatibility propagates the exact original failure", async () =>
+        {
+            using var fixture = new Fixture();
+            var failure = new IOException("Injected compatibility exception.");
+            var service = fixture.Service((stage, _) => stage == PatchCommitStage.Installed ?
+                Task.FromException(failure) : Task.CompletedTask);
+            var plan = await fixture.Plan(service);
+            var caught = await Reject<IOException>(() => service.CommitAsync(plan));
+            Assert(ReferenceEquals(caught, failure) && fixture.Get("sample.md") == "old\n" &&
+                !fixture.Artifacts().Any(), "Legacy failure is not replaced by a synthesized exception");
+        });
+
+        await check("CommitAsync compatibility rejects stale plans before installing", async () =>
+        {
+            using var fixture = new Fixture();
+            var service = fixture.Service();
+            var plan = await fixture.Plan(service);
+            fixture.Put("sample.md", "external\n");
+            await Reject<WorkspaceException>(() => service.CommitAsync(plan));
+            Assert(fixture.Get("sample.md") == "external\n" && !fixture.Artifacts().Any(),
+                "Legacy entry preserves pre-install validation");
+        });
+
+        await check("CommitAsync compatibility translates incomplete rollback into a workspace error", async () =>
+        {
+            using var fixture = new Fixture();
+            var service = fixture.Service((stage, _) =>
+            {
+                if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
+                File.Delete(fixture.Path("sample.md"));
+                Directory.CreateDirectory(fixture.Path("sample.md"));
+                return Task.FromException(new IOException("Injected rollback trigger."));
+            });
+            var plan = await fixture.Plan(service);
+            var error = await Reject<WorkspaceException>(() => service.CommitAsync(plan));
+            Assert(error.Message.Contains("incomplete", StringComparison.OrdinalIgnoreCase) &&
+                Directory.Exists(fixture.Path("sample.md")) &&
+                fixture.Artifacts().Any(path => path.EndsWith(".bak", StringComparison.Ordinal)),
+                "Legacy adapter does not claim an incomplete rollback succeeded");
+        });
+
+        await check("CommitAsync compatibility translates post-install verification failure", async () =>
+        {
+            using var fixture = new Fixture();
+            var service = fixture.Service((stage, _) =>
+            {
+                if (stage == PatchCommitStage.BeforeVerification) fixture.Put("sample.md", "external\n");
+                return Task.CompletedTask;
+            });
+            var plan = await fixture.Plan(service);
+            var error = await Reject<WorkspaceException>(() => service.CommitAsync(plan));
+            Assert(error.Message.Contains("verified", StringComparison.OrdinalIgnoreCase) &&
+                fixture.Get("sample.md") == "external\n", "Legacy verification error retains the actual disk state");
+        });
+
+        await check("CommitAsync compatibility returns committed after late cancellation", async () =>
+        {
+            using var fixture = new Fixture();
+            using var cancelled = new CancellationTokenSource();
+            var service = fixture.Service((stage, _) =>
+            {
+                if (stage == PatchCommitStage.BeforeInstall) cancelled.Cancel();
+                return Task.CompletedTask;
+            });
+            var result = await service.CommitAsync(await fixture.Plan(service), cancelled.Token);
+            Assert(!result.DryRun && cancelled.IsCancellationRequested && fixture.Get("sample.md") == "new\n",
+                "Legacy adapter cannot replace a completed installation with cancellation");
         });
     }
 

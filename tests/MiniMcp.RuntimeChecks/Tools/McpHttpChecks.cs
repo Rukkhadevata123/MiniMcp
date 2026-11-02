@@ -14,9 +14,9 @@ internal static class McpHttpChecks
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
         foreach (var mode in Enum.GetValues<ExecutionMode>())
-            await check($"MCP HTTP {mode}: exact schemas, reads, previews, write denials and Bash policy", () => CheckModeAsync(mode));
-        foreach (var mode in Enum.GetValues<ExecutionMode>())
-            await check($"MCP HTTP {mode}: risk, exact limits, selected settings and local decisions", () => CheckRiskAsync(mode));
+            await check($"MCP HTTP {mode}: registered tools, representative results and local write policy", () => CheckModeAsync(mode));
+        await check("MCP HTTP ProjectEdit: selected settings, local limits and forged-argument denials",
+            () => CheckRiskAsync(ExecutionMode.ProjectEdit));
 
         await check("MCP HTTP exports complete bounded previews without plan data, files or recovery records", async () =>
         {
@@ -227,58 +227,50 @@ internal static class McpHttpChecks
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await using var client = await ConnectAsync(fixture.Runtime.Address!, fixture.Client, deadline.Token);
         var tools = await client.ListToolsAsync(cancellationToken: deadline.Token);
-        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[] { "apply_patch", "bash", "git_diff", "git_log", "git_status", "list_files", "read_file", "search_text" }), "Exactly eight tools");
-        foreach (var tool in tools)
-        {
-            var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order();
-            string[] expected = tool.Name switch
-            {
-                "read_file" => ["end_line", "path", "start_line"], "apply_patch" => ["dry_run", "patch"],
-                "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
-                "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
-                "git_status" => ["max_entries", "path"],
-                "git_diff" => ["max_files", "max_lines", "path", "staged"],
-                "git_log" => ["max_count", "path"],
-                _ => ["command", "timeout_seconds", "workdir"]
-            };
-            Assert(properties.SequenceEqual(expected), "Schema: " + tool.Name);
-            if (tool.Name == "apply_patch")
-                Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
-                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
-        }
-        var read = Structured(await Call(client, "read_file", new() { ["path"] = "sample.txt", ["start_line"] = 1, ["end_line"] = 1 }));
-        Assert(read.GetProperty("content").GetString() == "read-only fixture\n", "Read range");
-        Error(await Call(client, "read_file", new() { ["path"] = "../outside" }), "outside");
+        Assert(tools.Select(tool => tool.Name).Order().SequenceEqual(new[]
+            { "apply_patch", "bash", "git_diff", "git_log", "git_status", "list_files", "read_file", "search_text" }),
+            "Each HTTP policy mode registers the same eight SDK tools");
+        var patchTool = tools.Single(tool => tool.Name == "apply_patch");
+        Assert(patchTool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order()
+            .SequenceEqual(new[] { "dry_run", "patch" }), "HTTP registration exposes the real patch arguments");
+
+        var read = Structured(await Call(client, "read_file", new()
+            { ["path"] = "sample.txt", ["start_line"] = 1, ["end_line"] = 1 }));
+        Assert(read.GetProperty("content").GetString() == "read-only fixture\n", "HTTP range result");
         Error(await Call(client, "read_file", new() { ["path"] = ".env" }), "private");
-        var patches = new[] { "*** Add File: preview/new.txt\n+new", "*** Update File: sample.txt\n@@\n-read-only fixture\n+updated",
-            "*** Update File: sample.txt\n*** Move to: moved/new.txt", "*** Delete File: sample.txt" };
-        var expectedStatistics = new[] { new PatchStatistics(1, 0, 4, 0), new PatchStatistics(1, 1, 8, 18),
-            new PatchStatistics(0, 0, 0, 0), new PatchStatistics(0, 1, 0, 18) };
-        for (var i = 0; i < patches.Length; i++)
-        {
-            var preview = FullPreview(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["dry_run"] = true }));
-            Assert(preview.GetProperty("dryRun").GetBoolean(), "Patch preview");
-            var expected = JsonSerializer.SerializeToElement(expectedStatistics[i], new JsonSerializerOptions(JsonSerializerDefaults.Web));
-            Assert(JsonElement.DeepEquals(preview.GetProperty("statistics"), expected) &&
-                JsonElement.DeepEquals(preview.GetProperty("changes")[0].GetProperty("statistics"), expected), "Per-file and total preview statistics");
-            CheckReview(preview, mode, i == 2 ? ["Move"] : i == 3 ? ["Delete"] : []);
-            Assert(preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("path").GetString() == (i == 0 ? "preview/new.txt" : "sample.txt"), "Preview summary paths");
-            if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
-                Error(await Call(client, "apply_patch", new() { ["patch"] = Patch(patches[i]), ["approved"] = true, ["mode"] = "FullAccess" }),
-                    mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
-        }
+
+        var add = Patch("*** Add File: preview/new.txt\n+new");
+        var preview = FullPreview(await Call(client, "apply_patch", new() { ["patch"] = add, ["dry_run"] = true }));
+        Assert(preview.GetProperty("dryRun").GetBoolean() && preview.GetProperty("commit").ValueKind == JsonValueKind.Null &&
+            preview.GetProperty("changes")[0].GetProperty("summary").GetProperty("path").GetString() == "preview/new.txt",
+            "HTTP returns representative public preview without recording it");
+        CheckReview(preview, mode);
+
+        if (mode == ExecutionMode.ReadOnly)
+            Error(await Call(client, "apply_patch", new()
+                { ["patch"] = add, ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
+        else if (mode == ExecutionMode.ProjectEdit)
+            Error(await Call(client, "apply_patch", new()
+                { ["patch"] = Patch("*** Update File: sample.txt\n*** Move to: moved/new.txt"),
+                  ["approved"] = true, ["mode"] = "FullAccess" }), "ProjectEdit restrictions");
+
         if (mode == ExecutionMode.FullAccess)
         {
-            var result = Structured(await Call(client, "bash", new() { ["command"] = "printf hello; printf diagnostic >&2; exit 7" }));
-            Assert(result.GetProperty("exitCode").GetInt32() == 7 && result.GetProperty("stdout").GetString() == "hello" && result.GetProperty("stderr").GetString() == "diagnostic", "Bash result");
-            var timeout = Structured(await Call(client, "bash", new() { ["command"] = "printf partial; sleep 30", ["timeout_seconds"] = 1 }));
-            Assert(timeout.GetProperty("timedOut").GetBoolean() && timeout.GetProperty("stdout").GetString() == "partial", "Bash timeout");
+            var result = Structured(await Call(client, "bash", new()
+                { ["command"] = "printf hello; printf diagnostic >&2; exit 7" }));
+            Assert(result.GetProperty("exitCode").GetInt32() == 7 &&
+                result.GetProperty("stdout").GetString() == "hello" &&
+                result.GetProperty("stderr").GetString() == "diagnostic", "HTTP Bash result mapping");
         }
-        else Error(await Call(client, "bash", new() { ["command"] = "printf unexpected > denied.txt", ["approved"] = true }),
-            mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
-        Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.txt")) == "read-only fixture\n" && Directory.EnumerateFileSystemEntries(fixture.Root).Count() == 2,
-            "Previews and denials leave workspace unchanged");
-        Assert(fixture.Runtime.Execution!.ActiveCalls == 0 && fixture.Runtime.Snapshot.State == RuntimeState.Running, "Tool errors preserve runtime availability");
+        else
+            Error(await Call(client, "bash", new()
+                { ["command"] = "printf unexpected > denied.txt", ["approved"] = true }),
+                mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
+
+        Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.txt")) == "read-only fixture\n" &&
+            Directory.EnumerateFileSystemEntries(fixture.Root).Count() == 2 &&
+            fixture.Runtime.Execution!.ActiveCalls == 0 && fixture.Runtime.Snapshot.State == RuntimeState.Running,
+            "HTTP previews and denials neither mutate the workspace nor poison the runtime");
     }
 
     private static async Task CheckRiskAsync(ExecutionMode mode)
@@ -295,14 +287,13 @@ internal static class McpHttpChecks
         var cases = new (string Body, string[] Reasons)[]
         {
             ("*** Add File: one.md\n+a\n+b\n*** Add File: two.cs\n+c", []),
-            ("*** Add File: one.md\n*** Add File: two.md\n*** Add File: three.md", ["PathLimitExceeded"]),
-            ("*** Add File: lines.md\n+\n+\n+\n+", ["ChangedLineLimitExceeded"]),
-            ("*** Add File: bytes.md\n+abcdef", ["ChangedByteLimitExceeded"]),
             ("*** Update File: custom.md\n@@\n-  \"port\": 8000,\n+  \"port\": 8123,", ["CriticalFile", "ChangedByteLimitExceeded"]),
             ("*** Add File: nested/ordinary.md\n+x\n*** Delete File: sample.txt\n*** Update File: moving.cs\n*** Move to: renamed.cs\n" +
                 "*** Add File: Directory.Build.cs\n+b\n*** Add File: data.json\n+u",
                 ["CriticalFile", "UnknownFileType", "Delete", "Move", "PathLimitExceeded", "ChangedLineLimitExceeded", "ChangedByteLimitExceeded"])
         };
+        // Full risk taxonomy and each bound belong to the core/SDK tests. HTTP owns
+        // the mapped local policy, selected settings, and denied mixed-batch response.
         foreach (var (body, reasons) in cases)
         {
             var patch = Patch(body);

@@ -29,3 +29,5 @@ An intermittent Windows sharing violation on .minimcp-*.bak.tmp was reproduced d
 Do not treat an injected rollback failure, an unexpected file, an unchanged-source mismatch, or a nonempty directory as a successful teardown. Preserve the path, assertion, and exception details to investigate when one recurs.
 
 See [first-batch baseline](first-batch-baseline.md) for the initial Windows grouped timing results. Group elapsed times reflect one machine and one run; they are not stable benchmarks.
+
+The [second-batch coverage map](second-batch-coverage.md) identifies each cross-layer reduction, its retained assertions and the responsible layer.
