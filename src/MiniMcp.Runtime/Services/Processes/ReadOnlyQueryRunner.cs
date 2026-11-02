@@ -28,7 +28,9 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
             return await query(deadline.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        { throw new WorkspaceException("Read-only query exceeded its 10 second budget, including admission wait. Its process was cleaned up; no complete result is available."); }
+        {
+            throw new WorkspaceException("Read-only query exceeded its 10 second budget, including admission wait. Its process was cleaned up; no complete result is available.");
+        }
         finally
         {
             if (entered) _running.Release();
@@ -44,28 +46,19 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
             throw new WorkspaceException("The query executable is missing. Configure an existing absolute program path.");
         if (OperatingSystem.IsLinux() && !File.Exists("/usr/bin/setsid"))
             throw new WorkspaceException("Read-only queries require util-linux /usr/bin/setsid for process cleanup.");
-        var start = new ProcessStartInfo
-        {
-            FileName = OperatingSystem.IsLinux() ? "/usr/bin/setsid" : executable,
-            WorkingDirectory = directory,
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardOutputEncoding = new UTF8Encoding(false, true), StandardErrorEncoding = new UTF8Encoding(false)
-        };
-        if (OperatingSystem.IsLinux()) { start.ArgumentList.Add("--"); start.ArgumentList.Add(executable); }
-        foreach (var argument in arguments) start.ArgumentList.Add(argument);
-        // No user rg configuration, Git overrides, pager, preprocessing or injected loader options.
-        foreach (var key in start.Environment.Keys.ToArray())
-            if (!new[] { "SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG" }.Contains(key, StringComparer.OrdinalIgnoreCase))
-                start.Environment.Remove(key);
-        if (environment is not null)
-            foreach (var (key, value) in environment) start.Environment[key] = value;
+        var start = CreateStartInfo(executable, directory, arguments, environment);
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         ProcessLifetime lifetime;
         cancellationToken.ThrowIfCancellationRequested();
-        try { lifetime = ProcessLifetime.Start(start); }
+        try
+        {
+            lifetime = ProcessLifetime.Start(start);
+        }
         catch (Exception error) when (error is Win32Exception or IOException)
-        { throw new WorkspaceException("The query program could not start or process containment could not be established. Check the configured executable and permissions."); }
+        {
+            throw new WorkspaceException("The query program could not start or process containment could not be established. Check the configured executable and permissions.");
+        }
+
         using (lifetime)
         {
             var limited = false;
@@ -75,7 +68,8 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
             var stderr = ReadErrorsAsync();
             try
             {
-                await Task.WhenAll(lifetime.Process.WaitForExitAsync(limit.Token), output, stderr).WaitAsync(limit.Token).ConfigureAwait(false);
+                var completion = Task.WhenAll(lifetime.Process.WaitForExitAsync(limit.Token), output, stderr);
+                await completion.WaitAsync(limit.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (limit.IsCancellationRequested) { }
             catch (Exception) when (cancellationToken.IsCancellationRequested) { }
@@ -84,7 +78,11 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                 // Keep the actual call, slots and handles owned until descendants and both streams finish.
                 while (true)
                 {
-                    try { await lifetime.TerminateAsync().ConfigureAwait(false); break; }
+                    try
+                    {
+                        await lifetime.TerminateAsync().ConfigureAwait(false);
+                        break;
+                    }
                     catch (Exception error) when (error is Win32Exception or IOException)
                     {
                         // A failed termination observation is not proof of cleanup. Keep this actual
@@ -92,16 +90,14 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                         await Task.Delay(100).ConfigureAwait(false);
                     }
                 }
-                try { await Task.WhenAll(output, stderr).ConfigureAwait(false); }
+                try
+                {
+                    await Task.WhenAll(output, stderr).ConfigureAwait(false);
+                }
                 catch (Exception) when (cancellationToken.IsCancellationRequested) { }
             }
             cancellationToken.ThrowIfCancellationRequested();
-            var diagnostic = errorPrefix.ToString();
-            var failure = !errors ? QueryFailure.None : diagnostic.Contains("regex parse error", StringComparison.OrdinalIgnoreCase) ||
-                diagnostic.Contains("regex could not be compiled", StringComparison.OrdinalIgnoreCase) ? QueryFailure.Regex :
-                diagnostic.Contains("error parsing glob", StringComparison.OrdinalIgnoreCase) ? QueryFailure.Glob :
-                diagnostic.Contains("unrecognized flag", StringComparison.OrdinalIgnoreCase) || diagnostic.Contains("unexpected argument", StringComparison.OrdinalIgnoreCase)
-                    ? QueryFailure.UnsupportedArguments : QueryFailure.InputOrQuery;
+            var failure = ClassifyFailure(errors, errorPrefix.ToString());
             return new(lifetime.Process.ExitCode, limited, errors, failure);
 
             async Task ReadOutputAsync()
@@ -118,9 +114,21 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                         for (var index = 0; index < count && !limited; index++)
                         {
                             if (++total > maxOutputCharacters || frame.Length >= maxFrameCharacters)
-                            { limited = true; limit.Cancel(); break; }
-                            if (buffer[index] != separator) { frame.Append(buffer[index]); continue; }
-                            if (!accept(frame.ToString())) { limited = true; limit.Cancel(); }
+                            {
+                                limited = true;
+                                limit.Cancel();
+                                break;
+                            }
+                            if (buffer[index] != separator)
+                            {
+                                frame.Append(buffer[index]);
+                                continue;
+                            }
+                            if (!accept(frame.ToString()))
+                            {
+                                limited = true;
+                                limit.Cancel();
+                            }
                             frame.Clear();
                         }
                     }
@@ -139,8 +147,13 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                     limit.Cancel();
                     throw new WorkspaceException("The query program returned invalid UTF-8 protocol output.");
                 }
-                catch { limit.Cancel(); throw; }
+                catch
+                {
+                    limit.Cancel();
+                    throw;
+                }
             }
+
             async Task ReadErrorsAsync()
             {
                 try
@@ -155,10 +168,72 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
                     }
                     // Raw diagnostics can include excluded filenames; never return or log them as data.
                 }
-                catch { limit.Cancel(); throw; }
+                catch
+                {
+                    limit.Cancel();
+                    throw;
+                }
             }
         }
     }
 
-    public void Dispose() { _running.Dispose(); _capacity.Dispose(); }
+    private static ProcessStartInfo CreateStartInfo(string executable, string directory,
+        IEnumerable<string> arguments, IReadOnlyDictionary<string, string>? environment)
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = OperatingSystem.IsLinux() ? "/usr/bin/setsid" : executable,
+            WorkingDirectory = directory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = new UTF8Encoding(false, true),
+            StandardErrorEncoding = new UTF8Encoding(false)
+        };
+        if (OperatingSystem.IsLinux())
+        {
+            start.ArgumentList.Add("--");
+            start.ArgumentList.Add(executable);
+        }
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+
+        // No user rg configuration, Git overrides, pager, preprocessing or injected loader options.
+        string[] inheritedNames = ["SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG"];
+        foreach (var key in start.Environment.Keys.ToArray())
+        {
+            if (!inheritedNames.Contains(key, StringComparer.OrdinalIgnoreCase))
+                start.Environment.Remove(key);
+        }
+        if (environment is not null)
+        {
+            foreach (var (key, value) in environment) start.Environment[key] = value;
+        }
+        return start;
+    }
+
+    private static QueryFailure ClassifyFailure(bool hasErrors, string diagnostic)
+    {
+        if (!hasErrors) return QueryFailure.None;
+
+        if (diagnostic.Contains("regex parse error", StringComparison.OrdinalIgnoreCase) ||
+            diagnostic.Contains("regex could not be compiled", StringComparison.OrdinalIgnoreCase))
+            return QueryFailure.Regex;
+
+        if (diagnostic.Contains("error parsing glob", StringComparison.OrdinalIgnoreCase))
+            return QueryFailure.Glob;
+
+        if (diagnostic.Contains("unrecognized flag", StringComparison.OrdinalIgnoreCase) ||
+            diagnostic.Contains("unexpected argument", StringComparison.OrdinalIgnoreCase))
+            return QueryFailure.UnsupportedArguments;
+
+        return QueryFailure.InputOrQuery;
+    }
+
+    public void Dispose()
+    {
+        _running.Dispose();
+        _capacity.Dispose();
+    }
 }
