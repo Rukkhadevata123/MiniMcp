@@ -316,6 +316,10 @@ internal static class RecoveryCompletionChecks
             .Select(path => Path.GetRelativePath(Storage, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))).ToArray();
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + ":" + (Directory.Exists(path) ? "directory" : Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { Workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose()
+        {
+            CheckRunner.Cleanup("completion mutation gate", Workspace.Mutations.Dispose);
+            CheckRunner.Cleanup(DirectoryPath, () => CheckRunner.DeleteTemporaryDirectory(DirectoryPath));
+        }
     }
 }

@@ -104,7 +104,7 @@ internal static class RecoveryRestoreLifetimeChecks
             finally { release.TrySetResult(); await Drain(first); if (second is not null) await Drain(second); }
         });
 
-        await check("runtime stop deadline retains the real restore finalization, blocks another host and invalidates old-session plans after drain and restart", async () =>
+        await check("caller-cancelled runtime stop retains restore finalization and invalidates old-session plans after drain", async () =>
         {
             using var fixture = new PatchExecutionFixture();
             var armed = false; var entered = Signal(); var release = Signal();
@@ -123,9 +123,17 @@ internal static class RecoveryRestoreLifetimeChecks
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-                await Reject<OperationCanceledException>(() => runtime.StopAsync()).WaitAsync(TimeSpan.FromSeconds(15));
+                // One default deadline is already verified by RuntimeCallChecks.
+                // Preserve the restore-specific ownership/issuer assertions with an explicit cancellation.
+                using var stopCancel = new CancellationTokenSource();
+                var stopping = runtime.StopAsync(stopCancel.Token);
+                for (var attempt = 0; attempt < 500 && runtime.Snapshot.State != RuntimeState.Stopping; attempt++)
+                    await Task.Delay(10);
+                Assert(runtime.Snapshot.State == RuntimeState.Stopping, "Runtime entered its owned shutdown before caller cancellation");
+                stopCancel.Cancel();
+                await Reject<OperationCanceledException>(() => stopping).WaitAsync(TimeSpan.FromSeconds(5));
                 Assert(!restoring.IsCompleted && execution.ActiveCalls == 1 && !execution.IsDisposed && runtime.Snapshot.State == RuntimeState.Faulted &&
-                    fixture.Get("sample.md") == "old\n", "An installed restore remains owned while final metadata exceeds the actual shutdown deadline");
+                    fixture.Get("sample.md") == "old\n", "An installed restore remains owned while final metadata is blocked after stop cancellation");
                 await Reject<InvalidOperationException>(() => runtime.StartAsync(fixture.Configuration));
                 await Reject<WorkspaceException>(() => execution.CommitRecoveryAsync(unused));
                 release.TrySetResult();

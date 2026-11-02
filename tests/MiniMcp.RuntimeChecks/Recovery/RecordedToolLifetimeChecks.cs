@@ -9,7 +9,7 @@ internal static class RecordedToolLifetimeChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        await check("runtime stop deadline retains an installed patch and final task, forbids a second host and permits restart only after true drain", async () =>
+        await check("caller-cancelled runtime stop retains an installed patch and final task until actual drain", async () =>
         {
             using var fixture = new PatchExecutionFixture();
             using var next = new PatchExecutionFixture(ExecutionMode.ReadOnly);
@@ -26,10 +26,18 @@ internal static class RecordedToolLifetimeChecks
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
-                await Reject<OperationCanceledException>(() => runtime.StopAsync()).WaitAsync(TimeSpan.FromSeconds(15));
+                // RuntimeCallChecks owns the real ten-second default deadline.
+                // Here cancellation makes ownership observable without another full wait.
+                using var stopCancel = new CancellationTokenSource();
+                var stopping = runtime.StopAsync(stopCancel.Token);
+                for (var attempt = 0; attempt < 500 && runtime.Snapshot.State != RuntimeState.Stopping; attempt++)
+                    await Task.Delay(10);
+                Assert(runtime.Snapshot.State == RuntimeState.Stopping, "Runtime entered its owned shutdown before caller cancellation");
+                stopCancel.Cancel();
+                await Reject<OperationCanceledException>(() => stopping).WaitAsync(TimeSpan.FromSeconds(5));
                 Assert(runtime.Snapshot.State == RuntimeState.Faulted && runtime.Snapshot.RunId == before.RunId &&
                     !call.IsCompleted && !execution.IsDisposed && execution.ActiveCalls == 1 && fixture.ReadManifest().State == RecoveryRecordState.Applying,
-                    "Real shutdown deadline cannot label finalization stopped or dispose its owned services");
+                    "Cancelled runtime stop cannot label finalization stopped or dispose its owned services");
                 await Reject<InvalidOperationException>(() => runtime.StartAsync(next.Configuration));
                 await Reject<WorkspaceException>(() => execution.ApplyPatchAsync(Patch("*** Add File: forbidden.md\n+no")));
                 release.TrySetResult();

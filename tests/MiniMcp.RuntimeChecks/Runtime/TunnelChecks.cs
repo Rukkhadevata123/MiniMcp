@@ -312,7 +312,7 @@ internal static class TunnelChecks
                 !File.Exists(Path.Combine(fixture.Configuration.Settings.ProjectRoot, "queued.txt")), "Whole session drains without queued effects");
         });
 
-        await check("tunnel: ten-second stop deadline retains real cleanup and retries cannot start another session", async () =>
+        await check("tunnel: caller-cancelled stop retains real cleanup and retries cannot start another session", async () =>
         {
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -330,10 +330,12 @@ internal static class TunnelChecks
                 using var parent = await fixture.ObserveAsync((await fixture.ReportAsync()).ProcessId);
                 using var descendant = await fixture.DescendantAsync();
                 var elapsed = Stopwatch.StartNew();
-                var stopping = fixture.Runtime.StopAsync();
+                using var cancellation = new CancellationTokenSource();
+                var stopping = fixture.Runtime.StopAsync(cancellation.Token);
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                cancellation.Cancel();
                 await Reject<OperationCanceledException>(() => stopping);
-                Assert(elapsed.Elapsed >= TimeSpan.FromSeconds(9) && elapsed.Elapsed < TimeSpan.FromSeconds(16), "Shared real deadline");
+                Assert(elapsed.Elapsed < TimeSpan.FromSeconds(8), "Caller cancellation does not require another default shutdown deadline");
                 Assert(fixture.Runtime.Snapshot.State == RuntimeState.Faulted && fixture.Runtime.Execution == execution && !execution.IsDisposed, "Host ownership retained");
                 await RuntimeCallChecks.AssertStoppedAsync(parent);
                 await RuntimeCallChecks.AssertStoppedAsync(descendant);

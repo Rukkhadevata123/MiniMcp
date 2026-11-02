@@ -12,7 +12,7 @@ dotnet run --project tests/MiniMcp.ProtocolChecks
 dotnet run --project tests/MiniMcp.DesktopChecks
 ~~~
 
---list, --group NAME, --id SUITE/GROUP/SLUG, and --filter TEXT work in all four executables. Selection flags can be combined; --id and --group are exact (case-insensitive), --filter is a case-insensitive substring of the name or ID. A selection that matches no case exits with code 1; listing does not execute selected check actions. IDs are deterministic within the current suite; renaming a case changes its ID. Duplicate IDs fail registration.
+--list, --group NAME, --id SUITE/GROUP/SLUG, --filter TEXT, and --tier fast|integration|slow|ui work in all four check runners. Selection flags can be combined; --id and --group are exact (case-insensitive), --filter is a case-insensitive substring of the name or ID, and --tier selects one explicitly assigned category. A selection that matches no case exits with code 1; listing does not execute selected check actions. IDs are deterministic within the current suite; renaming a case changes its ID. Duplicate IDs fail registration.
 
 Results distinguish **PASS**, **FAIL**, **SKIP**, and **FAIL CLEANUP**, with per-case and suite elapsed times. An explicit skip has a reason and is never counted as a pass. A fixture can report a cleanup failure separately from its original assertion failure, including both exception stacks. Fault-matrix failures include the applicable stage/state/index dimensions where annotated. A selected check can contain several internal matrix iterations, so the number of checks is **not** the number of independent subscenarios.
 
@@ -31,3 +31,22 @@ Do not treat an injected rollback failure, an unexpected file, an unchanged-sour
 See [first-batch baseline](first-batch-baseline.md) for the initial Windows grouped timing results. Group elapsed times reflect one machine and one run; they are not stable benchmarks.
 
 The [second-batch coverage map](second-batch-coverage.md) identifies each cross-layer reduction, its retained assertions and the responsible layer.
+
+## Test tiers
+
+~~~powershell
+dotnet run --project tests/MiniMcp.Checks -- --tier fast
+dotnet run --project tests/MiniMcp.ProtocolChecks -- --tier fast
+dotnet run --project tests/MiniMcp.RuntimeChecks -- --tier fast
+dotnet run --project tests/MiniMcp.RuntimeChecks -- --tier integration
+dotnet run --project tests/MiniMcp.RuntimeChecks -- --tier slow
+dotnet run --project tests/MiniMcp.RuntimeChecks -- --list --tier slow
+dotnet run --project tests/MiniMcp.RuntimeChecks -- --group recovery.restore-fault --tier integration
+dotnet run --project tests/MiniMcp.DesktopChecks -- --tier ui
+~~~
+
+Each check has exactly one tier; a tier is a filter, not a flag that changes assertions or replaces real test infrastructure. **fast** covers core parsing, risk rules, configuration values, quick recovery validation and in-memory SDK protocol. The SDK protocol still uses real tools (including Bash on applicable modes), so fast does not imply zero filesystem/process dependencies. **integration** covers filesystem, real Git/rg/Bash, HTTP and representative recovery/runtime/CLI behavior. **slow** isolates the full recorded fault matrices and actual default stop/start budgets; currently it contains RuntimeChecks tests, so requesting slow in another executable with no such cases correctly returns a no-match error. **ui/acceptance** is the real Windows desktop UI, invoked via DesktopChecks --tier ui (equivalent to --ui); default DesktopChecks remains non-window integration. Screenshot generation remains separate, not automatic proof of UI correctness.
+
+For Windows daily work run fast plus affected integration groups; before merge run all integration groups and slow on the affected platform; for release run the full suite and manual UI acceptance where supported. Using --list --tier CATEGORY exposes ownership, while --list without a filter inventories all check IDs. In-memory ProtocolChecks is fast despite its relatively small number of expensive SDK operations; timings are observations rather than stable guarantees.
+
+See [third-batch matrix and results](third-batch-results.md) for the explicit rollback/finalization ownership, before/after subscenario counts, timings and outstanding environment limitations.

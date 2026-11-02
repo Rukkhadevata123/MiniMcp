@@ -56,6 +56,22 @@ internal static class CheckRunnerChecks
                 log.Contains("IOException: Injected cleanup failure", StringComparison.Ordinal),
                 "Original error and cleanup error are both retained");
         });
+        await check("runner tier selection lists the owned category without executing other tiers", async () =>
+        {
+            using var output = new StringWriter();
+            var runner = new CheckRunner("runtime", ["--tier", "slow", "--list"], output);
+            await runner.CheckAsync("host.calls", "shutdown deadline bounds blocking host stop and retries share its unfinished task",
+                () => throw new Exception("Listing must not execute."));
+            await runner.CheckAsync("configuration.json", "Strict JSON rejects duplicate keys",
+                () => throw new Exception("Fast case must not execute."));
+            Assert(runner.Selected == 1 && runner.Finish() == 0 &&
+                output.ToString().Contains("\tslow", StringComparison.Ordinal) &&
+                !output.ToString().Contains("duplicate", StringComparison.OrdinalIgnoreCase),
+                "Only selected tier appears in list mode");
+            try { _ = new CheckRunner("runtime", ["--tier", "everything"]); }
+            catch (ArgumentException) { return; }
+            throw new Exception("Unknown tier was accepted");
+        });
     }
 
     private static void Assert(bool condition, string message)

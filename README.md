@@ -77,7 +77,7 @@ dotnet run --project tests/MiniMcp.RuntimeChecks
 
 Windows 还可执行 `dotnet run --project tests/MiniMcp.DesktopChecks`，加上 `-- --ui` 运行实际窗口交互检查。检查需要相关的 Bash、ripgrep 和 Git；Runtime 检查使用 `dotnet run` 或生成的 apphost 启动受控子进程。
 
-四个检查入口都支持按组、用例 ID、子串筛选和列表模式，并分别报告 Pass/Fail/Skip、耗时和清理错误。外部程序仅由需要它的检查使用；纯逻辑检查不依赖 Bash。详细用法和首批按组运行基线参见 [测试说明](tests/README.md)。
+四个检查入口都支持按组、用例 ID、子串筛选、fast/integration/slow 层级和列表模式，并分别报告 Pass/Fail/Skip、耗时和清理错误。真实窗口 UI 验收单独运行；外部程序仅由需要它的检查使用。详细用法及三批测试基线参见 [测试说明](tests/README.md)。
 
 ## 实现参考与许可证
 

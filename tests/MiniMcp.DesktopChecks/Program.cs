@@ -2,7 +2,7 @@ using MiniMcp;
 using MiniMcp.Configuration;
 using MiniMcp.DesktopChecks;
 
-if (args is ["--ui"]) return UiSmoke.Run();
+if (args is ["--ui"] or ["--tier", "ui"]) return UiSmoke.Run();
 if (args is ["--ui-screenshots", var screenshotDirectory]) return UiSmoke.Run(screenshotDirectory);
 if (args is ["--readme-screenshots", var documentationImages, var demoDirectory]) return ReadmeScreenshots.Run(documentationImages, demoDirectory);
 if (args is ["tunnel", "--no-autoupdate", "run", "--token-file", var tunnelTokenFile]) return await DesktopTunnelChild.Run(tunnelTokenFile);

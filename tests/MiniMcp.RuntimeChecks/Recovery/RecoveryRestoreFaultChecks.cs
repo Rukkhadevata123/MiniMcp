@@ -11,9 +11,11 @@ internal static class RecoveryRestoreFaultChecks
 
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        await check("restore backup failures at every preparation checkpoint leave the entire current workspace and source record untouched", async () =>
+        await check("restore backup failures before manifest and before return leave source history untouched", async () =>
         {
-            foreach (var boundary in Enum.GetValues<RecoveryPreparationStage>())
+            // Recorded patch preparation owns the full checkpoint matrix.
+            // Restoration specifically checks the initial and final before-image gates.
+            foreach (var boundary in new[] { RecoveryPreparationStage.BeforeManifest, RecoveryPreparationStage.BeforeReturn })
             {
                 using var fixture = new PatchExecutionFixture();
                 var armed = false; var installs = 0;
@@ -89,10 +91,19 @@ internal static class RecoveryRestoreFaultChecks
             }
         });
 
-        await check("restore mixed-failure matrix rolls back every installed prefix with exact current bytes and a finalized new rollback record", async () =>
+        await check("restore representative installation failures preserve source history and finalize new rollback records", async () =>
         {
-            var boundaries = new[] { (PatchCommitStage.Staged, -1) }.Concat(Enumerable.Range(0, 6).SelectMany(index =>
-                new[] { (PatchCommitStage.BeforeInstall, index), (PatchCommitStage.Installed, index) }));
+            // RecordedPatchFaultChecks tests every install boundary of the underlying
+            // engine. Here test the new reverse plan at staging, first, middle and last
+            // installed prefixes, as well as the initial pre-install boundary.
+            var boundaries = new[]
+            {
+                (PatchCommitStage.Staged, -1),
+                (PatchCommitStage.BeforeInstall, 0),
+                (PatchCommitStage.Installed, 0),
+                (PatchCommitStage.Installed, 3),
+                (PatchCommitStage.Installed, 5)
+            };
             foreach (var boundary in boundaries)
             {
                 CheckRunner.Scenario($"restore-stage={boundary.Item1}, install-index={boundary.Item2}");
@@ -153,10 +164,13 @@ internal static class RecoveryRestoreFaultChecks
             }
         });
 
-        await check("restore final-manifest fault matrix keeps all actual terminal states and forbids replay even when only metadata can retry", async () =>
+        await check("restore final-manifest pre- and post-replace failures preserve every terminal state and forbid replay", async () =>
         {
             foreach (var terminal in Enum.GetValues<PatchCommitState>())
-                foreach (var boundary in Enum.GetValues<RecoveryManifestReplacementStage>())
+                // RecordedPatchFaultChecks owns every final-replacement stage for all
+                // terminal states. Restore adds independent source history, retry and
+                // one-use-plan semantics at both sides of the atomic rename.
+                foreach (var boundary in new[] { RecoveryManifestReplacementStage.BeforeReplace, RecoveryManifestReplacementStage.Replaced })
                 {
                     CheckRunner.Scenario($"terminal={terminal}, replacement={boundary}");
                     using var fixture = new PatchExecutionFixture();
