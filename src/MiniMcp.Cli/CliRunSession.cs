@@ -13,12 +13,14 @@ internal static class CliRunSession
         var presentation = new CliPresentation(runtime, output, error, budget);
         var startupCancellation = new CancellationTokenSource();
         var cancellingStartup = Task.CompletedTask;
+
         void CancelStartup()
         {
             if (startupCancellation.IsCancellationRequested) return;
             cancellingStartup = startupCancellation.CancelAsync();
             Observe(cancellingStartup);
         }
+
         var starting = runtime.StartAsync(configuration, startupCancellation.Token);
         var started = false;
         var startupFinished = false;
@@ -39,7 +41,10 @@ internal static class CliRunSession
                 else await starting.ConfigureAwait(false);
                 started = true;
             }
-            catch (Exception exception) { problem = exception; }
+            catch (Exception exception)
+            {
+                problem = exception;
+            }
             startupFinished = starting.IsCompleted;
 
             if (started)
@@ -61,7 +66,11 @@ internal static class CliRunSession
                     await disposing.ConfigureAwait(false);
                     cleaned = true;
                 }
-                catch (Exception exception) { problem = exception; Observe(disposing); }
+                catch (Exception exception)
+                {
+                    problem = exception;
+                    Observe(disposing);
+                }
             }
         }
         finally
@@ -72,22 +81,18 @@ internal static class CliRunSession
             if (starting.IsCompleted && cancellingStartup.IsCompleted) startupCancellation.Dispose();
             else
             {
-                _ = Task.WhenAll(starting, cancellingStartup).ContinueWith(task => { _ = task.Exception; startupCancellation.Dispose(); },
+                _ = Task.WhenAll(starting, cancellingStartup).ContinueWith(task =>
+                {
+                    _ = task.Exception;
+                    startupCancellation.Dispose();
+                },
                     CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
         }
 
         var cancelledStartup = !started && problem is OperationCanceledException && cancellationToken.IsCancellationRequested;
-        var failed = !cleaned || runtime.Snapshot.FaultCount != 0 || presentation.HadFault ||
-            presentation.OutputFailed || (problem is not null && !cancelledStartup);
-        var code = failed ? CliExitCodes.Failure : cancelledStartup ? CliExitCodes.Cancelled : CliExitCodes.Success;
-        var detail = presentation.OutputFailed ? presentation.Failure.Task.Result.Message : problem?.Message;
-        var message = !cleaned
-            ? $"启动或停止失败：清理尚未完成，请核对受管进程与修改记录。{detail}"
-            : code == CliExitCodes.Cancelled ? "启动已取消；清理完成。"
-            : code == CliExitCodes.Success ? "已停止。"
-            : problem is not null || presentation.OutputFailed ? $"启动或停止失败：{detail}；清理完成。"
-            : "运行发生故障；MCP 和受管隧道清理完成。";
+        var code = DetermineExitCode(runtime, presentation, cleaned, cancelledStartup, problem);
+        var message = DescribeExit(code, cleaned, problem, presentation);
         if (!await presentation.FinishAsync(message, code != CliExitCodes.Success).ConfigureAwait(false))
         {
             code = CliExitCodes.Failure;
@@ -95,6 +100,29 @@ internal static class CliRunSession
                 ? "输出未完成；MCP 和受管隧道清理完成。" : "输出与清理未完成；请核对受管进程与修改记录。").ConfigureAwait(false);
         }
         return code;
+    }
+
+    private static int DetermineExitCode(McpRuntime runtime, CliPresentation presentation,
+        bool cleaned, bool cancelledStartup, Exception? problem)
+    {
+        var failed = !cleaned || runtime.Snapshot.FaultCount != 0 || presentation.HadFault ||
+            presentation.OutputFailed || (problem is not null && !cancelledStartup);
+        if (failed) return CliExitCodes.Failure;
+        return cancelledStartup ? CliExitCodes.Cancelled : CliExitCodes.Success;
+    }
+
+    private static string DescribeExit(int code, bool cleaned, Exception? problem, CliPresentation presentation)
+    {
+        var detail = presentation.OutputFailed ? presentation.Failure.Task.Result.Message : problem?.Message;
+        if (!cleaned)
+            return $"启动或停止失败：清理尚未完成，请核对受管进程与修改记录。{detail}";
+
+        if (code == CliExitCodes.Cancelled) return "启动已取消；清理完成。";
+        if (code == CliExitCodes.Success) return "已停止。";
+
+        if (problem is not null || presentation.OutputFailed)
+            return $"启动或停止失败：{detail}；清理完成。";
+        return "运行发生故障；MCP 和受管隧道清理完成。";
     }
 
     private static void Observe(Task task) => _ = task.ContinueWith(completed => _ = completed.Exception,

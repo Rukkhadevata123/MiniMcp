@@ -93,8 +93,14 @@ public sealed class McpRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(configuration);
         // Host construction can do synchronous work; do not perform it on the caller's UI context.
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try { await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false); }
-        finally { _lifecycle.Release(); }
+        try
+        {
+            await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycle.Release();
+        }
     }
 
     /// <summary>The caller supplies a freshly loaded/validated saved configuration.</summary>
@@ -109,7 +115,10 @@ public sealed class McpRuntime : IAsyncDisposable
             await StopCoreAsync(cancellationToken).ConfigureAwait(false);
             await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false);
         }
-        finally { _lifecycle.Release(); }
+        finally
+        {
+            _lifecycle.Release();
+        }
     }
 
     public async Task StartTunnelAsync(CancellationToken cancellationToken = default)
@@ -149,7 +158,10 @@ public sealed class McpRuntime : IAsyncDisposable
                 throw;
             }
         }
-        finally { _lifecycle.Release(); }
+        finally
+        {
+            _lifecycle.Release();
+        }
     }
 
     public async Task StopTunnelAsync(CancellationToken cancellationToken = default)
@@ -162,7 +174,10 @@ public sealed class McpRuntime : IAsyncDisposable
             deadline.CancelAfter(ShutdownTimeout);
             await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
         }
-        finally { _lifecycle.Release(); }
+        finally
+        {
+            _lifecycle.Release();
+        }
     }
 
     private async Task StartCoreAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken)
@@ -182,49 +197,7 @@ public sealed class McpRuntime : IAsyncDisposable
         LogState(Snapshot);
         try
         {
-            var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions
-            {
-                Args = [],
-                ApplicationName = typeof(McpRuntime).Assembly.GetName().Name,
-                ContentRootPath = AppContext.BaseDirectory
-            });
-            builder.Logging.ClearProviders().SetMinimumLevel(LogLevel.Information).AddProvider(logProvider);
-            var port = _testPortOverride ?? configuration.Settings.Port;
-            builder.WebHost.UseKestrel(options =>
-            {
-                options.Listen(IPAddress.Loopback, port);
-                options.Limits.MaxRequestBodySize = 2 * 1024 * 1024;
-            });
-            builder.Services.AddRouting();
-            builder.Services.AddSingleton<IHostLifetime>(new CallerControlledLifetime());
-            builder.Services.AddToolExecution(runId, configuration);
-            builder.Services.AddMcpServer()
-                .WithHttpTransport(options =>
-                {
-                    // Stateless disallows GET/DELETE; legacy SSE mapping stays at its disabled SDK default.
-                    options.SessionMode = HttpServerSessionMode.Stateless;
-                })
-                .WithTools<WorkspaceTools>()
-                .AddAuthorizationFilters();
-            var authentication = configuration.Settings.Authentication;
-            List<string> allowedHosts = ["localhost", "127.0.0.1", "[::1]"];
-            switch (authentication.Mode)
-            {
-                case AuthenticationMode.Local: break;
-                case AuthenticationMode.CloudflareAccess:
-                    allowedHosts.Add(new Uri(authentication.PublicOrigin!).Host);
-                    builder.Services.AddCloudflareAccess(authentication);
-                    break;
-                default: throw new InvalidOperationException("Unknown authentication mode.");
-            }
-            builder.Services.AddHostFiltering(options =>
-            {
-                options.AllowedHosts = allowedHosts;
-                options.AllowEmptyHosts = false;
-                options.IncludeFailureMessage = false;
-            });
-            _configureServices?.Invoke(builder.Services);
-            var application = builder.Build();
+            var application = BuildHost(configuration, runId, logProvider);
             ToolExecutionService? execution = null;
             _application = application;
             Publish(Snapshot);
@@ -234,21 +207,12 @@ public sealed class McpRuntime : IAsyncDisposable
                 // Resolve before listening, so workspace initialization cannot fail on the first tool request.
                 execution = application.Services.GetRequiredService<ToolExecutionService>();
                 Volatile.Write(ref _execution, execution);
-                application.UseHostFiltering();
-                application.UseRouting();
-                if (authentication.Mode == AuthenticationMode.CloudflareAccess)
-                {
-                    application.UseAuthentication();
-                    application.UseAuthorization();
-                }
-                application.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
-                var mcp = application.MapMcp("/mcp");
-                if (authentication.Mode == AuthenticationMode.CloudflareAccess) mcp.RequireAuthorization();
-                _configureEndpoints?.Invoke(application);
+                ConfigureHttpPipeline(application, configuration.Settings.Authentication.Mode);
                 await application.StartAsync(cancellationToken).ConfigureAwait(false);
                 _hostStarted = true;
                 cancellationToken.ThrowIfCancellationRequested();
                 Publish(Snapshot with { Address = new Uri(application.Urls.Single()) });
+
                 if (configuration.Settings.Tunnel.Enabled)
                     await StartTunnelCoreAsync(cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -296,11 +260,84 @@ public sealed class McpRuntime : IAsyncDisposable
         }
     }
 
+    private WebApplication BuildHost(RuntimeConfiguration configuration, Guid runId, RuntimeLoggerProvider logProvider)
+    {
+        var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions
+        {
+            Args = [],
+            ApplicationName = typeof(McpRuntime).Assembly.GetName().Name,
+            ContentRootPath = AppContext.BaseDirectory
+        });
+        builder.Logging.ClearProviders().SetMinimumLevel(LogLevel.Information).AddProvider(logProvider);
+        var port = _testPortOverride ?? configuration.Settings.Port;
+        builder.WebHost.UseKestrel(options =>
+        {
+            options.Listen(IPAddress.Loopback, port);
+            options.Limits.MaxRequestBodySize = 2 * 1024 * 1024;
+        });
+
+        builder.Services.AddRouting();
+        builder.Services.AddSingleton<IHostLifetime>(new CallerControlledLifetime());
+        builder.Services.AddToolExecution(runId, configuration);
+        builder.Services.AddMcpServer()
+            .WithHttpTransport(options =>
+            {
+                // Stateless disallows GET/DELETE; legacy SSE mapping stays at its disabled SDK default.
+                options.SessionMode = HttpServerSessionMode.Stateless;
+            })
+            .WithTools<WorkspaceTools>()
+            .AddAuthorizationFilters();
+
+        var authentication = configuration.Settings.Authentication;
+        List<string> allowedHosts = ["localhost", "127.0.0.1", "[::1]"];
+        switch (authentication.Mode)
+        {
+            case AuthenticationMode.Local:
+                break;
+            case AuthenticationMode.CloudflareAccess:
+                allowedHosts.Add(new Uri(authentication.PublicOrigin!).Host);
+                builder.Services.AddCloudflareAccess(authentication);
+                break;
+            default:
+                throw new InvalidOperationException("Unknown authentication mode.");
+        }
+        builder.Services.AddHostFiltering(options =>
+        {
+            options.AllowedHosts = allowedHosts;
+            options.AllowEmptyHosts = false;
+            options.IncludeFailureMessage = false;
+        });
+
+        _configureServices?.Invoke(builder.Services);
+        return builder.Build();
+    }
+
+    private void ConfigureHttpPipeline(WebApplication application, AuthenticationMode authenticationMode)
+    {
+        application.UseHostFiltering();
+        application.UseRouting();
+        if (authenticationMode == AuthenticationMode.CloudflareAccess)
+        {
+            application.UseAuthentication();
+            application.UseAuthorization();
+        }
+        application.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+        var mcp = application.MapMcp("/mcp");
+        if (authenticationMode == AuthenticationMode.CloudflareAccess) mcp.RequireAuthorization();
+        _configureEndpoints?.Invoke(application);
+    }
+
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try { await StopCoreAsync(cancellationToken).ConfigureAwait(false); }
-        finally { _lifecycle.Release(); }
+        try
+        {
+            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _lifecycle.Release();
+        }
     }
 
     public ValueTask DisposeAsync() => DisposeAsync(CancellationToken.None);
@@ -317,7 +354,10 @@ public sealed class McpRuntime : IAsyncDisposable
             Publish(Snapshot with { State = RuntimeState.Disposed });
             _diagnostics.Complete();
         }
-        finally { _lifecycle.Release(); }
+        finally
+        {
+            _lifecycle.Release();
+        }
         // Keep the managed semaphore usable for calls racing with disposal; it owns no wait handle.
     }
 
@@ -352,6 +392,7 @@ public sealed class McpRuntime : IAsyncDisposable
         draining ??= _execution?.StopAsync(cancellationToken) ?? Task.CompletedTask;
         var tunnel = StopTunnelCoreAsync(cancellationToken);
         await Task.WhenAll(draining, tunnel).ConfigureAwait(false);
+
         var application = _application!;
         // A failed stop can be retried; never overlap stopping with unfinished disposal.
         if (_hostStarted && _hostDisposeTask is null)
