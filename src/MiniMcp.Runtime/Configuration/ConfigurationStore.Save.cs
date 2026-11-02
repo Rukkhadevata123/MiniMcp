@@ -25,14 +25,18 @@ public sealed partial class ConfigurationStore
             var validator = new ConfigurationValidator(_paths);
             void Validate() => validator.Validate(file.Value, file.FilePath, policy.Value);
             Validate();
-            return await WriteAsync(file, EncodeJson(ConfigurationJson.SerializeSettings(file.Value)), Validate,
+            var bytes = EncodeJson(ConfigurationJson.SerializeSettings(file.Value));
+            return await WriteAsync(file, bytes, Validate,
                 token => CheckRevisionAsync(policy.FilePath, policy.Revision, token), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or AggregateException)
         {
             throw new ConfigurationSaveException(file.FilePath, exception);
         }
-        finally { Saves.Release(); }
+        finally
+        {
+            Saves.Release();
+        }
     }
 
     /// <summary>
@@ -57,19 +61,23 @@ public sealed partial class ConfigurationStore
         try
         {
             await CheckRevisionAsync(settings.FilePath, settings.Revision, cancellationToken).ConfigureAwait(false);
-            var current = await ReadSettingsAsync(settings.FilePath, Path.GetDirectoryName(settings.FilePath)!, cancellationToken).ConfigureAwait(false);
-            if (current.Revision != settings.Revision) throw new ConfigurationConflictException(settings.FilePath);
+            var currentSettings = await ReadSettingsAsync(settings.FilePath, Path.GetDirectoryName(settings.FilePath)!, cancellationToken).ConfigureAwait(false);
+            if (currentSettings.Revision != settings.Revision) throw new ConfigurationConflictException(settings.FilePath);
             var validator = new ConfigurationValidator(_paths);
-            void Validate() => validator.Validate(current.Value, current.FilePath, file.Value);
+            void Validate() => validator.Validate(currentSettings.Value, currentSettings.FilePath, file.Value);
             Validate();
-            return await WriteAsync(file, EncodeJson(ConfigurationJson.SerializePolicy(file.Value)), Validate,
-                token => CheckRevisionAsync(current.FilePath, current.Revision, token), cancellationToken).ConfigureAwait(false);
+            var bytes = EncodeJson(ConfigurationJson.SerializePolicy(file.Value));
+            return await WriteAsync(file, bytes, Validate,
+                token => CheckRevisionAsync(currentSettings.FilePath, currentSettings.Revision, token), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or AggregateException)
         {
             throw new ConfigurationSaveException(file.FilePath, exception);
         }
-        finally { Saves.Release(); }
+        finally
+        {
+            Saves.Release();
+        }
     }
 
     private static byte[] EncodeJson(string json)
@@ -83,75 +91,119 @@ public sealed partial class ConfigurationStore
         Action validate, Func<CancellationToken, Task> checkDependencies, CancellationToken cancellationToken)
     {
         var saved = file with { Revision = Convert.ToHexString(SHA256.HashData(bytes)) };
-        string? temporary = null;
+        string? temporaryPath = null;
         var createdDirectories = new List<string>();
         try
         {
             await CheckRevisionAsync(file.FilePath, file.Revision, cancellationToken).ConfigureAwait(false);
             await checkDependencies(cancellationToken).ConfigureAwait(false);
-            var parent = Path.GetDirectoryName(file.FilePath)!;
-            var missing = new Stack<string>();
-            for (var directory = parent; !Directory.Exists(directory);)
-            {
-                missing.Push(directory);
-                directory = Path.GetDirectoryName(directory)
-                    ?? throw new DirectoryNotFoundException($"Cannot locate an existing parent directory for '{file.FilePath}'.");
-            }
-            while (missing.TryPop(out var directory))
-            {
-                if (OperatingSystem.IsLinux())
-                    Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-                else Directory.CreateDirectory(directory);
-                createdDirectories.Add(directory);
-            }
+            var parent = CreateParentDirectories(file.FilePath, createdDirectories);
             validate();
+
             var candidate = Path.Combine(parent, $".minimcp-config-{Guid.NewGuid():N}.tmp");
-            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Options = FileOptions.Asynchronous };
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Options = FileOptions.Asynchronous
+            };
             if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             await using (var stream = new FileStream(candidate, options))
             {
-                temporary = candidate;
+                temporaryPath = candidate;
                 await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 stream.Flush(flushToDisk: true);
             }
+
             if (_beforeCommit is not null) await _beforeCommit().ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             validate();
             await checkDependencies(cancellationToken).ConfigureAwait(false);
             await CheckRevisionAsync(file.FilePath, file.Revision, cancellationToken).ConfigureAwait(false);
             if (OperatingSystem.IsLinux() && file.Revision is not null)
-                File.SetUnixFileMode(temporary, File.GetUnixFileMode(file.FilePath));
+                File.SetUnixFileMode(temporaryPath, File.GetUnixFileMode(file.FilePath));
             cancellationToken.ThrowIfCancellationRequested();
+
             // Commit is not cancellable: once installed, report the saved snapshot rather than cancellation.
-            if (file.Revision is null) File.Move(temporary, file.FilePath);
-            else File.Replace(temporary, file.FilePath, destinationBackupFileName: null);
-            temporary = null;
+            if (file.Revision is null) File.Move(temporaryPath, file.FilePath);
+            else File.Replace(temporaryPath, file.FilePath, destinationBackupFileName: null);
+            temporaryPath = null;
             return saved;
         }
         catch (Exception failure)
         {
             var failures = new List<Exception> { failure };
-            if (temporary is not null)
-                try { File.Delete(temporary); }
-                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { failures.Add(cleanup); }
-            foreach (var directory in createdDirectories.AsEnumerable().Reverse())
-            {
-                try { if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory); }
-                catch (DirectoryNotFoundException) { }
-                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException) { failures.Add(cleanup); }
-            }
-            if (failures.Count > 1) throw new AggregateException("Saving failed and temporary storage cleanup did not complete.", failures);
+            CleanupTemporaryStorage(temporaryPath, createdDirectories, failures);
+            if (failures.Count > 1)
+                throw new AggregateException("Saving failed and temporary storage cleanup did not complete.", failures);
             throw;
+        }
+    }
+
+    private static string CreateParentDirectories(string filePath, List<string> createdDirectories)
+    {
+        var parent = Path.GetDirectoryName(filePath)!;
+        var missing = new Stack<string>();
+        for (var directory = parent; !Directory.Exists(directory);)
+        {
+            missing.Push(directory);
+            directory = Path.GetDirectoryName(directory)
+                ?? throw new DirectoryNotFoundException($"Cannot locate an existing parent directory for '{filePath}'.");
+        }
+        while (missing.TryPop(out var directory))
+        {
+            if (OperatingSystem.IsLinux())
+                Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            else Directory.CreateDirectory(directory);
+            createdDirectories.Add(directory);
+        }
+        return parent;
+    }
+
+    private static void CleanupTemporaryStorage(string? temporaryPath, List<string> createdDirectories, List<Exception> failures)
+    {
+        if (temporaryPath is not null)
+        {
+            try
+            {
+                File.Delete(temporaryPath);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(cleanup);
+            }
+        }
+        foreach (var directory in createdDirectories.AsEnumerable().Reverse())
+        {
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+            }
+            catch (DirectoryNotFoundException) { }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(cleanup);
+            }
         }
     }
 
     private static async Task CheckRevisionAsync(string filePath, string? expected, CancellationToken cancellationToken)
     {
         string? current;
-        try { current = Convert.ToHexString(SHA256.HashData(await ReadBytesAsync(filePath, cancellationToken).ConfigureAwait(false))); }
-        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException) { current = null; }
-        catch (InvalidDataException) { throw new ConfigurationConflictException(filePath); }
+        try
+        {
+            var bytes = await ReadBytesAsync(filePath, cancellationToken).ConfigureAwait(false);
+            current = Convert.ToHexString(SHA256.HashData(bytes));
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+        {
+            current = null;
+        }
+        catch (InvalidDataException)
+        {
+            throw new ConfigurationConflictException(filePath);
+        }
         cancellationToken.ThrowIfCancellationRequested();
         if (!string.Equals(current, expected, StringComparison.Ordinal)) throw new ConfigurationConflictException(filePath);
     }
