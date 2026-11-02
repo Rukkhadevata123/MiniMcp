@@ -54,31 +54,51 @@ internal static class PatchDiffBuilder
                 change.AfterMode, creation: change.AfterModeIsCreateRequest);
 
             var edits = Compare(beforeLines, afterLines, budget);
-            int addedLines = 0, removedLines = 0;
-            long addedBytes = afterBom && change.Before?.HasBom != true ? 3 : 0;
-            long removedBytes = change.Before?.HasBom == true && !afterBom ? 3 : 0;
-            foreach (var edit in edits)
-            {
-                budget.Spend(edit.Kind == ' ' ? 1 : edit.Line.Text.Length + edit.Line.Ending.Length + 1);
-                if (edit.Kind == '+') { addedLines++; addedBytes += ProjectWorkspace.Utf8.GetByteCount(edit.Line.Text) + edit.Line.Ending.Length; }
-                if (edit.Kind == '-') { removedLines++; removedBytes += ProjectWorkspace.Utf8.GetByteCount(edit.Line.Text) + edit.Line.Ending.Length; }
-            }
-            Hunks(output, edits, budget);
-            var statistics = new PatchStatistics(addedLines, removedLines, addedBytes, removedBytes);
+            var statistics = MeasureEdits(edits, change.Before?.HasBom == true, afterBom, budget);
+            WriteHunks(output, edits, budget);
             files.Add(new PatchFileDiff(change.Summary, statistics));
             total += statistics;
         }
         return new(output.ToString(), files.ToImmutable(), total);
     }
 
+    private static PatchStatistics MeasureEdits(List<Edit> edits, bool beforeBom, bool afterBom, Budget budget)
+    {
+        int addedLines = 0, removedLines = 0;
+        long addedBytes = afterBom && !beforeBom ? 3 : 0;
+        long removedBytes = beforeBom && !afterBom ? 3 : 0;
+        foreach (var edit in edits)
+        {
+            budget.Spend(edit.Kind == ' ' ? 1 : edit.Line.Text.Length + edit.Line.Ending.Length + 1);
+            if (edit.Kind == '+')
+            {
+                addedLines++;
+                addedBytes += ProjectWorkspace.Utf8.GetByteCount(edit.Line.Text) + edit.Line.Ending.Length;
+            }
+            if (edit.Kind == '-')
+            {
+                removedLines++;
+                removedBytes += ProjectWorkspace.Utf8.GetByteCount(edit.Line.Text) + edit.Line.Ending.Length;
+            }
+        }
+        return new PatchStatistics(addedLines, removedLines, addedBytes, removedBytes);
+    }
+
     private static void Metadata(Output output, string label, bool exists, bool bom,
         List<TextLine> lines, UnixFileMode? mode, bool creation)
     {
         output.Append("# " + label + ": ");
-        if (!exists) { output.Append("absent\n"); return; }
+        if (!exists)
+        {
+            output.Append("absent\n");
+            return;
+        }
         var lf = lines.Any(line => line.Ending == "\n");
         var crlf = lines.Any(line => line.Ending == "\r\n");
-        var endings = lf && crlf ? "mixed" : crlf ? "CRLF" : lf ? "LF" : "none";
+        var endings = "none";
+        if (lf && crlf) endings = "mixed";
+        else if (crlf) endings = "CRLF";
+        else if (lf) endings = "LF";
         var permission = mode is { } value ? Convert.ToString((int)value, 8).PadLeft(4, '0') : "not-tracked";
         output.Append($"utf8-bom={(bom ? "yes" : "no")}; eol={endings}; eof-newline={(lines.Count > 0 && lines[^1].Ending.Length != 0 ? "yes" : "no")}; mode={permission}");
         if (creation && mode is not null) output.Append(" (creation request; umask applies)");
@@ -98,11 +118,23 @@ internal static class PatchDiffBuilder
         var oldCount = before.Count - prefix - suffix;
         var newCount = after.Count - prefix - suffix;
         var edits = new List<Edit>();
-        for (var i = 0; i < prefix; i++) { budget.Spend(1); edits.Add(new(' ', before[i])); }
+        for (var i = 0; i < prefix; i++)
+        {
+            budget.Spend(1);
+            edits.Add(new(' ', before[i]));
+        }
         if (oldCount == 0 || newCount == 0)
         {
-            for (var i = 0; i < oldCount; i++) { budget.Spend(1); edits.Add(new('-', before[prefix + i])); }
-            for (var i = 0; i < newCount; i++) { budget.Spend(1); edits.Add(new('+', after[prefix + i])); }
+            for (var i = 0; i < oldCount; i++)
+            {
+                budget.Spend(1);
+                edits.Add(new('-', before[prefix + i]));
+            }
+            for (var i = 0; i < newCount; i++)
+            {
+                budget.Spend(1);
+                edits.Add(new('+', after[prefix + i]));
+            }
         }
         else
         {
@@ -111,7 +143,11 @@ internal static class PatchDiffBuilder
             var ids = new Dictionary<TextLine, int>(comparer);
             int Id(TextLine line)
             {
-                if (!ids.TryGetValue(line, out var id)) { id = ids.Count; ids.Add(line, id); }
+                if (!ids.TryGetValue(line, out var id))
+                {
+                    id = ids.Count;
+                    ids.Add(line, id);
+                }
                 return id;
             }
             var oldIds = before.Skip(prefix).Take(oldCount).Select(Id).ToArray();
@@ -130,33 +166,60 @@ internal static class PatchDiffBuilder
             {
                 budget.Spend(1);
                 if (oldIndex < oldCount && newIndex < newCount && oldIds[oldIndex] == newIds[newIndex])
-                { edits.Add(new(' ', before[prefix + oldIndex++])); newIndex++; }
+                {
+                    edits.Add(new(' ', before[prefix + oldIndex++]));
+                    newIndex++;
+                }
                 else if (oldIndex < oldCount && (newIndex == newCount ||
                     lengths[(oldIndex + 1) * stride + newIndex] >= lengths[oldIndex * stride + newIndex + 1]))
                     edits.Add(new('-', before[prefix + oldIndex++]));
                 else edits.Add(new('+', after[prefix + newIndex++]));
             }
         }
-        for (var i = before.Count - suffix; i < before.Count; i++) { budget.Spend(1); edits.Add(new(' ', before[i])); }
+        for (var i = before.Count - suffix; i < before.Count; i++)
+        {
+            budget.Spend(1);
+            edits.Add(new(' ', before[i]));
+        }
         return edits;
     }
 
-    private static void Hunks(Output output, List<Edit> edits, Budget budget)
+    private static void WriteHunks(Output output, List<Edit> edits, Budget budget)
     {
         var changes = new List<int>();
-        for (var i = 0; i < edits.Count; i++) { budget.Spend(1); if (edits[i].Kind != ' ') changes.Add(i); }
-        if (changes.Count == 0) { output.Append("# No line changes.\n"); return; }
+        for (var i = 0; i < edits.Count; i++)
+        {
+            budget.Spend(1);
+            if (edits[i].Kind != ' ') changes.Add(i);
+        }
+        if (changes.Count == 0)
+        {
+            output.Append("# No line changes.\n");
+            return;
+        }
         int cursor = 0, oldLine = 1, newLine = 1;
-        void Advance(Edit edit) { if (edit.Kind != '+') oldLine++; if (edit.Kind != '-') newLine++; }
+        void Advance(Edit edit)
+        {
+            if (edit.Kind != '+') oldLine++;
+            if (edit.Kind != '-') newLine++;
+        }
         for (var change = 0; change < changes.Count; change++)
         {
             var start = Math.Max(0, changes[change] - ContextLines);
             while (change + 1 < changes.Count && changes[change + 1] - changes[change] - 1 <= 2 * ContextLines) change++;
             var end = Math.Min(edits.Count, changes[change] + ContextLines + 1);
-            while (cursor < start) { budget.Spend(1); Advance(edits[cursor++]); }
+            while (cursor < start)
+            {
+                budget.Spend(1);
+                Advance(edits[cursor++]);
+            }
             int oldCount = 0, newCount = 0;
             for (var i = start; i < end; i++)
-            { budget.Spend(1); if (edits[i].Kind != '+') oldCount++; if (edits[i].Kind != '-') newCount++; }
+            {
+                budget.Spend(1);
+                if (edits[i].Kind != '+') oldCount++;
+                if (edits[i].Kind != '-') newCount++;
+            }
             output.Append(FormattableString.Invariant($"@@ -{(oldCount == 0 ? oldLine - 1 : oldLine)},{oldCount} +{(newCount == 0 ? newLine - 1 : newLine)},{newCount} @@\n"));
             while (cursor < end)
             {

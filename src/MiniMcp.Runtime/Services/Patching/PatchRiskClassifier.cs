@@ -88,27 +88,9 @@ internal static class PatchRiskClassifier
             cancellationToken.ThrowIfCancellationRequested();
             paths.Add(change.Source);
             paths.Add(change.Destination);
-            var reasons = PathReason(change.Summary.Path);
-            if (change.Summary.MoveTo is { } destination) reasons |= PathReason(destination);
-            // The selected settings file can have any name, including an ordinary source/document suffix.
-            if (string.Equals(change.Source, settingsFilePath, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(change.Destination, settingsFilePath, StringComparison.OrdinalIgnoreCase))
-                reasons |= PatchRiskReason.CriticalFile;
-            if (HasShebang(change.Before?.Bytes ?? []) || HasShebang(change.After ?? []) ||
-                (change.Before?.Mode is { } mode &&
-                 (mode & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0))
-                reasons |= PatchRiskReason.CriticalFile;
-            reasons |= change.Summary.Action switch
-            {
-                "add" or "update" => PatchRiskReason.None,
-                "delete" => PatchRiskReason.Delete,
-                "move" => PatchRiskReason.Move,
-                _ => throw new InvalidOperationException("Unexpected validated patch action.")
-            };
-            var kind = (reasons & PatchRiskReason.CriticalFile) != 0 ? PatchFileKind.Critical :
-                (reasons & PatchRiskReason.UnknownFileType) != 0 ? PatchFileKind.Unknown : PatchFileKind.Ordinary;
-            changes.Add(new(change.Summary, kind, reasons));
-            total |= reasons;
+            var risk = ClassifyChange(change, settingsFilePath);
+            changes.Add(risk);
+            total |= risk.Reasons;
         }
         // Use exactly the complete preview's changed-content statistics, never file sizes or display length.
         var size = new PatchBatchSize(paths.Count, checked((long)preview.Statistics.AddedLines + preview.Statistics.RemovedLines),
@@ -119,21 +101,50 @@ internal static class PatchRiskClassifier
         return new(preview, changes.MoveToImmutable(), size, limits, total);
     }
 
+    private static PatchChangeRisk ClassifyChange(PlannedPatchChange change, string settingsFilePath)
+    {
+        var reasons = PathReason(change.Summary.Path);
+        if (change.Summary.MoveTo is { } destination) reasons |= PathReason(destination);
+        // The selected settings file can have any name, including an ordinary source/document suffix.
+        if (string.Equals(change.Source, settingsFilePath, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(change.Destination, settingsFilePath, StringComparison.OrdinalIgnoreCase))
+            reasons |= PatchRiskReason.CriticalFile;
+        if (HasShebang(change.Before?.Bytes ?? []) || HasShebang(change.After ?? []) ||
+            (change.Before?.Mode is { } mode &&
+             (mode & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0))
+            reasons |= PatchRiskReason.CriticalFile;
+        reasons |= change.Summary.Action switch
+        {
+            "add" or "update" => PatchRiskReason.None,
+            "delete" => PatchRiskReason.Delete,
+            "move" => PatchRiskReason.Move,
+            _ => throw new InvalidOperationException("Unexpected validated patch action.")
+        };
+
+        var kind = PatchFileKind.Ordinary;
+        if ((reasons & PatchRiskReason.CriticalFile) != 0) kind = PatchFileKind.Critical;
+        else if ((reasons & PatchRiskReason.UnknownFileType) != 0) kind = PatchFileKind.Unknown;
+        return new(change.Summary, kind, reasons);
+    }
+
     private static PatchRiskReason PathReason(string path)
     {
         var parts = path.Split('/');
         // Treat Windows trailing-dot/space aliases conservatively, including on Linux.
         var names = parts.Select(part => part.TrimEnd(' ', '.')).ToArray();
         var name = names[^1];
-        if (names.Any(CriticalDirectories.Contains) || CriticalNames.Contains(name) || CriticalExtensions.Contains(Path.GetExtension(name)) ||
-            Starts(name, "Directory.Build.") || Starts(name, "Directory.Packages.") || Starts(name, "Dockerfile.") || Starts(name, "Containerfile.") ||
-            IsJsonFamily(name, "settings") || IsJsonFamily(name, "policy") || IsJsonFamily(name, "appsettings") ||
-            (Starts(name, "requirements") && name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)))
+        if (names.Any(CriticalDirectories.Contains) || IsCriticalName(name))
             return PatchRiskReason.CriticalFile;
         if (!parts.SequenceEqual(names)) return PatchRiskReason.UnknownFileType;
         return OrdinaryExtensions.Contains(Path.GetExtension(name)) || DocumentNames.Contains(name)
             ? PatchRiskReason.None : PatchRiskReason.UnknownFileType;
     }
+
+    private static bool IsCriticalName(string name) =>
+        CriticalNames.Contains(name) || CriticalExtensions.Contains(Path.GetExtension(name)) ||
+            Starts(name, "Directory.Build.") || Starts(name, "Directory.Packages.") || Starts(name, "Dockerfile.") || Starts(name, "Containerfile.") ||
+            IsJsonFamily(name, "settings") || IsJsonFamily(name, "policy") || IsJsonFamily(name, "appsettings") ||
+            (Starts(name, "requirements") && name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase));
 
     private static bool Starts(string name, string prefix) => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     private static bool IsJsonFamily(string name, string stem) => name.Equals(stem + ".json", StringComparison.OrdinalIgnoreCase) ||
