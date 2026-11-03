@@ -1,0 +1,5 @@
+# Commits to skip in git blame. Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Whitespace-only formatting baseline (.editorconfig + dotnet format whitespace)
+f9ec921a1af9d2a01ed9f880e23fd3dc47d25790
