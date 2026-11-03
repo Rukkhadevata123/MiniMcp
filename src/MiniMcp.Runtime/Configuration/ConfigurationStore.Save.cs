@@ -62,7 +62,8 @@ public sealed partial class ConfigurationStore
         {
             await CheckRevisionAsync(settings.FilePath, settings.Revision, cancellationToken).ConfigureAwait(false);
             var currentSettings = await ReadSettingsAsync(settings.FilePath, Path.GetDirectoryName(settings.FilePath)!, cancellationToken).ConfigureAwait(false);
-            if (currentSettings.Revision != settings.Revision) throw new ConfigurationConflictException(settings.FilePath);
+            if (currentSettings.Revision != settings.Revision)
+                throw new ConfigurationConflictException(settings.FilePath);
             var validator = new ConfigurationValidator(_paths);
             void Validate() => validator.Validate(currentSettings.Value, currentSettings.FilePath, file.Value);
             Validate();
@@ -107,7 +108,8 @@ public sealed partial class ConfigurationStore
                 Access = FileAccess.Write,
                 Options = FileOptions.Asynchronous
             };
-            if (OperatingSystem.IsLinux()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            if (OperatingSystem.IsLinux())
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             await using (var stream = new FileStream(candidate, options))
             {
                 temporaryPath = candidate;
@@ -116,7 +118,8 @@ public sealed partial class ConfigurationStore
                 stream.Flush(flushToDisk: true);
             }
 
-            if (_beforeCommit is not null) await _beforeCommit().ConfigureAwait(false);
+            if (_beforeCommit is not null)
+                await _beforeCommit().ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             validate();
             await checkDependencies(cancellationToken).ConfigureAwait(false);
@@ -126,8 +129,10 @@ public sealed partial class ConfigurationStore
             cancellationToken.ThrowIfCancellationRequested();
 
             // Commit is not cancellable: once installed, report the saved snapshot rather than cancellation.
-            if (file.Revision is null) File.Move(temporaryPath, file.FilePath);
-            else File.Replace(temporaryPath, file.FilePath, destinationBackupFileName: null);
+            if (file.Revision is null)
+                File.Move(temporaryPath, file.FilePath);
+            else
+                File.Replace(temporaryPath, file.FilePath, destinationBackupFileName: null);
             temporaryPath = null;
             return saved;
         }
@@ -155,7 +160,8 @@ public sealed partial class ConfigurationStore
         {
             if (OperatingSystem.IsLinux())
                 Directory.CreateDirectory(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            else Directory.CreateDirectory(directory);
+            else
+                Directory.CreateDirectory(directory);
             createdDirectories.Add(directory);
         }
         return parent;
@@ -178,7 +184,8 @@ public sealed partial class ConfigurationStore
         {
             try
             {
-                if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
+                if (!Directory.EnumerateFileSystemEntries(directory).Any())
+                    Directory.Delete(directory);
             }
             catch (DirectoryNotFoundException) { }
             catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
@@ -205,6 +212,7 @@ public sealed partial class ConfigurationStore
             throw new ConfigurationConflictException(filePath);
         }
         cancellationToken.ThrowIfCancellationRequested();
-        if (!string.Equals(current, expected, StringComparison.Ordinal)) throw new ConfigurationConflictException(filePath);
+        if (!string.Equals(current, expected, StringComparison.Ordinal))
+            throw new ConfigurationConflictException(filePath);
     }
 }

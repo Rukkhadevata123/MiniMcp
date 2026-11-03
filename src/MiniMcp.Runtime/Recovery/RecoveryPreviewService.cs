@@ -29,7 +29,8 @@ internal sealed class RecoveryPreviewService
 
     public async Task<RecoveryPreviewResult> PreviewAsync(Guid changeId, CancellationToken cancellationToken = default)
     {
-        if (changeId == Guid.Empty) throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
+        if (changeId == Guid.Empty)
+            throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
         // Keep the same lock order as recorded commits: workspace first, then short store operations.
         // Release store locks during workspace observation and diff computation.
         await _workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
@@ -47,7 +48,8 @@ internal sealed class RecoveryPreviewService
 
     public async Task<RecoveryRecordDetails> ReadAsync(Guid changeId, CancellationToken token)
     {
-        if (changeId == Guid.Empty) throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
+        if (changeId == Guid.Empty)
+            throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
         await _workspace.Mutations.WaitAsync(token).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
@@ -87,7 +89,8 @@ internal sealed class RecoveryPreviewService
         await Checkpoint(RecoveryPreviewStage.BeforeReturn, null).ConfigureAwait(false);
         // Do not publish a clean preview from data changed while another path/diff was inspected.
         var latest = await _store.LoadAsync(changeId, cancellationToken).ConfigureAwait(false);
-        if (!SameRecord(record, latest)) conflicts.Add(new(null, "RecordChanged", "The recovery record changed during preview; reload it before continuing."));
+        if (!SameRecord(record, latest))
+            conflicts.Add(new(null, "RecordChanged", "The recovery record changed during preview; reload it before continuing."));
         if (record.Manifest.State == RecoveryRecordState.Committed)
             _ = await ObserveAsync(record.Manifest, conflicts, reportCheckpoints: false, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -98,9 +101,12 @@ internal sealed class RecoveryPreviewService
         ImmutableArray<PatchDiffChange> changes, List<RecoveryConflict> conflicts)
     {
         var blockers = ImmutableArray.CreateBuilder<string>();
-        if (_store.Mode == ExecutionMode.ReadOnly) blockers.Add("ReadOnlyMode");
-        else if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess)) blockers.Add("UnknownMode");
-        if (record.Manifest.State != RecoveryRecordState.Committed) blockers.Add("RecordNotCommitted");
+        if (_store.Mode == ExecutionMode.ReadOnly)
+            blockers.Add("ReadOnlyMode");
+        else if (_store.Mode is not (ExecutionMode.ProjectEdit or ExecutionMode.FullAccess))
+            blockers.Add("UnknownMode");
+        if (record.Manifest.State != RecoveryRecordState.Committed)
+            blockers.Add("RecordNotCommitted");
         if (conflicts.Count != 0)
         {
             blockers.Add("Conflicts");
@@ -120,7 +126,8 @@ internal sealed class RecoveryPreviewService
     internal async Task ValidateRecordAsync(RecoveryRecordSnapshot expected, CancellationToken cancellationToken)
     {
         var current = await _store.LoadAsync(expected.Manifest.ChangeId, cancellationToken).ConfigureAwait(false);
-        if (!SameRecord(expected, current)) throw new WorkspaceException("The recovery source record changed since preview; obtain a new preview before restoring.");
+        if (!SameRecord(expected, current))
+            throw new WorkspaceException("The recovery source record changed since preview; obtain a new preview before restoring.");
     }
 
     private async Task<Dictionary<string, TextFile>> ObserveAsync(RecoveryManifest manifest, List<RecoveryConflict> conflicts,
@@ -146,8 +153,10 @@ internal sealed class RecoveryPreviewService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var conflict = await ObservePathAsync(path, files, cancellationToken).ConfigureAwait(false);
-            if (conflict is not null) conflicts.Add(conflict);
-            if (reportCheckpoints) await Checkpoint(RecoveryPreviewStage.PathRead, path.Path).ConfigureAwait(false);
+            if (conflict is not null)
+                conflicts.Add(conflict);
+            if (reportCheckpoints)
+                await Checkpoint(RecoveryPreviewStage.PathRead, path.Path).ConfigureAwait(false);
         }
         return files;
     }
@@ -166,7 +175,8 @@ internal sealed class RecoveryPreviewService
             var entry = Attributes(full);
             if (path.After is null)
                 return entry is null ? null : new(path.Path, "PathOccupied", "This path should be absent after the recorded change but is now occupied.");
-            if (entry is null) return new(path.Path, "FileMissing", "A file from the recorded result is missing.");
+            if (entry is null)
+                return new(path.Path, "FileMissing", "A file from the recorded result is missing.");
             if ((entry.Value & (FileAttributes.Directory | FileAttributes.Device)) != 0)
                 return new(path.Path, "NotRegularFile", "The recorded file is occupied by a directory or non-regular entry.");
             var current = await _workspace.SnapshotRegularAsync(full, cancellationToken).ConfigureAwait(false);
@@ -189,7 +199,8 @@ internal sealed class RecoveryPreviewService
 
     private static FileAttributes? Attributes(string path)
     {
-        try { return File.GetAttributes(path); }
+        try
+        { return File.GetAttributes(path); }
         catch (FileNotFoundException) { return null; }
         catch (DirectoryNotFoundException) { return null; }
     }
@@ -224,8 +235,10 @@ internal sealed class RecoveryPreviewService
     {
         var leftManifest = RecoveryManifestJson.Serialize(left.Manifest);
         var rightManifest = RecoveryManifestJson.Serialize(right.Manifest);
-        if (!leftManifest.AsSpan().SequenceEqual(rightManifest)) return false;
-        if (left.Backups.Length != right.Backups.Length) return false;
+        if (!leftManifest.AsSpan().SequenceEqual(rightManifest))
+            return false;
+        if (left.Backups.Length != right.Backups.Length)
+            return false;
         return left.Backups.Zip(right.Backups).All(pair =>
             pair.First.FileName == pair.Second.FileName && pair.First.Bytes.AsSpan().SequenceEqual(pair.Second.Bytes.AsSpan()));
     }

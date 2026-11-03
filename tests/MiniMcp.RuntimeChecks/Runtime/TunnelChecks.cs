@@ -23,7 +23,8 @@ internal static class TunnelChecks
                 using var process = await fixture.ObserveAsync(report.ProcessId);
                 Assert(report.Arguments.SequenceEqual(new[] { "tunnel", "--no-autoupdate", "run", "--token-file", fixture.TokenFile }), "Exact argv");
                 Assert(report.HostReady && report.Redirected && !report.HasInheritedToken, "Host ready, redirected, explicit session environment");
-                if (OperatingSystem.IsWindows()) Assert(report.InJob && !report.HasConsole, "Job ownership and hidden startup");
+                if (OperatingSystem.IsWindows())
+                    Assert(report.InJob && !report.HasConsole, "Job ownership and hidden startup");
                 var snapshot = fixture.Runtime.Snapshot;
                 Assert(snapshot.State == RuntimeState.Running && snapshot.Tunnel is { State: TunnelState.Running, InstanceId: not null } &&
                     snapshot.Tunnel.ProcessId == report.ProcessId, "Actual local process state");
@@ -61,7 +62,8 @@ internal static class TunnelChecks
             Assert(!retained.Entries.Any(entry => entry.Message.Contains("private-")), "No credential fragments");
             Assert(retained.Entries.Any(entry => entry.Category.StartsWith("MiniMcp.Tunnel.")), "Output routed through diagnostics");
             var queued = new List<RuntimeLogEntry>();
-            while (slow.Reader.TryRead(out var entry)) queued.Add(entry);
+            while (slow.Reader.TryRead(out var entry))
+                queued.Add(entry);
             Assert(queued.Count <= RuntimeDiagnostics.LogSubscriptionCapacity, "Slow observer bounded");
         });
 
@@ -89,7 +91,8 @@ internal static class TunnelChecks
 
         await check("tunnel: Windows startup restores thread error mode after successful and invalid launches", async () =>
         {
-            if (!OperatingSystem.IsWindows()) CheckRunner.Skip("Windows thread error modes only.");
+            if (!OperatingSystem.IsWindows())
+                CheckRunner.Skip("Windows thread error modes only.");
             await using var fixture = new TunnelFixture(enabled: false);
             var invalid = Path.Combine(fixture.DirectoryPath, "not a program.exe");
             File.WriteAllText(invalid, "This is not an executable image.");
@@ -127,7 +130,8 @@ internal static class TunnelChecks
             {
                 if (child is not null)
                 {
-                    using (child) await child.TerminateAsync();
+                    using (child)
+                        await child.TerminateAsync();
                 }
             }
         });
@@ -142,7 +146,8 @@ internal static class TunnelChecks
                 {
                     // Linux starts setsid first, so an invalid target executable can fail only
                     // after process creation. Make its exit observable before checking startup.
-                    if (!waitingForInvalidProgram || !OperatingSystem.IsLinux()) return;
+                    if (!waitingForInvalidProgram || !OperatingSystem.IsLinux())
+                        return;
                     var pid = fixture!.Runtime.Snapshot.Tunnel.ProcessId ?? throw new Exception("Missing tunnel process ID.");
                     try
                     {
@@ -155,7 +160,8 @@ internal static class TunnelChecks
             await using var owned = fixture = new TunnelFixture(checks: checks);
             var invalid = Path.Combine(fixture.DirectoryPath, "not a program.exe");
             File.WriteAllText(invalid, "This is not an executable image.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(invalid, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(invalid, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             var configuration = fixture.WithExecutable(invalid);
             var startupError = await Reject<Exception>(() => fixture.Runtime.StartAsync(configuration));
             var failed = fixture.Runtime.Snapshot;
@@ -287,7 +293,8 @@ internal static class TunnelChecks
             var source = Path.Combine(programDirectory, "MiniMcp.RuntimeChecks" + (OperatingSystem.IsWindows() ? ".exe" : ""));
             var executable = Path.Combine(programDirectory, "cloudflared check" + (OperatingSystem.IsWindows() ? ".exe" : ""));
             File.Copy(source, executable);
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(executable, File.GetUnixFileMode(source));
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(executable, File.GetUnixFileMode(source));
             await fixture.Runtime.StartAsync(fixture.WithExecutable(executable));
             var report = await fixture.ReportAsync();
             Assert(report.Arguments[^1] == fixture.TokenFile && report.Arguments.Length == 5, "No shell parsing or argument injection");
@@ -309,7 +316,8 @@ internal static class TunnelChecks
             fixture.Reset();
             async Task<bool> Start()
             {
-                try { await fixture.Runtime.StartTunnelAsync(); return true; }
+                try
+                { await fixture.Runtime.StartTunnelAsync(); return true; }
                 catch (InvalidOperationException) { return false; }
             }
             Assert((await Task.WhenAll(Start(), Start())).Count(success => success) == 1, "Only one concurrent start wins");
@@ -325,7 +333,8 @@ internal static class TunnelChecks
             {
                 AfterStart = async () =>
                 {
-                    if (Interlocked.Increment(ref attempts) != 2) return;
+                    if (Interlocked.Increment(ref attempts) != 2)
+                        return;
                     await fixture!.ReportAsync();
                     await TunnelChild.WaitUntilAsync(() => fixture.Runtime.Snapshot.Tunnel.ProcessId is { } pid && Gone(pid));
                 }
@@ -536,7 +545,8 @@ internal static class TunnelChecks
         var previous = GetThreadErrorMode();
         // Require startup to add its own suppression while preserving an unrelated caller flag.
         var callerMode = (previous | 0x8000u) & ~0x0001u;
-        if (!SetThreadErrorMode(callerMode, out _)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (!SetThreadErrorMode(callerMode, out _))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
         try
         {
             action();
@@ -544,7 +554,8 @@ internal static class TunnelChecks
         }
         finally
         {
-            if (!SetThreadErrorMode(previous, out _)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!SetThreadErrorMode(previous, out _))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
         }
     }
 
@@ -557,18 +568,21 @@ internal static class TunnelChecks
 
     private static void Assert(bool condition, string reason)
     {
-        if (!condition) throw new Exception(reason);
+        if (!condition)
+            throw new Exception(reason);
     }
 
     private static bool Gone(int pid)
     {
-        try { using var process = Process.GetProcessById(pid); return process.HasExited; }
+        try
+        { using var process = Process.GetProcessById(pid); return process.HasExited; }
         catch (ArgumentException) { return true; }
     }
 
     private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
     {
-        try { await action().WaitAsync(TimeSpan.FromSeconds(20)); }
+        try
+        { await action().WaitAsync(TimeSpan.FromSeconds(20)); }
         catch (T error) { return error; }
         throw new Exception("Expected " + typeof(T).Name);
     }

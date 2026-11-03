@@ -101,7 +101,8 @@ internal static class RecoveryCompletionChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, index) =>
             {
-                if (stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed || index != 0)
+                    return Task.CompletedTask;
                 File.Delete(Path.Combine(fixtureRef!.Root, "sample.md"));
                 Directory.CreateDirectory(Path.Combine(fixtureRef.Root, "sample.md"));
                 return Task.FromException(new IOException("Injected failed rollback."));
@@ -125,7 +126,8 @@ internal static class RecoveryCompletionChecks
                 Fixture? fixtureRef = null;
                 using var fixture = new Fixture((stage, _) =>
                 {
-                    if (stage == PatchCommitStage.BeforeVerification) fixtureRef!.Put("sample.md", "external\n");
+                    if (stage == PatchCommitStage.BeforeVerification)
+                        fixtureRef!.Put("sample.md", "external\n");
                     return Task.CompletedTask;
                 });
                 fixtureRef = fixture;
@@ -133,7 +135,8 @@ internal static class RecoveryCompletionChecks
                 var store = fixture.Store();
                 var record = await store.PrepareAsync(plan);
                 await store.BeginApplyingAsync(record, plan);
-                if (legacy) await Reject<WorkspaceException>(() => fixture.Service.CommitAsync(plan));
+                if (legacy)
+                    await Reject<WorkspaceException>(() => fixture.Service.CommitAsync(plan));
                 else
                 {
                     var outcome = await fixture.Service.CommitWithContextAsync(plan, record.ExecutionContext);
@@ -151,8 +154,10 @@ internal static class RecoveryCompletionChecks
             var failure = new IOException("Original engine error.");
             using var fixture = new Fixture((stage, index) =>
             {
-                if (stage == PatchCommitStage.Installed && index == 0) return Task.FromException(failure);
-                if (stage == PatchCommitStage.BeforeVerification) fixtureRef!.Put("sample.md", "later change\n");
+                if (stage == PatchCommitStage.Installed && index == 0)
+                    return Task.FromException(failure);
+                if (stage == PatchCommitStage.BeforeVerification)
+                    fixtureRef!.Put("sample.md", "later change\n");
                 return Task.CompletedTask;
             });
             fixtureRef = fixture;
@@ -233,7 +238,8 @@ internal static class RecoveryCompletionChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, _) =>
             {
-                if (stage != PatchCommitStage.BeforeVerification) return Task.CompletedTask;
+                if (stage != PatchCommitStage.BeforeVerification)
+                    return Task.CompletedTask;
                 var path = Path.Combine(fixtureRef!.Root, "sample.md");
                 File.Delete(path);
                 File.CreateSymbolicLink(path, Path.Combine(fixtureRef.DirectoryPath, "outside.md"));
@@ -243,7 +249,8 @@ internal static class RecoveryCompletionChecks
             var target = Path.Combine(fixture.DirectoryPath, "outside.md");
             File.WriteAllText(target, "outside data");
             var probe = Path.Combine(fixture.Root, "probe");
-            try { File.CreateSymbolicLink(probe, target); }
+            try
+            { File.CreateSymbolicLink(probe, target); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             File.Delete(probe);
             var plan = await fixture.Plan();
@@ -259,7 +266,8 @@ internal static class RecoveryCompletionChecks
                 Fixture? fixtureRef = null;
                 using var fixture = new Fixture((stage, _) =>
                 {
-                    if (stage != PatchCommitStage.BeforeVerification) return Task.CompletedTask;
+                    if (stage != PatchCommitStage.BeforeVerification)
+                        return Task.CompletedTask;
                     var path = Path.Combine(fixtureRef!.Root, "sample.md");
                     File.Delete(path);
                     Assert(MakeFifo(path, 0x180) == 0, "FIFO created");
@@ -303,10 +311,15 @@ internal static class RecoveryCompletionChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
-        public RecoveryStore Store() => new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(new AppSettings { ProjectRoot = Root, BashPath = _bash,
-            Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } }, Path.Combine(DirectoryPath, "settings.json"),
+        public RecoveryStore Store() => new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(new AppSettings
+        {
+            ProjectRoot = Root,
+            BashPath = _bash,
+            Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
+        }, Path.Combine(DirectoryPath, "settings.json"),
             new ExecutionPolicy { Mode = ExecutionMode.FullAccess, RecoveryDirectory = Storage }));
         public Task<PatchPlan> Plan(string body = "*** Update File: sample.md\n@@\n-old\n+new") => Service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch");
         public void Put(string path, string text) => File.WriteAllText(Path.Combine(Root, path), text, new UTF8Encoding(false));

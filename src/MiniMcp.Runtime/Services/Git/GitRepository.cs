@@ -20,9 +20,15 @@ internal sealed class GitRepository : IDisposable
     private static string NullFile => OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
     private static readonly IReadOnlyDictionary<string, string> EnvironmentValues = new Dictionary<string, string>
     {
-        ["GIT_CONFIG_NOSYSTEM"] = "1", ["GIT_CONFIG_SYSTEM"] = NullFile, ["GIT_CONFIG_GLOBAL"] = NullFile,
-        ["GIT_ATTR_NOSYSTEM"] = "1", ["GIT_OPTIONAL_LOCKS"] = "0", ["GIT_NO_LAZY_FETCH"] = "1",
-        ["GIT_NO_REPLACE_OBJECTS"] = "1", ["GIT_TERMINAL_PROMPT"] = "0", ["LC_ALL"] = "C"
+        ["GIT_CONFIG_NOSYSTEM"] = "1",
+        ["GIT_CONFIG_SYSTEM"] = NullFile,
+        ["GIT_CONFIG_GLOBAL"] = NullFile,
+        ["GIT_ATTR_NOSYSTEM"] = "1",
+        ["GIT_OPTIONAL_LOCKS"] = "0",
+        ["GIT_NO_LAZY_FETCH"] = "1",
+        ["GIT_NO_REPLACE_OBJECTS"] = "1",
+        ["GIT_TERMINAL_PROMPT"] = "0",
+        ["LC_ALL"] = "C"
     };
 
     private GitRepository(ProjectWorkspace workspace, string executable)
@@ -97,8 +103,10 @@ internal sealed class GitRepository : IDisposable
     internal static bool IsHash(string value) => value.Length is 40 or 64 && value.All(character => char.IsAsciiHexDigit(character));
     internal static void CheckResult(QueryProcessResult result, bool allowLimited = false)
     {
-        if (allowLimited && result.OutputLimited) return;
-        if (result.OutputLimited) throw new WorkspaceException("Git metadata exceeded its inspection limit; no complete query result is available.");
+        if (allowLimited && result.OutputLimited)
+            return;
+        if (result.OutputLimited)
+            throw new WorkspaceException("Git metadata exceeded its inspection limit; no complete query result is available.");
         if (result.ExitCode != 0 || result.HasErrors)
             throw new WorkspaceException("Git query failed: unsupported arguments/configuration, unreadable metadata or missing/corrupt local objects. Check the repository and its Git configuration.");
     }
@@ -110,7 +118,8 @@ internal sealed class GitRepository : IDisposable
             throw new WorkspaceException("The repository directory changed during the query; retry.");
         CheckRedirects();
         foreach (var (file, fact) in _controlFiles)
-            if (ObserveMetadata(file) != fact) throw new WorkspaceException("Git HEAD, refs or index changed during the query; retry.");
+            if (ObserveMetadata(file) != fact)
+                throw new WorkspaceException("Git HEAD, refs or index changed during the query; retry.");
         using var current = RecoveryFileSystem.OpenSharedRead(Path.Combine(GitDirectory, "config"));
         if (RecoveryFileSystem.FileIdentity(current) != _configIdentity || !ReadConfigHash().SequenceEqual(_configHash))
             throw new WorkspaceException("The repository configuration changed during the query; retry.");
@@ -137,16 +146,19 @@ internal sealed class GitRepository : IDisposable
         void Walk(string directory, int depth)
         {
             token.ThrowIfCancellationRequested();
-            if (depth > 32) throw new WorkspaceException("Git metadata exceeds the supported inspection depth.");
+            if (depth > 32)
+                throw new WorkspaceException("Git metadata exceeds the supported inspection depth.");
             _ = RecoveryFileSystem.DirectoryIdentity(directory);
             foreach (var item in Directory.EnumerateFileSystemEntries(directory))
             {
                 token.ThrowIfCancellationRequested();
-                if (++work > QueryText.MaxWork) throw new WorkspaceException("Git metadata exceeds the 10000-entry inspection budget.");
+                if (++work > QueryText.MaxWork)
+                    throw new WorkspaceException("Git metadata exceeds the 10000-entry inspection budget.");
                 var attributes = File.GetAttributes(item);
                 if ((attributes & FileAttributes.ReparsePoint) != 0)
                     throw new WorkspaceException("Linked Git metadata is unsupported.");
-                if ((attributes & FileAttributes.Directory) != 0) Walk(item, depth + 1);
+                if ((attributes & FileAttributes.Directory) != 0)
+                    Walk(item, depth + 1);
                 else
                 {
                     if (item.EndsWith(".promisor", StringComparison.OrdinalIgnoreCase))
@@ -159,14 +171,16 @@ internal sealed class GitRepository : IDisposable
         }
         Walk(GitDirectory, 0);
         using var head = RecoveryFileSystem.OpenSharedRead(Path.Combine(GitDirectory, "HEAD"));
-        if (head.Length is < 1 or > 4096) throw new WorkspaceException("Invalid Git HEAD metadata.");
+        if (head.Length is < 1 or > 4096)
+            throw new WorkspaceException("Invalid Git HEAD metadata.");
         _ = RecoveryFileSystem.DirectoryIdentity(Path.Combine(GitDirectory, "objects"));
     }
 
     private byte[] ReadConfigHash()
     {
         var length = _config.Length;
-        if (length > 65536) throw new WorkspaceException("Git config exceeds the supported 64 KiB limit.");
+        if (length > 65536)
+            throw new WorkspaceException("Git config exceeds the supported 64 KiB limit.");
         _config.Position = 0;
         var bytes = new byte[(int)length];
         _config.ReadExactly(bytes);
@@ -177,8 +191,10 @@ internal sealed class GitRepository : IDisposable
     {
         var files = new List<string> { Path.Combine(GitDirectory, "HEAD"), Path.Combine(GitDirectory, "index"), Path.Combine(GitDirectory, "packed-refs") };
         using var stream = RecoveryFileSystem.OpenSharedRead(files[0]);
-        if (stream.Length is < 1 or > 4096) throw new WorkspaceException("Invalid HEAD metadata size.");
-        var bytes = new byte[(int)stream.Length]; stream.ReadExactly(bytes);
+        if (stream.Length is < 1 or > 4096)
+            throw new WorkspaceException("Invalid HEAD metadata size.");
+        var bytes = new byte[(int)stream.Length];
+        stream.ReadExactly(bytes);
         var head = ProjectWorkspace.Utf8.GetString(bytes).TrimEnd('\r', '\n');
         if (head.StartsWith("ref: refs/", StringComparison.Ordinal))
         {
@@ -187,7 +203,8 @@ internal sealed class GitRepository : IDisposable
                 throw new WorkspaceException("Unsupported HEAD reference layout.");
             files.Add(Path.GetFullPath(Path.Combine(GitDirectory, relative)));
         }
-        else if (!IsHash(head)) throw new WorkspaceException("Invalid HEAD reference metadata.");
+        else if (!IsHash(head))
+            throw new WorkspaceException("Invalid HEAD reference metadata.");
         _controlFiles = files.ToDictionary(file => file, ObserveMetadata, StringComparer.Ordinal);
     }
 

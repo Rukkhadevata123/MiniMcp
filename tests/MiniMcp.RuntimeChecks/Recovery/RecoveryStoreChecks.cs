@@ -55,8 +55,10 @@ internal static class RecoveryStoreChecks
             {
                 Directory.CreateDirectory(fixture.Storage);
                 var marker = Path.Combine(fixture.Storage, RecoveryStorageLimits.LockFileName);
-                if (MakeFifo(marker, 0x180) != 0) throw new Exception("Cannot create FIFO fixture.");
-                try { await RejectAsync<IOException>(() => fixture.Store().PrepareAsync(plan)).WaitAsync(TimeSpan.FromSeconds(3)); }
+                if (MakeFifo(marker, 0x180) != 0)
+                    throw new Exception("Cannot create FIFO fixture.");
+                try
+                { await RejectAsync<IOException>(() => fixture.Store().PrepareAsync(plan)).WaitAsync(TimeSpan.FromSeconds(3)); }
                 finally { File.Delete(marker); }
                 Assert(!fixture.RecordDirectories().Any(), "Non-regular marker rejected without a blocking open or a record");
             }
@@ -98,15 +100,18 @@ internal static class RecoveryStoreChecks
                 string? occupied = null;
                 var store = fixture.Store((stage, draft) =>
                 {
-                    if (stage != collision) return Task.CompletedTask;
+                    if (stage != collision)
+                        return Task.CompletedTask;
                     occupied = Path.Combine(fixture.Storage, draft.Manifest.ChangeId.ToString("N"));
                     Directory.CreateDirectory(occupied);
                     File.WriteAllText(Path.Combine(occupied, RecoveryStore.ManifestFileName), "foreign record data");
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
-                if (collision == RecoveryPreparationStage.BeforeDirectory) await RejectAsync<IOException>(() => store.PrepareAsync(plan));
-                else await RejectAsync<AggregateException>(() => store.PrepareAsync(plan));
+                if (collision == RecoveryPreparationStage.BeforeDirectory)
+                    await RejectAsync<IOException>(() => store.PrepareAsync(plan));
+                else
+                    await RejectAsync<AggregateException>(() => store.PrepareAsync(plan));
                 Assert(File.ReadAllText(Path.Combine(occupied!, RecoveryStore.ManifestFileName)) == "foreign record data" &&
                     Directory.EnumerateFiles(occupied!).Count() == 1, "Foreign data preserved; only owned backup removed");
             }
@@ -120,7 +125,8 @@ internal static class RecoveryStoreChecks
                 string? directory = null;
                 var store = fixture.Store((stage, draft) =>
                 {
-                    if (stage != RecoveryPreparationStage.BeforeReturn) return Task.CompletedTask;
+                    if (stage != RecoveryPreparationStage.BeforeReturn)
+                        return Task.CompletedTask;
                     directory = Path.Combine(fixture.Storage, draft.Manifest.ChangeId.ToString("N"));
                     if (replace)
                     {
@@ -128,7 +134,8 @@ internal static class RecoveryStoreChecks
                         File.Move(backup, backup + ".original");
                         File.WriteAllText(backup, "replacement");
                     }
-                    else File.WriteAllText(Path.Combine(directory, "unexpected"), "preserve me");
+                    else
+                        File.WriteAllText(Path.Combine(directory, "unexpected"), "preserve me");
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
@@ -145,13 +152,15 @@ internal static class RecoveryStoreChecks
             var outside = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "outside")).FullName;
             File.WriteAllText(Path.Combine(outside, "before-0000.bin"), "outside data");
             var probe = Path.Combine(fixture.DirectoryPath, "link-probe");
-            try { Directory.CreateSymbolicLink(probe, outside); }
+            try
+            { Directory.CreateSymbolicLink(probe, outside); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             Directory.Delete(probe);
             string? link = null;
             var store = fixture.Store((stage, draft) =>
             {
-                if (stage != RecoveryPreparationStage.BackupWritten) return Task.CompletedTask;
+                if (stage != RecoveryPreparationStage.BackupWritten)
+                    return Task.CompletedTask;
                 link = Path.Combine(fixture.Storage, draft.Manifest.ChangeId.ToString("N"));
                 Directory.Move(link, Path.Combine(fixture.DirectoryPath, "detached-record"));
                 Directory.CreateSymbolicLink(link, outside);
@@ -183,7 +192,8 @@ internal static class RecoveryStoreChecks
         await check("concurrent recovery stores honor the final slot boundary and queued cancellation does not interrupt the active writer", async () =>
         {
             using var fixture = new Fixture();
-            for (var i = 0; i < 999; i++) Directory.CreateDirectory(Path.Combine(fixture.Storage, $"old-{i}"));
+            for (var i = 0; i < 999; i++)
+                Directory.CreateDirectory(Path.Combine(fixture.Storage, $"old-{i}"));
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var firstStore = fixture.Store(async (stage, _) => { if (stage == RecoveryPreparationStage.BackupWritten) { entered.TrySetResult(); await release.Task; } });
@@ -220,7 +230,8 @@ internal static class RecoveryStoreChecks
             using var child = Process.Start(start) ?? throw new Exception("Could not start recovery lock helper.");
             try
             {
-                for (var i = 0; i < 500 && !File.Exists(marker); i++) { if (child.HasExited) throw new Exception("Recovery lock helper exited early."); await Task.Delay(10); }
+                for (var i = 0; i < 500 && !File.Exists(marker); i++)
+                { if (child.HasExited) throw new Exception("Recovery lock helper exited early."); await Task.Delay(10); }
                 Assert(File.Exists(marker), "Child owns the actual filesystem lock");
                 var plan = await fixture.Plan();
                 await RejectAsync<IOException>(() => fixture.Store().PrepareAsync(plan));
@@ -256,13 +267,18 @@ internal static class RecoveryStoreChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             _workspace = new ProjectWorkspace(Root);
             _patches = new PatchService(_workspace);
         }
         public RecoveryStore Store(Func<RecoveryPreparationStage, RecoveryDraft, Task>? hook = null, ExecutionMode mode = ExecutionMode.FullAccess) =>
-            new(RunId, new ConfigurationValidator(_paths).Validate(new AppSettings { ProjectRoot = Root, BashPath = mode == ExecutionMode.ReadOnly ? "" : _bash,
-                Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } }, Path.Combine(DirectoryPath, "settings.json"),
+            new(RunId, new ConfigurationValidator(_paths).Validate(new AppSettings
+            {
+                ProjectRoot = Root,
+                BashPath = mode == ExecutionMode.ReadOnly ? "" : _bash,
+                Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
+            }, Path.Combine(DirectoryPath, "settings.json"),
                 new ExecutionPolicy { Mode = mode, RecoveryDirectory = Storage }), hook);
         public Task<PatchPlan> Plan(string body = "*** Update File: sample.md\n@@\n-old\n+new") => _patches.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch");
         public void PutProject(string name, string value) => File.WriteAllText(Path.Combine(Root, name), value, new System.Text.UTF8Encoding(false));

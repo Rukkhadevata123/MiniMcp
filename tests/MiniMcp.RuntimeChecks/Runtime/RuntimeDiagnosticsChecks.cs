@@ -17,7 +17,8 @@ internal static class RuntimeDiagnosticsChecks
             logger.LogInformation("initial");
             using var subscription = diagnostics.SubscribeLogs(default);
             var before = diagnostics.GetLogs();
-            for (var i = 0; i < 1100; i++) logger.LogInformation("entry {Index}", i);
+            for (var i = 0; i < 1100; i++)
+                logger.LogInformation("entry {Index}", i);
             var after = diagnostics.GetLogs();
             Assert(before.Entries.Length == 1 && subscription.Initial.SequenceEqual(before.Entries), "Initial remains immutable");
             Assert(after.Entries.Length == RuntimeDiagnostics.MaxEntries && after.Entries[0].Sequence == 102, "Count bound");
@@ -33,7 +34,8 @@ internal static class RuntimeDiagnosticsChecks
         {
             var (diagnostics, _, logger) = Create(new string('c', 500));
             var message = new string('x', RuntimeDiagnostics.MaxEntryCharacters - 2) + "👋tail";
-            for (var i = 0; i < 200; i++) logger.LogInformation("{Message}", message);
+            for (var i = 0; i < 200; i++)
+                logger.LogInformation("{Message}", message);
             var snapshot = diagnostics.GetLogs();
             Assert(snapshot.Entries.Length < 200 && snapshot.CharacterCount <= RuntimeDiagnostics.MaxCharacters, "Character bound evicts");
             Assert(snapshot.CharacterCount == snapshot.Entries.Sum(Size), "Category contributes to bound");
@@ -85,7 +87,8 @@ internal static class RuntimeDiagnosticsChecks
                 "https://user:private-value@example.invalid/path?access_token=private-value",
                 "-----BEGIN RSA PRIVATE KEY-----\nprivate-value"
             ];
-            foreach (var message in messages) logger.LogInformation("{Text}", message);
+            foreach (var message in messages)
+                logger.LogInformation("{Text}", message);
             var entries = diagnostics.GetLogs().Entries;
             Assert(entries.Length == messages.Length, "Each input produces a safe diagnostic");
             foreach (var entry in entries)
@@ -144,7 +147,8 @@ internal static class RuntimeDiagnosticsChecks
             using var second = diagnostics.SubscribeState(default);
             using var logs = diagnostics.SubscribeLogs(default);
             Assert(first.Initial.Single().State == RuntimeState.Starting, "Atomic initial state");
-            for (var i = 0; i < 2000; i++) logger.LogInformation("noise");
+            for (var i = 0; i < 2000; i++)
+                logger.LogInformation("noise");
             diagnostics.Publish(new(RuntimeState.Running, run));
             var final = new RuntimeSnapshot(RuntimeState.Stopped, run);
             diagnostics.Publish(final);
@@ -217,7 +221,8 @@ internal static class RuntimeDiagnosticsChecks
             var (diagnostics, _, logger) = Create();
             await Task.WhenAll(Enumerable.Range(0, 8).Select(writer => Task.Run(() =>
             {
-                for (var i = 0; i < 300; i++) logger.LogInformation("writer {Writer} entry {Index}", writer, i);
+                for (var i = 0; i < 300; i++)
+                    logger.LogInformation("writer {Writer} entry {Index}", writer, i);
             })));
             var snapshot = diagnostics.GetLogs();
             Assert(snapshot.Entries.Length == 1000 && snapshot.Entries[^1].Sequence == 2400, "Concurrent bounded writes");
@@ -232,7 +237,8 @@ internal static class RuntimeDiagnosticsChecks
                 var (diagnostics, _, logger) = Create();
                 var writing = Task.Run(() =>
                 {
-                    for (var i = 0; i < 100; i++) logger.LogInformation("entry {Index}", i);
+                    for (var i = 0; i < 100; i++)
+                        logger.LogInformation("entry {Index}", i);
                 });
                 using var subscription = diagnostics.SubscribeLogs(default);
                 await writing;
@@ -290,7 +296,8 @@ internal static class RuntimeDiagnosticsChecks
                 new FailingProbe("Authorization: Bearer private-failure")));
             using var states = runtime.SubscribeState();
             using var logs = runtime.SubscribeLogs();
-            try { await runtime.StartAsync(fixture.Configuration); throw new Exception("Expected startup failure"); }
+            try
+            { await runtime.StartAsync(fixture.Configuration); throw new Exception("Expected startup failure"); }
             catch (InvalidOperationException) { }
             Assert(runtime.Snapshot.State == RuntimeState.Faulted && !runtime.Snapshot.Error!.Contains("private-failure"), "Safe snapshot error");
             Assert(!(await states.Reader.ReadAsync()).Error!.Contains("private-failure"), "Safe typed event");
@@ -330,12 +337,14 @@ internal static class RuntimeDiagnosticsChecks
     private static List<T> Drain<T>(ChannelReader<T> reader)
     {
         var values = new List<T>();
-        while (reader.TryRead(out var value)) values.Add(value);
+        while (reader.TryRead(out var value))
+            values.Add(value);
         return values;
     }
     private static void Assert(bool condition, string reason)
     {
-        if (!condition) throw new Exception(reason);
+        if (!condition)
+            throw new Exception(reason);
     }
 
     private sealed class LogProbe(ILogger logger) : IHostedService

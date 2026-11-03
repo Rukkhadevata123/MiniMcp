@@ -44,7 +44,8 @@ internal static class RecoveryLoadingChecks
             var large = await fixture.Prepare("*** Delete File: large.md");
             Assert((await fixture.Store().LoadAsync(large.Manifest.ChangeId)).Backups.Single().Bytes.AsSpan().SequenceEqual(bytes), "Exactly 256 KiB including BOM accepted");
             var operations = new StringBuilder();
-            for (var i = 0; i < 64; i++) { fixture.Put($"f{i}.md", "x"); operations.Append($"*** Delete File: f{i}.md\n"); }
+            for (var i = 0; i < 64; i++)
+            { fixture.Put($"f{i}.md", "x"); operations.Append($"*** Delete File: f{i}.md\n"); }
             var full = await fixture.Prepare(operations.ToString().TrimEnd('\n'));
             Assert((await fixture.Store().LoadAsync(full.Manifest.ChangeId)).Backups.Length == 64, "All 64 required backups accepted");
         });
@@ -115,10 +116,19 @@ internal static class RecoveryLoadingChecks
                 var backup = Path.Combine(prepared.DirectoryPath, "before-0000.bin");
                 switch (kind)
                 {
-                    case "manifest": File.Delete(Path.Combine(prepared.DirectoryPath, RecoveryStore.ManifestFileName)); break;
-                    case "backup": File.Delete(backup); break;
-                    case "extra": File.WriteAllText(Path.Combine(prepared.DirectoryPath, "before-0063.bin"), "extra"); break;
-                    case "directory": File.Delete(backup); Directory.CreateDirectory(backup); break;
+                    case "manifest":
+                        File.Delete(Path.Combine(prepared.DirectoryPath, RecoveryStore.ManifestFileName));
+                        break;
+                    case "backup":
+                        File.Delete(backup);
+                        break;
+                    case "extra":
+                        File.WriteAllText(Path.Combine(prepared.DirectoryPath, "before-0063.bin"), "extra");
+                        break;
+                    case "directory":
+                        File.Delete(backup);
+                        Directory.CreateDirectory(backup);
+                        break;
                     case "case":
                         var bytes = File.ReadAllBytes(backup);
                         File.Delete(backup);
@@ -153,8 +163,11 @@ internal static class RecoveryLoadingChecks
             {
                 File.WriteAllBytes(Path.Combine(prepared.DirectoryPath, "before-0000.bin"), bytes);
                 var state = prepared.Manifest.Paths[0];
-                fixture.SaveManifest(prepared, prepared.Manifest with { Paths = [state with { Before = state.Before! with {
-                    ByteLength = bytes.Length, Sha256 = Convert.ToHexString(SHA256.HashData(bytes)) } }] });
+                fixture.SaveManifest(prepared, prepared.Manifest with
+                {
+                    Paths = [state with { Before = state.Before! with {
+                    ByteLength = bytes.Length, Sha256 = Convert.ToHexString(SHA256.HashData(bytes)) } }]
+                });
                 await RejectAsync<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
             }
         });
@@ -181,8 +194,10 @@ internal static class RecoveryLoadingChecks
             try
             {
                 foreach (var file in files)
-                    if (OperatingSystem.IsWindows()) File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
-                    else File.SetUnixFileMode(file, UnixFileMode.UserRead);
+                    if (OperatingSystem.IsWindows())
+                        File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+                    else
+                        File.SetUnixFileMode(file, UnixFileMode.UserRead);
                 _ = await fixture.Store(ExecutionMode.ReadOnly).LoadAsync(prepared.Manifest.ChangeId);
                 using (var held = RecoveryFileSystem.OpenRead(files[^1]))
                 {
@@ -193,8 +208,10 @@ internal static class RecoveryLoadingChecks
             finally
             {
                 foreach (var file in files)
-                    if (OperatingSystem.IsWindows()) File.SetAttributes(file, FileAttributes.Normal);
-                    else File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    if (OperatingSystem.IsWindows())
+                        File.SetAttributes(file, FileAttributes.Normal);
+                    else
+                        File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
             File.WriteAllText(files[^1], "invalid marker");
             await RejectAsync<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
@@ -224,13 +241,19 @@ internal static class RecoveryLoadingChecks
                 var prepared = await fixture.Prepare();
                 var store = fixture.Store(hook: stage =>
                 {
-                    if (stage != RecoveryLoadingStage.BeforeReturn) return Task.CompletedTask;
+                    if (stage != RecoveryLoadingStage.BeforeReturn)
+                        return Task.CompletedTask;
                     var path = Path.Combine(prepared.DirectoryPath, "before-0000.bin");
-                    if (kind == "replace") { File.Move(path, Path.Combine(fixture.DirectoryPath, "detached.bin")); File.WriteAllText(path, "old\n"); }
-                    else if (kind == "corrupt") File.WriteAllText(path, "bad\n");
-                    else if (kind == "manifest") fixture.SaveManifest(prepared, prepared.Manifest with { State = RecoveryRecordState.Committed });
-                    else if (kind == "extra") File.WriteAllText(Path.Combine(prepared.DirectoryPath, "extra.bin"), "unowned");
-                    else { Directory.Move(prepared.DirectoryPath, prepared.DirectoryPath + ".detached"); Directory.CreateDirectory(prepared.DirectoryPath); }
+                    if (kind == "replace")
+                    { File.Move(path, Path.Combine(fixture.DirectoryPath, "detached.bin")); File.WriteAllText(path, "old\n"); }
+                    else if (kind == "corrupt")
+                        File.WriteAllText(path, "bad\n");
+                    else if (kind == "manifest")
+                        fixture.SaveManifest(prepared, prepared.Manifest with { State = RecoveryRecordState.Committed });
+                    else if (kind == "extra")
+                        File.WriteAllText(Path.Combine(prepared.DirectoryPath, "extra.bin"), "unowned");
+                    else
+                    { Directory.Move(prepared.DirectoryPath, prepared.DirectoryPath + ".detached"); Directory.CreateDirectory(prepared.DirectoryPath); }
                     return Task.CompletedTask;
                 });
                 await RejectInvalidRecord(() => store.LoadAsync(prepared.Manifest.ChangeId));
@@ -249,7 +272,8 @@ internal static class RecoveryLoadingChecks
             // The same store gate protects inspection and preparation; keep a real writer inside it.
             var writer = fixture.Prepare(hook: async (stage, _) =>
             {
-                if (stage == RecoveryPreparationStage.BackupWritten) { entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreparationStage.BackupWritten)
+                { entered.TrySetResult(); await release.Task; }
             });
             try
             {
@@ -271,31 +295,45 @@ internal static class RecoveryLoadingChecks
         {
             using var fixture = new Fixture();
             var probe = Path.Combine(fixture.DirectoryPath, "probe");
-            try { Directory.CreateSymbolicLink(probe, fixture.Root); }
+            try
+            { Directory.CreateSymbolicLink(probe, fixture.Root); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             Directory.Delete(probe);
             foreach (var kind in new[] { "record", "root", "ancestor", "backup", "manifest", "dangling" })
             {
                 var prepared = await fixture.Prepare();
                 var store = fixture.Store();
-                var path = kind switch { "record" => prepared.DirectoryPath, "root" => fixture.Storage,
-                    "ancestor" => Path.GetDirectoryName(fixture.Storage)!, "manifest" => Path.Combine(prepared.DirectoryPath, RecoveryStore.ManifestFileName),
-                    _ => Path.Combine(prepared.DirectoryPath, "before-0000.bin") };
+                var path = kind switch
+                {
+                    "record" => prepared.DirectoryPath,
+                    "root" => fixture.Storage,
+                    "ancestor" => Path.GetDirectoryName(fixture.Storage)!,
+                    "manifest" => Path.Combine(prepared.DirectoryPath, RecoveryStore.ManifestFileName),
+                    _ => Path.Combine(prepared.DirectoryPath, "before-0000.bin")
+                };
                 var directory = Directory.Exists(path);
                 var detached = Path.Combine(fixture.DirectoryPath, "detached-" + kind);
-                if (directory) Directory.Move(path, detached); else File.Move(path, detached);
+                if (directory)
+                    Directory.Move(path, detached);
+                else
+                    File.Move(path, detached);
                 var before = File.ReadAllText(Path.Combine(fixture.Root, "sample.md"));
                 try
                 {
                     var target = kind == "dangling" ? detached + ".missing" : detached;
-                    if (directory) Directory.CreateSymbolicLink(path, target); else File.CreateSymbolicLink(path, target);
+                    if (directory)
+                        Directory.CreateSymbolicLink(path, target);
+                    else
+                        File.CreateSymbolicLink(path, target);
                     await RejectInvalidRecord(() => store.LoadAsync(prepared.Manifest.ChangeId));
                     Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.md")) == before, "Link target and workspace stay untouched");
                 }
                 finally
                 {
-                    if (directory) { Directory.Delete(path); Directory.Move(detached, path); }
-                    else { File.Delete(path); File.Move(detached, path); }
+                    if (directory)
+                    { Directory.Delete(path); Directory.Move(detached, path); }
+                    else
+                    { File.Delete(path); File.Move(detached, path); }
                 }
             }
         });
@@ -311,7 +349,8 @@ internal static class RecoveryLoadingChecks
             await RejectAsync<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
             File.Delete(alias);
             _ = await fixture.Store().LoadAsync(prepared.Manifest.ChangeId);
-            if (!OperatingSystem.IsLinux()) return;
+            if (!OperatingSystem.IsLinux())
+                return;
             File.Delete(backup);
             Assert(MakeFifo(backup, 0x180) == 0, "Test FIFO created");
             await RejectAsync<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId).WaitAsync(TimeSpan.FromSeconds(3)));
@@ -321,7 +360,8 @@ internal static class RecoveryLoadingChecks
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery loading: " + message); }
     private static async Task RejectInvalidRecord(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected invalid recovery record to be rejected.");
     }
@@ -353,12 +393,17 @@ internal static class RecoveryLoadingChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
         public RecoveryStore Store(ExecutionMode mode = ExecutionMode.FullAccess, Func<RecoveryLoadingStage, Task>? hook = null,
             Func<RecoveryPreparationStage, RecoveryDraft, Task>? writeHook = null) =>
-            new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(new AppSettings { ProjectRoot = Root,
-                BashPath = mode == ExecutionMode.ReadOnly ? "" : _bash, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } },
+            new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(new AppSettings
+            {
+                ProjectRoot = Root,
+                BashPath = mode == ExecutionMode.ReadOnly ? "" : _bash,
+                Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
+            },
                 Path.Combine(DirectoryPath, "settings.json"), new ExecutionPolicy { Mode = mode, RecoveryDirectory = Storage }), writeHook, hook);
         public async Task<RecoveryStore.PreparedRecord> Prepare(string body = "*** Update File: sample.md\n@@\n-old\n+new",
             Func<RecoveryPreparationStage, RecoveryDraft, Task>? hook = null) =>

@@ -22,21 +22,26 @@ internal static class RecoveryCompletionBuilder
             PatchCommitState.RolledBack => RecoveryRecordState.RolledBack,
             _ => RecoveryRecordState.Incomplete
         };
-        if (state != RecoveryRecordState.Committed) return applying with { State = state };
+        if (state != RecoveryRecordState.Committed)
+            return applying with { State = state };
         var files = outcome.Paths.ToDictionary(path => path.Path, StringComparer.Ordinal);
         var paths = applying.Paths.Select(path =>
         {
-            if (!files.Remove(path.Path, out var actual)) throw new InvalidOperationException("Verified outcome is missing a record path.");
+            if (!files.Remove(path.Path, out var actual))
+                throw new InvalidOperationException("Verified outcome is missing a record path.");
             var expected = path.After;
-            if ((expected is null) != (actual.File is null)) throw new InvalidOperationException("Verified outcome existence facts disagree with the record.");
-            if (expected is null) return path;
+            if ((expected is null) != (actual.File is null))
+                throw new InvalidOperationException("Verified outcome existence facts disagree with the record.");
+            if (expected is null)
+                return path;
             var observed = actual.File!;
             if (observed.Bytes.Length != expected.ByteLength || Convert.ToHexString(SHA256.HashData(observed.Bytes.AsSpan())) != expected.Sha256 ||
                 (!expected.UnixModeIsCreateRequest && observed.Mode != expected.UnixMode))
                 throw new InvalidOperationException("Verified outcome contents or permissions disagree with the record.");
             return path with { After = expected with { UnixMode = observed.Mode, UnixModeIsCreateRequest = false } };
         }).ToImmutableArray();
-        if (files.Count != 0) throw new InvalidOperationException("Verified outcome contains unrelated paths.");
+        if (files.Count != 0)
+            throw new InvalidOperationException("Verified outcome contains unrelated paths.");
         var completed = applying with { State = state, Paths = paths };
         RecoveryManifestValidator.Validate(completed, applying.ProjectRoot, applying.ChangeId);
         return completed;

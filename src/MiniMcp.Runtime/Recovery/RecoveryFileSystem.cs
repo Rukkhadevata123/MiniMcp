@@ -16,9 +16,11 @@ internal static class RecoveryFileSystem
         CheckPlatform();
         var created = OperatingSystem.IsWindows() ? CreateDirectoryWindows(WindowsPath(path), IntPtr.Zero) :
             OperatingSystem.IsLinux() ? MakeDirectory(path, 0x1c0) == 0 : throw new PlatformNotSupportedException(); // 0700
-        if (created) return true;
+        if (created)
+            return true;
         var error = Marshal.GetLastPInvokeError();
-        if (error == (OperatingSystem.IsWindows() ? 183 : 17)) return false;
+        if (error == (OperatingSystem.IsWindows() ? 183 : 17))
+            return false;
         throw Failure("Create recovery directory", error);
     }
 
@@ -33,14 +35,16 @@ internal static class RecoveryFileSystem
         {
             var disposition = mode switch { FileMode.CreateNew => 1u, FileMode.Open => 3u, FileMode.OpenOrCreate => 4u, _ => throw new ArgumentException("Unsupported recovery file mode.") };
             handle = CreateFileWindows(WindowsPath(path), access == FileAccess.Read ? 0x80000000 : 0xc0000000, windowsShare, IntPtr.Zero, disposition, 0x00200000, IntPtr.Zero);
-            if (handle.IsInvalid) { var error = Marshal.GetLastPInvokeError(); handle.Dispose(); throw Failure("Open recovery file", error); }
+            if (handle.IsInvalid)
+            { var error = Marshal.GetLastPInvokeError(); handle.Dispose(); throw Failure("Open recovery file", error); }
         }
         else if (OperatingSystem.IsLinux())
         {
             var flags = mode switch { FileMode.CreateNew => 0x40 | 0x80, FileMode.Open => 0, FileMode.OpenOrCreate => 0x40, _ => throw new ArgumentException("Unsupported recovery file mode.") };
             handle = OpenLinux(path, flags | (access == FileAccess.Read ? 0 : 2) | 0x800 | 0x20000 | 0x80000, 0x180); // RDONLY/RDWR, NONBLOCK, NOFOLLOW, CLOEXEC; 0600
         }
-        else throw new PlatformNotSupportedException();
+        else
+            throw new PlatformNotSupportedException();
         try
         {
             _ = Identity(handle, directory: false);
@@ -66,9 +70,11 @@ internal static class RecoveryFileSystem
 
     public static void FlushDirectory(string path)
     {
-        if (!OperatingSystem.IsLinux()) return;
+        if (!OperatingSystem.IsLinux())
+            return;
         using var handle = OpenDirectory(path);
-        if (Fsync(handle.DangerousGetHandle().ToInt32()) != 0) throw Failure("Flush recovery directory", Marshal.GetLastPInvokeError());
+        if (Fsync(handle.DangerousGetHandle().ToInt32()) != 0)
+            throw Failure("Flush recovery directory", Marshal.GetLastPInvokeError());
     }
 
     // Callers verify two regular files in the same directory/device before this rename.
@@ -79,7 +85,8 @@ internal static class RecoveryFileSystem
         var replaced = OperatingSystem.IsWindows()
             ? MoveFileWindows(WindowsPath(source), WindowsPath(destination), 1 | 8) // REPLACE_EXISTING | WRITE_THROUGH
             : Rename(source, destination) == 0;
-        if (!replaced) throw Failure("Replace recovery manifest", Marshal.GetLastPInvokeError());
+        if (!replaced)
+            throw Failure("Replace recovery manifest", Marshal.GetLastPInvokeError());
     }
 
     private static SafeFileHandle OpenDirectory(string path)
@@ -87,10 +94,14 @@ internal static class RecoveryFileSystem
         if (OperatingSystem.IsWindows())
         {
             var handle = CreateFileWindows(WindowsPath(path), 0, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero); // BACKUP_SEMANTICS | OPEN_REPARSE_POINT
-            if (!handle.IsInvalid) return handle;
-            var error = Marshal.GetLastPInvokeError(); handle.Dispose(); throw Failure("Open recovery directory", error);
+            if (!handle.IsInvalid)
+                return handle;
+            var error = Marshal.GetLastPInvokeError();
+            handle.Dispose();
+            throw Failure("Open recovery directory", error);
         }
-        if (OperatingSystem.IsLinux()) return OpenLinux(path, 0x10000 | 0x800 | 0x20000 | 0x80000, 0);
+        if (OperatingSystem.IsLinux())
+            return OpenLinux(path, 0x10000 | 0x800 | 0x20000 | 0x80000, 0);
         throw new PlatformNotSupportedException();
     }
 
@@ -98,13 +109,15 @@ internal static class RecoveryFileSystem
     {
         CheckPlatform();
         var descriptor = Open(path, flags, mode);
-        if (descriptor < 0) throw Failure("Open recovery entry", Marshal.GetLastPInvokeError());
+        if (descriptor < 0)
+            throw Failure("Open recovery entry", Marshal.GetLastPInvokeError());
         if (descriptor == 0)
         {
             var duplicate = DuplicateDescriptor(descriptor, 1030, 3); // F_DUPFD_CLOEXEC; SafeFileHandle treats zero as invalid.
             var error = Marshal.GetLastPInvokeError();
             _ = Close(descriptor);
-            if (duplicate < 0) throw Failure("Duplicate recovery descriptor", error);
+            if (duplicate < 0)
+                throw Failure("Duplicate recovery descriptor", error);
             descriptor = duplicate;
         }
         return new SafeFileHandle((IntPtr)descriptor, ownsHandle: true);
@@ -121,10 +134,12 @@ internal static class RecoveryFileSystem
                 ((attributes & FileAttributes.Directory) != 0) != directory || (!directory && info.Links != 1))
                 throw new IOException("Recovery storage rejects links, hard-linked files and non-regular entries.");
             var index = ((ulong)info.IndexHigh << 32) | info.IndexLow;
-            if (index == 0) throw new IOException("Recovery storage requires stable nonzero file identities.");
+            if (index == 0)
+                throw new IOException("Recovery storage requires stable nonzero file identities.");
             return new(info.Volume, index);
         }
-        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException();
+        if (!OperatingSystem.IsLinux())
+            throw new PlatformNotSupportedException();
         const uint requested = 0x105; // STATX_TYPE | STATX_NLINK | STATX_INO
         try
         {
@@ -141,7 +156,8 @@ internal static class RecoveryFileSystem
         path.StartsWith("\\\\", StringComparison.Ordinal) ? "\\\\?\\UNC\\" + path[2..] : "\\\\?\\" + path;
     private static void CheckPlatform()
     {
-        if (OperatingSystem.IsWindows()) return;
+        if (OperatingSystem.IsWindows())
+            return;
         if (!OperatingSystem.IsLinux() || RuntimeInformation.ProcessArchitecture is not (Architecture.X64 or Architecture.Arm64))
             throw new PlatformNotSupportedException("Recovery persistence supports Windows and Linux x64/arm64 native interfaces.");
     }

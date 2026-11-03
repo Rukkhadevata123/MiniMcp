@@ -107,10 +107,15 @@ internal static class CliProcessChecks
         {
             FileName = OperatingSystem.IsWindows() ? executable : "/usr/bin/setsid",
             WorkingDirectory = AppContext.BaseDirectory,
-            UseShellExecute = false, CreateNoWindow = !OperatingSystem.IsWindows(), WindowStyle = ProcessWindowStyle.Hidden,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+            UseShellExecute = false,
+            CreateNoWindow = !OperatingSystem.IsWindows(),
+            WindowStyle = ProcessWindowStyle.Hidden,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
-        if (OperatingSystem.IsLinux()) { start.ArgumentList.Add("--"); start.ArgumentList.Add(executable); }
+        if (OperatingSystem.IsLinux())
+        { start.ArgumentList.Add("--"); start.ArgumentList.Add(executable); }
         start.ArgumentList.Add("--cli-process");
         start.ArgumentList.Add(control);
         return ProcessLifetime.Start(start);
@@ -118,7 +123,8 @@ internal static class CliProcessChecks
 
     private static async Task Copy(StreamReader source, TextWriter writer)
     {
-        while (await source.ReadLineAsync() is { } line) writer.WriteLine(line);
+        while (await source.ReadLineAsync() is { } line)
+            writer.WriteLine(line);
     }
 
     private static async Task Send(Process child, string signal, int count = 1)
@@ -135,7 +141,8 @@ internal static class CliProcessChecks
         {
             for (var index = 0; index < count && !child.HasExited; index++)
             {
-                if (Kill(child.Id, signal == "SIGINT" ? 2 : 15) != 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
+                if (Kill(child.Id, signal == "SIGINT" ? 2 : 15) != 0)
+                    throw new Win32Exception(Marshal.GetLastPInvokeError());
                 await Task.Delay(30);
             }
         }
@@ -146,9 +153,11 @@ internal static class CliProcessChecks
         var scenario = JsonSerializer.Deserialize<CliProcessScenario>(await File.ReadAllTextAsync(control))!;
         if (OperatingSystem.IsWindows())
         {
-            if (GetConsoleWindow() == IntPtr.Zero) throw new Exception("The signal check must have its own console.");
+            if (GetConsoleWindow() == IntPtr.Zero)
+                throw new Exception("The signal check must have its own console.");
             // Simulate a normal terminal even if the test launcher inherited an ignore-Ctrl+C flag.
-            if (!SetConsoleCtrlHandler(IntPtr.Zero, false)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!SetConsoleCtrlHandler(IntPtr.Zero, false))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         var paths = new ConfigurationPaths(Path.Combine(scenario.Directory, "user"), Path.Combine(scenario.Directory, "state"));
         var store = new ConfigurationStore(paths);
@@ -166,26 +175,32 @@ internal static class CliProcessChecks
             }));
         var bash = scenario.Behavior == "bash" ? Task.Run(async () =>
         {
-            while (runtime?.Snapshot.State != RuntimeState.Running) await Task.Delay(10, monitoring.Token);
+            while (runtime?.Snapshot.State != RuntimeState.Running)
+                await Task.Delay(10, monitoring.Token);
             await runtime.Execution!.RunBashAsync(RuntimeCallChecks.ChildCommand(Path.Combine(scenario.Directory, "cli-bash.pid")));
         }) : Task.CompletedTask;
-        try { return await running; }
+        try
+        { return await running; }
         finally
         {
             monitoring.Cancel();
-            try { await bash; }
+            try
+            { await bash; }
             catch (OperationCanceledException) { }
         }
     }
 
     internal static async Task<int> SignalAsync(int target, int count)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        if (!OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException();
         FreeConsole();
-        if (!AttachConsole((uint)target)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (!AttachConsole((uint)target))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
         try
         {
-            if (!SetConsoleCtrlHandler(IntPtr.Zero, true)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!SetConsoleCtrlHandler(IntPtr.Zero, true))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             var processes = new uint[32];
             var length = GetConsoleProcessList(processes, (uint)processes.Length);
             if (length == 0 || length > processes.Length || !processes.Take((int)length).Contains((uint)target) ||
@@ -193,7 +208,8 @@ internal static class CliProcessChecks
                 throw new Exception("Refusing to signal a console containing an unrelated process.");
             for (var index = 0; index < count; index++)
             {
-                if (!GenerateConsoleCtrlEvent(0, 0)) throw new Win32Exception(Marshal.GetLastWin32Error());
+                if (!GenerateConsoleCtrlEvent(0, 0))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
                 await Task.Delay(30);
             }
             await Task.Delay(100);
@@ -217,13 +233,15 @@ internal static class CliProcessChecks
         public Task StopAsync(CancellationToken cancellationToken)
         {
             File.WriteAllText(Path.Combine(scenario.Directory, "cli-stop.calls"), Interlocked.Increment(ref _stops).ToString(CultureInfo.InvariantCulture));
-            if (scenario.Behavior == "block-stop") Block("cli-stop.entered");
+            if (scenario.Behavior == "block-stop")
+                Block("cli-stop.entered");
             return Task.CompletedTask;
         }
         private void Block(string marker)
         {
             File.WriteAllText(Path.Combine(scenario.Directory, marker), "entered");
-            while (!File.Exists(Path.Combine(scenario.Directory, "cli-release"))) Thread.Sleep(10);
+            while (!File.Exists(Path.Combine(scenario.Directory, "cli-release")))
+                Thread.Sleep(10);
         }
     }
 

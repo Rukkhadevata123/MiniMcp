@@ -120,7 +120,8 @@ internal static class PatchWritePolicyChecks
                 Assert(result.CanCommit == (mode != ExecutionMode.ReadOnly) && ReferenceEquals(result.Assessment, risk), "No live workspace or backup readiness lookup");
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
-                try { PatchWritePolicy.Decide(risk, mode, cancelled.Token); throw new Exception("Expected cancellation"); }
+                try
+                { PatchWritePolicy.Decide(risk, mode, cancelled.Token); throw new Exception("Expected cancellation"); }
                 catch (OperationCanceledException) { }
             }
             Assert(PatchWritePolicy.Decide(risk, ExecutionMode.ProjectEdit) == expected && !Directory.Exists(fixture.Root), "No retained state or directory creation");

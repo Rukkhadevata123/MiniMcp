@@ -68,7 +68,8 @@ public sealed partial class ConfigurationStore
         try
         {
             byte[] bytes;
-            try { bytes = await ReadBytesAsync(filePath, cancellationToken).ConfigureAwait(false); }
+            try
+            { bytes = await ReadBytesAsync(filePath, cancellationToken).ConfigureAwait(false); }
             catch (Exception exception) when (missingValue is not null
                 && exception is FileNotFoundException or DirectoryNotFoundException)
             {
@@ -97,7 +98,8 @@ public sealed partial class ConfigurationStore
         while (count < buffer.Length)
         {
             var read = await stream.ReadAsync(buffer.AsMemory(count), cancellationToken).ConfigureAwait(false);
-            if (read == 0) break;
+            if (read == 0)
+                break;
             count += read;
         }
         if (count > MaxFileBytes)

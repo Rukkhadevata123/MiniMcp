@@ -37,7 +37,8 @@ internal sealed class CliSignals : IDisposable
     {
         lock (_gate)
         {
-            if (_requested || _disposed) return;
+            if (_requested || _disposed)
+                return;
             _requested = true;
             // Callbacks can block; they must not run in the OS signal handler.
             _cancelling = _shutdown.CancelAsync();
@@ -53,8 +54,10 @@ internal sealed class CliSignals : IDisposable
         lock (_gate)
         {
             _disposed = true;
-            if (_cancelling.IsCompleted) _shutdown.Dispose();
-            else _ = _cancelling.ContinueWith(_ => _shutdown.Dispose(), CancellationToken.None,
+            if (_cancelling.IsCompleted)
+                _shutdown.Dispose();
+            else
+                _ = _cancelling.ContinueWith(_ => _shutdown.Dispose(), CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         }
     }

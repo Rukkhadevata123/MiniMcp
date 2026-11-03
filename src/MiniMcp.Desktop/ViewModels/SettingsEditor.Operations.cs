@@ -32,14 +32,16 @@ public sealed partial class SettingsEditor
         // Do not test cancellation after a durable save or lose its updated revision.
         _settingsBaseline = saved;
         // Advance the baseline even when newer edits must remain in the draft.
-        if (_settingsEditVersion == editVersion) ResetSettings(saved.Value);
+        if (_settingsEditVersion == editVersion)
+            ResetSettings(saved.Value);
         _message = "运行配置已保存，重启服务后生效。权限策略请单独保存。";
     }, cancellationToken);
 
     public Task SavePolicyAsync(CancellationToken cancellationToken = default) => BeginOperation(async token =>
     {
         RequireLoaded();
-        if (_settingsBaseline!.Revision is null) throw new InvalidOperationException("请先保存运行配置，再保存本机策略。");
+        if (_settingsBaseline!.Revision is null)
+            throw new InvalidOperationException("请先保存运行配置，再保存本机策略。");
         var draft = BuildPolicy();
         var editVersion = _policyEditVersion;
         var file = _policyBaseline! with { Value = draft };
@@ -47,7 +49,8 @@ public sealed partial class SettingsEditor
         var saved = await Task.Run(() => _store.SavePolicyAsync(file, savedSettings, token), token);
 
         _policyBaseline = saved;
-        if (_policyEditVersion == editVersion) ResetPolicy(saved.Value);
+        if (_policyEditVersion == editVersion)
+            ResetPolicy(saved.Value);
         _message = "本机策略已保存，重启服务后生效。";
     }, cancellationToken);
 
@@ -93,8 +96,10 @@ public sealed partial class SettingsEditor
         var policyDirty = IsPolicyDirty;
         _settingsBaseline = loaded.Settings;
         _policyBaseline = loaded.Policy;
-        if (!settingsDirty) ResetSettings(loaded.Settings.Value);
-        if (!policyDirty) ResetPolicy(loaded.Policy.Value);
+        if (!settingsDirty)
+            ResetSettings(loaded.Settings.Value);
+        if (!policyDirty)
+            ResetPolicy(loaded.Policy.Value);
         RaiseState();
 
         var stamp = new SavedConfigurationStamp(source, loaded.Settings.Revision, loaded.Policy.Revision);
@@ -125,7 +130,8 @@ public sealed partial class SettingsEditor
 
     private Task BeginOperation(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
     {
-        if (_isBusy || _sessionBusy) return Task.CompletedTask;
+        if (_isBusy || _sessionBusy)
+            return Task.CompletedTask;
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancelling = Task.CompletedTask;
         _pendingCancellation = cancellation;
@@ -178,7 +184,8 @@ public sealed partial class SettingsEditor
 
     private void RequireLoaded()
     {
-        if (!IsLoaded) throw new InvalidOperationException("请先加载运行配置与本机策略。");
+        if (!IsLoaded)
+            throw new InvalidOperationException("请先加载运行配置与本机策略。");
     }
 
     private static string DescribeDependencies(RuntimeConfiguration configuration)

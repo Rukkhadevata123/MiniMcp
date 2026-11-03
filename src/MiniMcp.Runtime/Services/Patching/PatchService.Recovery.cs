@@ -15,7 +15,8 @@ internal sealed partial class PatchService
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(recovery);
-        if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
+        if (!ReferenceEquals(plan.Owner, this))
+            throw new WorkspaceException("The patch plan belongs to a different patch service.");
         await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -31,12 +32,15 @@ internal sealed partial class PatchService
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(recovery);
-        if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
+        if (!ReferenceEquals(plan.Owner, this))
+            throw new WorkspaceException("The patch plan belongs to a different patch service.");
         await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-        if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+        if (validateSourceRecord is not null)
+            await validateSourceRecord(cancellationToken).ConfigureAwait(false);
         var record = await recovery.PrepareAsync(plan, cancellationToken).ConfigureAwait(false);
         await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-        if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+        if (validateSourceRecord is not null)
+            await validateSourceRecord(cancellationToken).ConfigureAwait(false);
         await recovery.BeginApplyingAsync(record, plan, cancellationToken).ConfigureAwait(false);
         var outcome = await ExecuteAndVerifyCoreAsync(plan, record.ExecutionContext, cancellationToken, validateSourceRecord).ConfigureAwait(false);
         // Never drop real finalization or relabel installed files because of a late caller cancellation.

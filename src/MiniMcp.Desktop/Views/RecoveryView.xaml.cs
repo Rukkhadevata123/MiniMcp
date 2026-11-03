@@ -21,11 +21,13 @@ public sealed partial class RecoveryView : Page
     private void OnBodySizeChanged(object sender, SizeChangedEventArgs args)
     {
         var wide = args.NewSize.Width >= 860;
-        Body.ColumnSpacing = wide ? 16 : 0; Body.RowSpacing = wide ? 0 : 16;
+        Body.ColumnSpacing = wide ? 16 : 0;
+        Body.RowSpacing = wide ? 0 : 16;
         Body.ColumnDefinitions[0].Width = wide ? new GridLength(300) : new GridLength(1, GridUnitType.Star);
         Body.ColumnDefinitions[1].Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
         Body.RowDefinitions[0].Height = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(140);
         Body.RowDefinitions[1].Height = wide ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-        Grid.SetColumn(DetailCard, wide ? 1 : 0); Grid.SetRow(DetailCard, wide ? 0 : 1);
+        Grid.SetColumn(DetailCard, wide ? 1 : 0);
+        Grid.SetRow(DetailCard, wide ? 0 : 1);
     }
 }

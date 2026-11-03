@@ -41,7 +41,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         Func<RecoveryManifestReplacementStage, string, Task>? replacementCheckpoint = null,
         Func<RecoveryPreviewStage, string?, Task>? recoveryPreviewCheckpoint = null)
     {
-        if (runId == Guid.Empty) throw new ArgumentException("A run ID is required.", nameof(runId));
+        if (runId == Guid.Empty)
+            throw new ArgumentException("A run ID is required.", nameof(runId));
         ArgumentNullException.ThrowIfNull(configuration);
         RunId = runId;
         Configuration = configuration;
@@ -115,7 +116,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
                 token.ThrowIfCancellationRequested();
                 return PatchApplyResult.FromDecision(decision);
             }
-            if (!decision.CanCommit) throw new WorkspaceException(decision.RejectionMessage);
+            if (!decision.CanCommit)
+                throw new WorkspaceException(decision.RejectionMessage);
             var committed = await _patches.CommitWithRecoveryAsync(plan, _recovery, token).ConfigureAwait(false);
             if (committed.Outcome.VerifiedState != PatchCommitState.Committed)
                 throw new RecordedPatchExecutionException(committed);
@@ -142,7 +144,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
         lock (_callsGate)
         {
             ObjectDisposedException.ThrowIf(IsDisposed, this);
-            if (!_accepting) throw new WorkspaceException("This runtime session is stopping; new tool calls are denied.");
+            if (!_accepting)
+                throw new WorkspaceException("This runtime session is stopping; new tool calls are denied.");
             cancellationToken.ThrowIfCancellationRequested();
             linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopping.Token);
             _activeCalls++;
@@ -153,7 +156,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
             var result = await operation(linked.Token).ConfigureAwait(false);
             // Patch writes own their completion boundary: an installed/finalized result must not
             // become cancellation here. Their preview/preparation paths still observe the token.
-            if (checkCancellationAfterCompletion) linked.Token.ThrowIfCancellationRequested();
+            if (checkCancellationAfterCompletion)
+                linked.Token.ThrowIfCancellationRequested();
             return result;
         }
         finally
@@ -162,7 +166,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
             lock (_callsGate)
             {
                 _activeCalls--;
-                if (!_accepting && _activeCalls == 0) _drained.TrySetResult();
+                if (!_accepting && _activeCalls == 0)
+                    _drained.TrySetResult();
             }
         }
     }
@@ -175,7 +180,8 @@ internal sealed class ToolExecutionService : IAsyncDisposable
             if (_stopTask is null)
             {
                 _accepting = false;
-                if (_activeCalls == 0) _drained.TrySetResult();
+                if (_activeCalls == 0)
+                    _drained.TrySetResult();
                 _stopTask = StopCoreAsync();
             }
             stopping = _stopTask;
@@ -188,13 +194,15 @@ internal sealed class ToolExecutionService : IAsyncDisposable
     {
         // Do not run cancellation callbacks under the admission lock or on the caller's UI context.
         await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try { await _stopping.CancelAsync().ConfigureAwait(false); }
+        try
+        { await _stopping.CancelAsync().ConfigureAwait(false); }
         finally { await _drained.Task.ConfigureAwait(false); }
     }
 
     public ValueTask DisposeAsync()
     {
-        lock (_callsGate) return new ValueTask(_disposeTask ??= DisposeCoreAsync());
+        lock (_callsGate)
+            return new ValueTask(_disposeTask ??= DisposeCoreAsync());
     }
 
     private async Task DisposeCoreAsync()

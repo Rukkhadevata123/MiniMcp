@@ -17,11 +17,13 @@ internal static class RecoveryManifestValidator
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedProjectRoot);
         if (!Path.IsPathFullyQualified(expectedProjectRoot) || NormalizeRoot(expectedProjectRoot) != expectedProjectRoot)
             throw new ArgumentException("Use the validated, normalized absolute workspace root.", nameof(expectedProjectRoot));
-        if (expectedChangeId == Guid.Empty) throw new ArgumentException("An expected change ID is required.", nameof(expectedChangeId));
+        if (expectedChangeId == Guid.Empty)
+            throw new ArgumentException("An expected change ID is required.", nameof(expectedChangeId));
         RecoveryManifestJson.ValidateFields(manifest);
         Require(manifest.ChangeId == expectedChangeId, "$.changeId", "The change ID does not match the selected record.");
         string normalizedRecordRoot;
-        try { normalizedRecordRoot = NormalizeRoot(manifest.ProjectRoot); }
+        try
+        { normalizedRecordRoot = NormalizeRoot(manifest.ProjectRoot); }
         catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
         { throw new JsonException("Invalid recovery workspace root.", "$.projectRoot", null, null); }
         Require(normalizedRecordRoot == manifest.ProjectRoot && Paths.Equals(manifest.ProjectRoot, expectedProjectRoot),
@@ -122,7 +124,8 @@ internal static class RecoveryManifestValidator
 
     private static void CheckImage(RecoveryFileImage? image, string field, Dictionary<string, int> lengths)
     {
-        if (image is null) return;
+        if (image is null)
+            return;
         Require(image.UnixMode.HasValue == !OperatingSystem.IsWindows(), field + ".unixMode", "Permissions must match the workspace platform's tracking rules.");
         Require((image.ByteLength == 0) == (image.Sha256 == EmptySha256), field + ".sha256", "The empty-content SHA-256 must describe exactly zero bytes.");
         Require(!lengths.TryGetValue(image.Sha256, out var length) || length == image.ByteLength, field + ".byteLength", "Identical hashes cannot describe different lengths.");
@@ -138,6 +141,7 @@ internal static class RecoveryManifestValidator
 
     private static void Require(bool condition, string field, string message)
     {
-        if (!condition) throw new JsonException(message, field, null, null);
+        if (!condition)
+            throw new JsonException(message, field, null, null);
     }
 }

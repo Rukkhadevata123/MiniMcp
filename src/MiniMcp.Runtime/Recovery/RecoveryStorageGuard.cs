@@ -42,7 +42,8 @@ internal sealed record RecoveryStorageUsage(long Bytes, int RecordSlots)
     {
         if (recordBytes is <= 0 or > RecoveryStorageLimits.MaxRecordBytes)
             throw new ArgumentOutOfRangeException(nameof(recordBytes), "Use the actual positive manifest and backup size within the per-record limit.");
-        if (Bytes < 0 || RecordSlots < 0) throw new InvalidDataException("Recovery usage cannot be negative.");
+        if (Bytes < 0 || RecordSlots < 0)
+            throw new InvalidDataException("Recovery usage cannot be negative.");
         if (RecordSlots >= RecoveryStorageLimits.MaxRecordSlots)
             throw new IOException("Recovery storage has no free record slots; inspect and clean records locally before retrying.");
         if (Bytes > RecoveryStorageLimits.MaxStoreBytes || recordBytes > RecoveryStorageLimits.MaxStoreBytes - Bytes)
@@ -56,11 +57,13 @@ internal sealed class RecoveryStorageScanBudget
     public void Visit(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (++_entries > RecoveryStorageLimits.MaxScanEntries) throw new IOException("Recovery storage exceeds the inspection entry limit.");
+        if (++_entries > RecoveryStorageLimits.MaxScanEntries)
+            throw new IOException("Recovery storage exceeds the inspection entry limit.");
     }
     public static void DirectoryDepth(int depth)
     {
-        if (depth > RecoveryStorageLimits.MaxDirectoryDepth) throw new IOException("Recovery storage exceeds the inspection directory-depth limit.");
+        if (depth > RecoveryStorageLimits.MaxDirectoryDepth)
+            throw new IOException("Recovery storage exceeds the inspection directory-depth limit.");
     }
 }
 
@@ -98,7 +101,8 @@ internal sealed class RecoveryStorageGuard
     {
         cancellationToken.ThrowIfCancellationRequested();
         _ = DirectoryPath(_projectRoot, cancellationToken);
-        if (!DirectoryPath(_directory, cancellationToken)) return new(0, 0);
+        if (!DirectoryPath(_directory, cancellationToken))
+            return new(0, 0);
 
         long bytes = 0;
         var slots = 0;
@@ -108,7 +112,8 @@ internal sealed class RecoveryStorageGuard
         while (pending.TryPop(out var current))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if ((Attributes(current.Path) & FileAttributes.Directory) == 0) throw new IOException("A recovery directory changed during inspection.");
+            if ((Attributes(current.Path) & FileAttributes.Directory) == 0)
+                throw new IOException("A recovery directory changed during inspection.");
             foreach (var entry in Directory.EnumerateFileSystemEntries(current.Path))
             {
                 budget.Visit(cancellationToken);
@@ -130,7 +135,8 @@ internal sealed class RecoveryStorageGuard
                 {
                     var length = new FileInfo(entry).Length;
                     _ = Attributes(entry);
-                    if (marker && length != 0) throw new InvalidDataException("The recovery lock marker must have zero length.");
+                    if (marker && length != 0)
+                        throw new InvalidDataException("The recovery lock marker must have zero length.");
                     if (length < 0 || length > RecoveryStorageLimits.MaxStoreBytes - bytes)
                         throw new IOException("Recovery storage byte capacity is exceeded.");
                     bytes += length;
@@ -138,7 +144,8 @@ internal sealed class RecoveryStorageGuard
             }
         }
         _ = DirectoryPath(_projectRoot, cancellationToken);
-        if (!DirectoryPath(_directory, cancellationToken)) throw new IOException("Recovery storage disappeared during inspection.");
+        if (!DirectoryPath(_directory, cancellationToken))
+            throw new IOException("Recovery storage disappeared during inspection.");
         return new(bytes, slots);
     }
 
@@ -153,7 +160,8 @@ internal sealed class RecoveryStorageGuard
             {
                 if ((Attributes(current.FullName) & FileAttributes.Directory) == 0)
                     throw new InvalidDataException("A recovery or workspace directory path is occupied by a file.");
-                if (target) exists = true;
+                if (target)
+                    exists = true;
             }
             catch (FileNotFoundException) { }
             catch (DirectoryNotFoundException) { }

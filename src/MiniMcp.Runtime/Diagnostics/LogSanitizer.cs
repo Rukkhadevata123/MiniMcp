@@ -18,7 +18,8 @@ internal static partial class LogSanitizer
     internal static string Sanitize(string input, int limit, out bool truncated)
     {
         truncated = input.Length > MaxInputCharacters;
-        if (truncated) return Clip(Omitted, limit, out _);
+        if (truncated)
+            return Clip(Omitted, limit, out _);
         try
         {
             if (input.Contains("PRIVATE KEY-----", StringComparison.OrdinalIgnoreCase))
@@ -44,10 +45,12 @@ internal static partial class LogSanitizer
     internal static string Clip(string value, int limit, out bool truncated)
     {
         truncated = value.Length > limit;
-        if (!truncated) return value;
+        if (!truncated)
+            return value;
         const string suffix = "…";
         var length = limit - suffix.Length;
-        if (length > 0 && char.IsHighSurrogate(value[length - 1])) length--;
+        if (length > 0 && char.IsHighSurrogate(value[length - 1]))
+            length--;
         return value[..length] + suffix;
     }
 

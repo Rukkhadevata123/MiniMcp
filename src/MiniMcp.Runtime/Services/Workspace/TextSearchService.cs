@@ -54,12 +54,15 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var relative = NormalizeResultPath(raw);
-                if (allowed.ContainsKey(relative)) candidates.Add(relative);
-                else notices.Add("UnsafeOversizedOrUnstableFilesSkipped");
+                if (allowed.ContainsKey(relative))
+                    candidates.Add(relative);
+                else
+                    notices.Add("UnsafeOversizedOrUnstableFilesSkipped");
                 return candidates.Count < QueryText.MaxWork;
             }, cancellationToken).ConfigureAwait(false);
         CheckExit(discovery, notices);
-        if (discovery.OutputLimited) notices.Add("CandidateOutputLimit");
+        if (discovery.OutputLimited)
+            notices.Add("CandidateOutputLimit");
 
         // rg JSON can emit valid-looking matches before reporting binary_offset at file end.
         // Check bounded candidate bytes first so a result limit cannot publish those early matches.
@@ -73,7 +76,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
         {
             cancellationToken.ThrowIfCancellationRequested();
             // Recheck every candidate immediately before the child starts, not just returned matches.
-            foreach (var file in files) ValidateCandidate(file[2..], allowed);
+            foreach (var file in files)
+                ValidateCandidate(file[2..], allowed);
             var arguments = BuildSearchArguments(pattern, regex, caseSensitive, maxResults, files);
             var result = await ReadOnlyQueryRunner.RunAsync(executable, workspace.Root, arguments, '\n',
                 2 * 1024 * 1024, 8 * 1024 * 1024,
@@ -87,7 +91,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
             }
         }
 
-        foreach (var file in matches.MatchedFiles) ValidateCandidate(file, allowed);
+        foreach (var file in matches.MatchedFiles)
+            ValidateCandidate(file, allowed);
         return new(workspace.Relative(root), matches.Entries, notices.Count == 0, stopped || discovery.OutputLimited,
             ["Scope: selected root; project-local ignore files/glob, hidden and binary filtering by rg; no parent/global ignores, private paths or links; UTF-8 snippets only, not full-file encoding validation; matching lines, no character columns; live observation, not a snapshot.", .. notices.Order()]);
 
@@ -139,7 +144,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
             batch.Add("./" + candidate);
             length += candidate.Length + 4;
         }
-        if (batch.Count > 0 || batches.Count == 0) batches.Add(batch);
+        if (batch.Count > 0 || batches.Count == 0)
+            batches.Add(batch);
         return batches;
     }
 
@@ -167,7 +173,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 using var handle = RecoveryFileSystem.OpenSharedRead(file);
                 if (handle.Length > ProjectWorkspace.MaxFileBytes)
                 {
-                    if (IsIgnore(file)) throw new WorkspaceException("A project ignore file exceeds the 256 KiB limit; narrow the search scope.");
+                    if (IsIgnore(file))
+                        throw new WorkspaceException("A project ignore file exceeds the 256 KiB limit; narrow the search scope.");
                     notices.Add("OversizedFilesSkipped");
                     return;
                 }
@@ -175,7 +182,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
-                if (IsIgnore(file)) throw new WorkspaceException("A project ignore file cannot be safely inspected; narrow the search scope.");
+                if (IsIgnore(file))
+                    throw new WorkspaceException("A project ignore file cannot be safely inspected; narrow the search scope.");
                 notices.Add("NonRegularOrUnavailableFilesSkipped");
             }
         }
@@ -188,20 +196,25 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 foreach (var file in Directory.EnumerateFileSystemEntries(directory))
                 {
                     token.ThrowIfCancellationRequested();
-                    if (++work > QueryText.MaxWork) throw new WorkspaceException("Search scope exceeds the 10000-entry inspection budget; choose a narrower path or depth.");
-                    if (ProjectWorkspace.IsPrivateName(Path.GetFileName(file))) continue;
+                    if (++work > QueryText.MaxWork)
+                        throw new WorkspaceException("Search scope exceeds the 10000-entry inspection budget; choose a narrower path or depth.");
+                    if (ProjectWorkspace.IsPrivateName(Path.GetFileName(file)))
+                        continue;
                     var attributes = File.GetAttributes(file);
                     if ((attributes & FileAttributes.ReparsePoint) != 0)
                     {
-                        if (IsIgnore(file)) throw new WorkspaceException("Linked project ignore files are unsupported; choose another search scope.");
+                        if (IsIgnore(file))
+                            throw new WorkspaceException("Linked project ignore files are unsupported; choose another search scope.");
                         notices.Add("LinksSkipped");
                         continue;
                     }
                     if ((attributes & FileAttributes.Directory) != 0)
                     {
-                        if (depth + 1 < maxDepth) Walk(file, depth + 1);
+                        if (depth + 1 < maxDepth)
+                            Walk(file, depth + 1);
                     }
-                    else if (depth < maxDepth || IsIgnore(file)) InspectFile(file);
+                    else if (depth < maxDepth || IsIgnore(file))
+                        InspectFile(file);
                 }
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -209,14 +222,17 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 throw new WorkspaceException("Search scope could not be safely inspected; choose a narrower accessible path.");
             }
         }
-        if (Directory.Exists(root)) Walk(root, 0);
-        else InspectFile(root);
+        if (Directory.Exists(root))
+            Walk(root, 0);
+        else
+            InspectFile(root);
         return allowed;
     }
 
     private void ValidateCandidate(string relative, Dictionary<string, Observation> allowed)
     {
-        if (!allowed.TryGetValue(relative, out var previous)) throw new WorkspaceException("The search candidate is outside the inspected scope.");
+        if (!allowed.TryGetValue(relative, out var previous))
+            throw new WorkspaceException("The search candidate is outside the inspected scope.");
         var file = workspace.Resolve(relative);
         using var handle = RecoveryFileSystem.OpenSharedRead(file);
         if (RecoveryFileSystem.FileIdentity(handle) != previous.Identity || handle.Length != previous.Length ||
@@ -236,7 +252,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
         {
             token.ThrowIfCancellationRequested();
             total += count;
-            if (total > ProjectWorkspace.MaxFileBytes) throw new WorkspaceException("A search candidate grew during binary inspection; retry the query.");
+            if (total > ProjectWorkspace.MaxFileBytes)
+                throw new WorkspaceException("A search candidate grew during binary inspection; retry the query.");
             if (buffer.AsSpan(0, count).Contains((byte)0))
             {
                 notices.Add("BinaryContentSkipped");
@@ -249,7 +266,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
     private string NormalizeResultPath(string path)
     {
         var relative = path.Replace(Path.DirectorySeparatorChar, '/');
-        if (relative.StartsWith("./", StringComparison.Ordinal)) relative = relative[2..];
+        if (relative.StartsWith("./", StringComparison.Ordinal))
+            relative = relative[2..];
         return workspace.Relative(workspace.Resolve(relative));
     }
 
@@ -267,7 +285,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
 
     private static void CheckExit(QueryProcessResult result, HashSet<string> notices)
     {
-        if (result.OutputLimited) return;
+        if (result.OutputLimited)
+            return;
         if (result.ExitCode is not (0 or 1))
         {
             throw new WorkspaceException(result.Failure switch
@@ -278,7 +297,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 _ => "ripgrep could not read its inputs or complete the query. No complete result is available; check file access and the configured program."
             });
         }
-        if (result.HasErrors) notices.Add("RipgrepReportedReadErrors");
+        if (result.HasErrors)
+            notices.Add("RipgrepReportedReadErrors");
     }
 
     private sealed class MatchCollector(string scope, int maxResults, HashSet<string> notices,
@@ -299,7 +319,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 using var document = JsonDocument.Parse(json);
                 var message = document.RootElement;
                 var kind = message.GetProperty("type").GetString();
-                if (kind is not ("match" or "end")) return true;
+                if (kind is not ("match" or "end"))
+                    return true;
                 var data = message.GetProperty("data");
                 if (kind == "end")
                 {
@@ -315,7 +336,8 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 }
                 var relative = validatePath(fileText.GetString()!);
                 var line = data.GetProperty("line_number").GetInt64();
-                if (line < 1) throw new WorkspaceException("rg returned an invalid line number.");
+                if (line < 1)
+                    throw new WorkspaceException("rg returned an invalid line number.");
                 var text = lineText.GetString()!.TrimEnd('\r', '\n');
                 if (text.Contains('\0'))
                 {
@@ -326,11 +348,13 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
                 var clipped = text.Length > 2000 || preview.Length > 2000;
                 var match = new TextSearchMatch(relative, line, ProjectWorkspace.Clip(preview, 2000), clipped);
                 var cost = JsonSerializer.SerializeToUtf8Bytes(match).Length + 1;
-                if (_matches.Count == maxResults || _bytes + cost > QueryText.MaxResultBytes - 8192) return false;
+                if (_matches.Count == maxResults || _bytes + cost > QueryText.MaxResultBytes - 8192)
+                    return false;
                 _matches.Add(match);
                 _matchedFiles.Add(relative);
                 _bytes += cost;
-                if (clipped) notices.Add("LinePreviewsClipped");
+                if (clipped)
+                    notices.Add("LinePreviewsClipped");
                 return true;
             }
             catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)

@@ -19,7 +19,8 @@ internal static class RuntimeCallChecks
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user"), Path.Combine(temporary, "state"));
         RuntimeConfiguration Configure(ExecutionMode mode) => new ConfigurationValidator(paths).Validate(new AppSettings
         {
-            ProjectRoot = root, BashPath = bash,
+            ProjectRoot = root,
+            BashPath = bash,
             Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
         }, Path.Combine(temporary, "settings.json"), new ExecutionPolicy { Mode = mode });
         var full = Configure(ExecutionMode.FullAccess);
@@ -69,7 +70,8 @@ internal static class RuntimeCallChecks
                     await AssertStoppedAsync(child);
                     Assert(execution.ActiveCalls == 0 && execution.IsDisposed && runtime.Execution is null);
                     Assert(!Directory.Exists(Path.Combine(root, "preview")) && !Directory.Exists(paths.RecoveryDirectory));
-                    await using (var replacement = new McpRuntime(port)) await replacement.StartAsync(readOnly);
+                    await using (var replacement = new McpRuntime(port))
+                        await replacement.StartAsync(readOnly);
 
                     await runtime.StartAsync(readOnly);
                     var current = runtime.Snapshot;
@@ -110,7 +112,8 @@ internal static class RuntimeCallChecks
             Assert((await Reject<WorkspaceException>(() => execution.ReadFileAsync("sample.txt"))).Message.Contains("stopping"));
             await Reject<WorkspaceException>(() => execution.ApplyPatchAsync("invalid", dryRun: true));
             await Reject<WorkspaceException>(() => execution.RunBashAsync("exit 0"));
-            if (!blockStop) cancel.Cancel(); // The stop case exercises the actual ten-second runtime deadline.
+            if (!blockStop)
+                cancel.Cancel(); // The stop case exercises the actual ten-second runtime deadline.
             await Reject<OperationCanceledException>(() => stopping).WaitAsync(TimeSpan.FromSeconds(15));
             Assert(runtime.Snapshot.State == RuntimeState.Faulted && ReferenceEquals(runtime.Execution, execution));
             await Reject<InvalidOperationException>(() => runtime.StartAsync(configuration));
@@ -125,7 +128,8 @@ internal static class RuntimeCallChecks
             // The old host stop can finish cancelled after its original deadline; retry it once it has settled.
             for (var attempt = 0; ; attempt++)
             {
-                try { await runtime.StopAsync(); break; }
+                try
+                { await runtime.StopAsync(); break; }
                 catch (OperationCanceledException) when (attempt == 0) { }
             }
             Assert(runtime.Snapshot.State == RuntimeState.Stopped && runtime.Execution is null && execution.IsDisposed);
@@ -139,7 +143,9 @@ internal static class RuntimeCallChecks
         finally
         {
             gate.Release();
-            try { await stopping; } catch (OperationCanceledException) { }
+            try
+            { await stopping; }
+            catch (OperationCanceledException) { }
         }
     }
 
@@ -159,10 +165,12 @@ internal static class RuntimeCallChecks
             if (File.Exists(marker))
             {
                 var child = Process.GetProcessById(int.Parse(await File.ReadAllTextAsync(marker), System.Globalization.CultureInfo.InvariantCulture));
-                if (child.HasExited) { child.Dispose(); throw new Exception("Observed child exited before cancellation."); }
+                if (child.HasExited)
+                { child.Dispose(); throw new Exception("Observed child exited before cancellation."); }
                 return child;
             }
-            if (running.IsCompleted) { await running; throw new Exception("Bash completed before the child marker was written."); }
+            if (running.IsCompleted)
+            { await running; throw new Exception("Bash completed before the child marker was written."); }
             await Task.Delay(10);
         }
         throw new Exception("Timed out observing the actual Bash descendant.");
@@ -175,7 +183,8 @@ internal static class RuntimeCallChecks
             try
             {
                 var stat = $"/proc/{child.Id}/stat";
-                if (child.HasExited || (OperatingSystem.IsLinux() && File.ReadAllText(stat).Contains(") Z "))) return;
+                if (child.HasExited || (OperatingSystem.IsLinux() && File.ReadAllText(stat).Contains(") Z ")))
+                    return;
             }
             // A disappearing /proc entry may fail with ENOENT or ESRCH. Retry the process
             // observation instead of treating an arbitrary read failure as successful cleanup.
@@ -187,20 +196,23 @@ internal static class RuntimeCallChecks
 
     internal static void KillIfRunning(Process child)
     {
-        try { if (!child.HasExited) child.Kill(entireProcessTree: true); }
+        try
+        { if (!child.HasExited) child.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { }
     }
 
     private static async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (TException error) { return error; }
         throw new Exception($"Expected {typeof(TException).Name}.");
     }
 
     private static void Assert(bool condition)
     {
-        if (!condition) throw new Exception("Runtime call lifecycle assertion failed.");
+        if (!condition)
+            throw new Exception("Runtime call lifecycle assertion failed.");
     }
 
     private sealed class GatedLifecycleService(bool blockStop, bool blockDispose) : IHostedService, IAsyncDisposable
@@ -217,7 +229,8 @@ internal static class RuntimeCallChecks
         {
             Interlocked.Increment(ref StopCalls);
             StopEntered.TrySetResult();
-            if (blockStop) _released.Task.GetAwaiter().GetResult(); // Deliberately ignores cancellation and blocks synchronously.
+            if (blockStop)
+                _released.Task.GetAwaiter().GetResult(); // Deliberately ignores cancellation and blocks synchronously.
             StopFinished.TrySetResult();
             return Task.CompletedTask;
         }
@@ -225,7 +238,8 @@ internal static class RuntimeCallChecks
         {
             Interlocked.Increment(ref DisposeCalls);
             DisposeEntered.TrySetResult();
-            if (blockDispose) await _released.Task;
+            if (blockDispose)
+                await _released.Task;
             DisposeFinished.TrySetResult();
         }
         public void Release() => _released.TrySetResult();

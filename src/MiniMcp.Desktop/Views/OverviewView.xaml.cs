@@ -24,8 +24,13 @@ public sealed partial class OverviewView : Page
     {
         StatusText.Text = status ?? snapshot.State switch
         {
-            RuntimeState.Stopped => "已停止", RuntimeState.Starting => "正在启动…", RuntimeState.Running => "运行中",
-            RuntimeState.Stopping => "正在停止…", RuntimeState.Faulted => "服务故障", RuntimeState.Disposed => "已释放", _ => "状态未知"
+            RuntimeState.Stopped => "已停止",
+            RuntimeState.Starting => "正在启动…",
+            RuntimeState.Running => "运行中",
+            RuntimeState.Stopping => "正在停止…",
+            RuntimeState.Faulted => "服务故障",
+            RuntimeState.Disposed => "已释放",
+            _ => "状态未知"
         };
         StartButton.IsEnabled = !busy && canStart && !snapshot.HasOwnedResources && snapshot.State is RuntimeState.Stopped or RuntimeState.Faulted;
         StopButton.IsEnabled = !busy && (snapshot.HasOwnedResources || snapshot.State is RuntimeState.Running or RuntimeState.Faulted);
@@ -33,7 +38,8 @@ public sealed partial class OverviewView : Page
         StartTunnelButton.IsEnabled = !busy && snapshot.State == RuntimeState.Running && snapshot.Configuration?.Settings.Tunnel.Enabled == true &&
             snapshot.Tunnel.State is TunnelState.Stopped or TunnelState.Faulted;
         StopTunnelButton.IsEnabled = !busy && snapshot.State == RuntimeState.Running && snapshot.Tunnel.State is TunnelState.Running or TunnelState.Faulted;
-        BusyIndicator.IsActive = busy; BusyIndicator.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        BusyIndicator.IsActive = busy;
+        BusyIndicator.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (snapshot.Configuration is { } configuration)
         {
             ProjectText.Text = configuration.Settings.ProjectRoot;

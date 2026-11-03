@@ -27,7 +27,9 @@ internal static class RecoveryHistoryChecks
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(8));
-                model.Invalidate("会话已改变"); release.TrySetResult(); await pending;
+                model.Invalidate("会话已改变");
+                release.TrySetResult();
+                await pending;
                 if (model.CanRestore || model.Diff.Length != 0 || model.Message != "会话已改变")
                     throw new Exception("An invalidated preview republished a restore preparation");
             }

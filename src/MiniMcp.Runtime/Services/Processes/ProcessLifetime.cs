@@ -21,7 +21,8 @@ internal sealed partial class ProcessLifetime : IDisposable
     {
         _process = process;
         _pid = process.Id;
-        if (!OperatingSystem.IsWindows()) return;
+        if (!OperatingSystem.IsWindows())
+            return;
         _job = CreateJob();
         try
         {
@@ -43,18 +44,22 @@ internal sealed partial class ProcessLifetime : IDisposable
 
     internal static ProcessLifetime Start(ProcessStartInfo start)
     {
-        if (OperatingSystem.IsWindows()) return StartWindows(start);
-        if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("Managed processes require Windows or Linux.");
+        if (OperatingSystem.IsWindows())
+            return StartWindows(start);
+        if (!OperatingSystem.IsLinux())
+            throw new PlatformNotSupportedException("Managed processes require Windows or Linux.");
         var process = new Process { StartInfo = start };
         try
         {
-            if (!process.Start()) throw new IOException("The managed process did not start.");
+            if (!process.Start())
+                throw new IOException("The managed process did not start.");
             process.StandardInput.Close();
             return new(process, null, process.StandardOutput, process.StandardError);
         }
         catch
         {
-            try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+            try
+            { if (!process.HasExited) process.Kill(entireProcessTree: true); }
             catch (InvalidOperationException) { }
             process.Dispose();
             throw;
@@ -67,19 +72,22 @@ internal sealed partial class ProcessLifetime : IDisposable
     {
         if (OperatingSystem.IsWindows())
         {
-            if (_job is null || !TerminateJobObject(_job, 1)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (_job is null || !TerminateJobObject(_job, 1))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
         }
         else
         {
             if (KillGroup(-_pid, 9) != 0 && Marshal.GetLastPInvokeError() != 3) // ESRCH
                 throw new Win32Exception(Marshal.GetLastPInvokeError());
             // Also covers cancellation before setsid has created the new group.
-            try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
+            try
+            { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
             catch (Win32Exception) when (_process.HasExited) { }
             catch (InvalidOperationException) when (_process.HasExited) { }
         }
         await _process.WaitForExitAsync().ConfigureAwait(false);
-        while (HasLiveMembers()) await Task.Delay(20).ConfigureAwait(false);
+        while (HasLiveMembers())
+            await Task.Delay(20).ConfigureAwait(false);
     }
 
     private bool HasLiveMembers()
@@ -93,22 +101,27 @@ internal sealed partial class ProcessLifetime : IDisposable
         }
         if (KillGroup(-_pid, 0) != 0)
         {
-            if (Marshal.GetLastPInvokeError() == 3) return false;
+            if (Marshal.GetLastPInvokeError() == 3)
+                return false;
             throw new Win32Exception(Marshal.GetLastPInvokeError());
         }
         // Zombies cannot execute or retain pipe handles. Their final reaping belongs to their
         // parent/init, which is outside this Runtime (notably in containers without a reaping init).
         foreach (var directory in Directory.EnumerateDirectories("/proc"))
         {
-            if (!int.TryParse(Path.GetFileName(directory), out _)) continue;
+            if (!int.TryParse(Path.GetFileName(directory), out _))
+                continue;
             string stat;
-            try { stat = File.ReadAllText(Path.Combine(directory, "stat")); }
+            try
+            { stat = File.ReadAllText(Path.Combine(directory, "stat")); }
             catch (FileNotFoundException) { continue; }
             catch (DirectoryNotFoundException) { continue; }
             var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ');
-            if (fields.Length < 4) throw new IOException("Could not inspect a process group member.");
+            if (fields.Length < 4)
+                throw new IOException("Could not inspect a process group member.");
             if (int.Parse(fields[2], System.Globalization.CultureInfo.InvariantCulture) == _pid &&
-                fields[0] is not ("Z" or "X")) return true;
+                fields[0] is not ("Z" or "X"))
+                return true;
         }
         return false;
     }
@@ -118,7 +131,8 @@ internal sealed partial class ProcessLifetime : IDisposable
         var job = CreateJobObject(IntPtr.Zero, null);
         try
         {
-            if (job.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (job.IsInvalid)
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             var limits = new ExtendedLimitInformation();
             limits.BasicLimitInformation.LimitFlags = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             if (!SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf<ExtendedLimitInformation>()))
@@ -130,10 +144,12 @@ internal sealed partial class ProcessLifetime : IDisposable
 
     public void Dispose()
     {
-        try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
+        try
+        { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { }
         catch (Win32Exception) { }
-        if (OperatingSystem.IsLinux()) KillGroup(-_pid, 9);
+        if (OperatingSystem.IsLinux())
+            KillGroup(-_pid, 9);
         _job?.Dispose();
         _job = null;
         if (_ownsResources)

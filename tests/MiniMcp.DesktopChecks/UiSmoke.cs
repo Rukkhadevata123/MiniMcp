@@ -104,7 +104,8 @@ internal static class UiSmoke
                         using var http = new HttpClient(new HttpClientHandler { UseProxy = false });
                         (await http.GetAsync(new Uri(runtime.Address!, "ui-logger"))).EnsureSuccessStatusCode();
                         var uiLogger = logger ?? throw new Exception("Logger was not captured");
-                        uiLogger.LogWarning("UI needle\t\u001b[31m"); uiLogger.LogInformation("Authorization: Bearer ui-log-secret");
+                        uiLogger.LogWarning("UI needle\t\u001b[31m");
+                        uiLogger.LogInformation("Authorization: Bearer ui-log-secret");
                         await Navigate("LogsNavigation");
                         var logList = Find<ListView>("LogList");
                         Find<TextBox>("LogSearch").Text = "UI needle";
@@ -112,8 +113,10 @@ internal static class UiSmoke
                         logList.SelectedIndex = 0;
                         Assert(Find<TextBox>("LogDetails").Text.Contains("\\t") && !Find<TextBox>("LogDetails").Text.Contains('\u001b'), "Log detail uses escaped data");
                         Assert(Walk(root).OfType<LogsView>().Single().SelectionText().Contains("UI needle"), "Copy selection text follows actual UI selection");
-                        uiLogger.LogInformation("UI colors: information"); uiLogger.LogWarning("UI colors: warning");
-                        uiLogger.LogError("UI colors: error"); uiLogger.LogCritical("UI colors: critical");
+                        uiLogger.LogInformation("UI colors: information");
+                        uiLogger.LogWarning("UI colors: warning");
+                        uiLogger.LogError("UI colors: error");
+                        uiLogger.LogCritical("UI colors: critical");
                         Find<TextBox>("LogSearch").Text = "UI colors:";
                         await Until(() => logList.Items.Count == 4);
                         logList.SelectedItems.Clear();
@@ -151,11 +154,13 @@ internal static class UiSmoke
                                         pointer.MoveTo(Find<TextBox>("LogSearch"), root, window);
                                         await Task.Delay(50);
                                         pointer.MoveTo(container, root, window);
-                                        await Until(() => entered); await Task.Delay(50);
+                                        await Until(() => entered);
+                                        await Task.Delay(50);
                                         if (!new AccessibilitySettings().HighContrast)
                                             Assert(((SolidColorBrush)text.Foreground).Color == originalColor, "Log severity color survives real pointer hover: " + row.Entry.Level);
                                         pointer.MoveTo(Find<TextBox>("LogSearch"), root, window);
-                                        await Until(() => exited); await Task.Delay(50);
+                                        await Until(() => exited);
+                                        await Task.Delay(50);
                                         Assert(((SolidColorBrush)text.Foreground).Color == originalColor, "Log color returns after pointer exit: " + row.Entry.Level);
                                         logList.SelectedItem = row;
                                         await Task.Delay(50);
@@ -174,13 +179,15 @@ internal static class UiSmoke
                             }
                         }
                         Find<TextBox>("LogSearch").Text = "";
-                        for (var index = 0; index < 500; index++) uiLogger.LogInformation("UI flood {Index}", index);
+                        for (var index = 0; index < 500; index++)
+                            uiLogger.LogInformation("UI flood {Index}", index);
                         await Until(() => logList.Items.Count >= 80);
                         await Task.Delay(100);
                         Assert(logList.ItemsPanelRoot is ItemsStackPanel panel && panel.Children.Count < logList.Items.Count, "Log rows retain native virtualization");
                         Find<CheckBox>("LogAutoScroll").IsChecked = false;
                         var scroll = Walk(logList).OfType<ScrollViewer>().First();
-                        scroll.ChangeView(null, 0, null, true); await Task.Delay(80);
+                        scroll.ChangeView(null, 0, null, true);
+                        await Task.Delay(80);
                         uiLogger.LogInformation("UI paused-scroll");
                         await Until(() => logList.Items.OfType<DesktopLogRow>().Any(row => row.Entry.Message == "UI paused-scroll"));
                         Assert(scroll.VerticalOffset < 1, "Auto-scroll can be disabled");
@@ -243,10 +250,12 @@ internal static class UiSmoke
                         settingsScroll.ChangeView(null, Math.Min(240, settingsScroll.ScrollableHeight), null, true);
                         await Task.Delay(80);
                         var retainedOffset = settingsScroll.VerticalOffset;
-                        await Navigate("OverviewNavigation"); await Navigate("SettingsNavigation");
+                        await Navigate("OverviewNavigation");
+                        await Navigate("SettingsNavigation");
                         Assert(Math.Abs(settingsScroll.VerticalOffset - retainedOffset) < 1 && ReferenceEquals(project, Find<TextBox>("ProjectRootEditor")),
                             "Native cached navigation preserves the form instance and scroll position");
-                        for (var index = 0; index < 6; index++) navigation.SelectedItem = Find<NavigationViewItem>(index % 2 == 0 ? "LogsNavigation" : "OverviewNavigation");
+                        for (var index = 0; index < 6; index++)
+                            navigation.SelectedItem = Find<NavigationViewItem>(index % 2 == 0 ? "LogsNavigation" : "OverviewNavigation");
                         await Navigate("SettingsNavigation");
                         double? commonX = null, commonWidth = null;
                         foreach (var (id, name) in new[] { ("OverviewNavigation", "overview"), ("SettingsNavigation", "settings"), ("LogsNavigation", "logs"), ("RecoveryNavigation", "recovery") })
@@ -257,7 +266,8 @@ internal static class UiSmoke
                             var page = (Page)frame.Content;
                             var header = Walk(page).OfType<PageHeader>().Single();
                             var x = header.TransformToVisual(root).TransformPoint(new Point()).X;
-                            commonX ??= x; commonWidth ??= page.ActualWidth;
+                            commonX ??= x;
+                            commonWidth ??= page.ActualWidth;
                             Assert(Math.Abs(x - commonX.Value) < 1 && Math.Abs(page.ActualWidth - commonWidth.Value) < 1 && page.ActualWidth <= 1200,
                                 "Shared page gutter/header/width: " + name);
                             Assert(page.ActualTheme == root.ActualTheme, "Cached page follows workspace theme: " + name);
@@ -284,7 +294,8 @@ internal static class UiSmoke
                         if (screenshotDirectory is not null)
                         {
                             root.RequestedTheme = ElementTheme.Dark;
-                            await Navigate("OverviewNavigation"); await Task.Delay(400);
+                            await Navigate("OverviewNavigation");
+                            await Task.Delay(400);
                             await VisualCapture.Save(root, Path.Combine(screenshotDirectory, "overview-dark.png"));
                             root.RequestedTheme = ElementTheme.Light;
                         }
@@ -335,24 +346,30 @@ internal static class UiSmoke
                                 }
                                 catch (ArgumentException) { } // Already reaped.
                                 fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                                Console.WriteLine("PASS UI: system close disposes active Runtime and temporary fixture"); result = 0;
+                                Console.WriteLine("PASS UI: system close disposes active Runtime and temporary fixture");
+                                result = 0;
                             }
                             catch (Exception error) { Console.WriteLine("FAIL UI close: " + error); }
                             app.Exit();
                         };
                         var handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
-                        if (!PostMessage(handle, 0x112, (IntPtr)0xf060, IntPtr.Zero)) throw new Exception("Cannot request system close");
+                        if (!PostMessage(handle, 0x112, (IntPtr)0xf060, IntPtr.Zero))
+                            throw new Exception("Cannot request system close");
                     }
                     catch (Exception error)
                     {
                         Console.WriteLine("FAIL UI: " + error);
-                        try { await runtime.DisposeAsync(); await fixture.DisposeAsync(); } catch (Exception cleanup) { Console.WriteLine("FAIL UI cleanup: " + cleanup); }
+                        try
+                        { await runtime.DisposeAsync(); await fixture.DisposeAsync(); }
+                        catch (Exception cleanup) { Console.WriteLine("FAIL UI cleanup: " + cleanup); }
                         app.Exit();
                     }
                 });
             });
         });
-        thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
         return result;
     }
 
@@ -360,7 +377,8 @@ internal static class UiSmoke
     {
         yield return root;
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
-            foreach (var child in Walk(VisualTreeHelper.GetChild(root, index))) yield return child;
+            foreach (var child in Walk(VisualTreeHelper.GetChild(root, index)))
+                yield return child;
     }
     private static ContentDialog? OpenDialog(FrameworkElement root) => VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot)
         .SelectMany(popup => Walk(popup.Child)).OfType<ContentDialog>().FirstOrDefault();
@@ -373,9 +391,11 @@ internal static class UiSmoke
     private static async Task Until(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(12);
-        while (!condition()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("UI condition did not complete"); await Task.Delay(25); }
+        while (!condition())
+        { if (DateTime.UtcNow >= deadline) throw new TimeoutException("UI condition did not complete"); await Task.Delay(25); }
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
-    [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

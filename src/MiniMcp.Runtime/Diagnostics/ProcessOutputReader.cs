@@ -30,11 +30,13 @@ internal static class ProcessOutputReader
             for (var index = 0; index < count; index++)
             {
                 var value = buffer[index];
-                if (afterCarriageReturn && value == '\n') { afterCarriageReturn = false; continue; }
+                if (afterCarriageReturn && value == '\n')
+                { afterCarriageReturn = false; continue; }
                 afterCarriageReturn = value == '\r';
                 if (value is '\r' or '\n')
                 {
-                    if (!discarding) logger.Log(level, new EventId(0), "{Output}", line.ToString());
+                    if (!discarding)
+                        logger.Log(level, new EventId(0), "{Output}", line.ToString());
                     line.Clear();
                     discarding = false;
                 }
@@ -46,10 +48,12 @@ internal static class ProcessOutputReader
                         line.Clear();
                         discarding = true;
                     }
-                    else line.Append(value);
+                    else
+                        line.Append(value);
                 }
             }
         }
-        if (!discarding && line.Length != 0) logger.Log(level, new EventId(0), "{Output}", line.ToString());
+        if (!discarding && line.Length != 0)
+            logger.Log(level, new EventId(0), "{Output}", line.ToString());
     }
 }

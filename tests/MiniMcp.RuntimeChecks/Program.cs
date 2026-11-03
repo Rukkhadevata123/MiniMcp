@@ -103,7 +103,8 @@ await Check("concurrent starts create only one host", async () =>
     await using var runtime = new McpRuntime(0);
     async Task<bool> Attempt()
     {
-        try { await runtime.StartAsync(configuration); return true; }
+        try
+        { await runtime.StartAsync(configuration); return true; }
         catch (InvalidOperationException) { return false; }
     }
     var attempts = await Task.WhenAll(Attempt(), Attempt());
@@ -162,7 +163,8 @@ await Check("host lifecycle does not dispatch work to the caller synchronization
     Task Invoke(Func<Task> operation)
     {
         var previous = SynchronizationContext.Current;
-        try { SynchronizationContext.SetSynchronizationContext(context); return operation(); }
+        try
+        { SynchronizationContext.SetSynchronizationContext(context); return operation(); }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
     }
     await Invoke(() => runtime.StartAsync(configuration)).WaitAsync(TimeSpan.FromSeconds(5));
@@ -175,7 +177,8 @@ await Check("invalid internal test port overrides are rejected", () =>
 {
     foreach (var port in new[] { -1, 65536 })
     {
-        try { _ = new McpRuntime(port); }
+        try
+        { _ = new McpRuntime(port); }
         catch (ArgumentOutOfRangeException) { continue; }
         throw new Exception("Invalid port was accepted.");
     }
@@ -339,12 +342,14 @@ return runner.Finish();
 
 static void Assert(bool condition)
 {
-    if (!condition) throw new Exception("Assertion failed.");
+    if (!condition)
+        throw new Exception("Assertion failed.");
 }
 
 static async Task RejectAsync<TException>(Func<Task> action) where TException : Exception
 {
-    try { await action(); }
+    try
+    { await action(); }
     catch (TException) { return; }
     throw new Exception($"Expected {typeof(TException).Name}.");
 }

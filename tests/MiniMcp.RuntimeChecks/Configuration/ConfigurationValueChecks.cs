@@ -9,16 +9,20 @@ internal static class ConfigurationValueChecks
         {
             Authentication = new AuthenticationSettings
             {
-                PublicOrigin = "https://mcp.example.com", Team = "mini-dev", Audience = "application-aud-tag"
+                PublicOrigin = "https://mcp.example.com",
+                Team = "mini-dev",
+                Audience = "application-aud-tag"
             }
         };
         var policy = new ExecutionPolicy();
         void Reject(string field, AppSettings settings, ExecutionPolicy? selectedPolicy = null)
         {
-            try { ConfigurationValidator.ValidateValues(settings, selectedPolicy ?? policy); }
+            try
+            { ConfigurationValidator.ValidateValues(settings, selectedPolicy ?? policy); }
             catch (ConfigurationValidationException exception)
             {
-                if (exception.Field == field) return;
+                if (exception.Field == field)
+                    return;
                 throw new Exception($"Expected field {field}, got {exception.Field}.", exception);
             }
             throw new Exception($"Expected a validation error for {field}.");
@@ -40,7 +44,8 @@ internal static class ConfigurationValueChecks
 
         await check("configuration ports reject zero and values outside the listen-port range", () =>
         {
-            foreach (var port in new[] { int.MinValue, -1, 0, 65536, int.MaxValue }) Reject("port", local with { Port = port });
+            foreach (var port in new[] { int.MinValue, -1, 0, 65536, int.MaxValue })
+                Reject("port", local with { Port = port });
             return Task.CompletedTask;
         });
 
@@ -85,7 +90,8 @@ internal static class ConfigurationValueChecks
                 "https://mcp.example.com//", "https://mcp.example.com?", "https://mcp.example.com/?x=1",
                 "https://mcp.example.com#", "https://mcp.example.com/#fragment", " https://mcp.example.com",
                 "https://mcp.example.com ", "https://mcp.\nexample.com", "https://mcp.example.com\\"
-            }) Reject("authentication.publicOrigin", cloud with { Authentication = cloud.Authentication with { PublicOrigin = origin } });
+            })
+                Reject("authentication.publicOrigin", cloud with { Authentication = cloud.Authentication with { PublicOrigin = origin } });
             return Task.CompletedTask;
         });
 

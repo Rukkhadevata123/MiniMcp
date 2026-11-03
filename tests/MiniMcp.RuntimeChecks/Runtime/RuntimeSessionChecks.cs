@@ -14,7 +14,8 @@ internal static class RuntimeSessionChecks
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user"), Path.Combine(temporary, "state"));
         var bash = Path.Combine(temporary, "bash-fixture");
         File.WriteAllText(bash, "Dependency fixture; this file must never be executed.");
-        if (OperatingSystem.IsLinux()) File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        if (OperatingSystem.IsLinux())
+            File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         RuntimeConfiguration Configure(string name, ExecutionMode mode = ExecutionMode.ReadOnly)
         {
             var root = Path.Combine(temporary, name);
@@ -22,7 +23,8 @@ internal static class RuntimeSessionChecks
             File.WriteAllText(Path.Combine(root, "sample.txt"), name);
             return new ConfigurationValidator(paths).Validate(new AppSettings
             {
-                ProjectRoot = root, BashPath = mode == ExecutionMode.ReadOnly ? "" : bash,
+                ProjectRoot = root,
+                BashPath = mode == ExecutionMode.ReadOnly ? "" : bash,
                 Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
             }, Path.Combine(temporary, "settings.json"), new ExecutionPolicy { Mode = mode });
         }
@@ -82,7 +84,8 @@ internal static class RuntimeSessionChecks
                 var failBuild = true;
                 await using var runtime = new McpRuntime(0, services =>
                 {
-                    if (failBuild) services.AddSingleton<UnconstructableService>();
+                    if (failBuild)
+                        services.AddSingleton<UnconstructableService>();
                 });
                 await Reject<ArgumentException>(() => runtime.StartAsync(firstConfiguration));
                 var failed = runtime.Snapshot;
@@ -170,12 +173,14 @@ internal static class RuntimeSessionChecks
 
     private static void Assert(bool condition)
     {
-        if (!condition) throw new Exception("Runtime session assertion failed.");
+        if (!condition)
+            throw new Exception("Runtime session assertion failed.");
     }
 
     private static async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (TException error) { return error; }
         throw new Exception($"Expected {typeof(TException).Name}.");
     }

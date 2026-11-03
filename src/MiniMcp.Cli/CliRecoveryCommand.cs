@@ -19,8 +19,11 @@ internal static class CliRecoveryCommand
             return CliExitCodes.Success;
         }
         var command = args[0];
-        if (command is not ("list" or "show" or "restore")) return Invalid("无法识别记录命令。");
-        var index = 1; var id = Guid.Empty; string? config = null;
+        if (command is not ("list" or "show" or "restore"))
+            return Invalid("无法识别记录命令。");
+        var index = 1;
+        var id = Guid.Empty;
+        string? config = null;
         if (command != "list" && (args.Length <= index || !Guid.TryParse(args[index++], out id) || id == Guid.Empty))
             return Invalid("请提供有效的修改记录 ID。");
         if (index < args.Length)
@@ -54,20 +57,26 @@ internal static class CliRecoveryCommand
             output.WriteLine(details.ManifestJson);
             output.WriteLine("完整反向预览：");
             output.WriteLine(preview.Diff is null ? "当前无法生成完整预览。" : Display(preview.Diff, keepNewlines: true));
-            foreach (var conflict in preview.Conflicts) output.WriteLine($"冲突：{Display(conflict.Path ?? "记录")} · {Display(conflict.Message)}");
-            if (!preview.Blockers.IsEmpty) output.WriteLine("恢复限制：" + string.Join(", ", preview.Blockers));
-            if (command == "show") return CliExitCodes.Success;
-            if (preparation is null) return CliExitCodes.InvalidInput;
+            foreach (var conflict in preview.Conflicts)
+                output.WriteLine($"冲突：{Display(conflict.Path ?? "记录")} · {Display(conflict.Message)}");
+            if (!preview.Blockers.IsEmpty)
+                output.WriteLine("恢复限制：" + string.Join(", ", preview.Blockers));
+            if (command == "show")
+                return CliExitCodes.Success;
+            if (preparation is null)
+                return CliExitCodes.InvalidInput;
             output.WriteLine($"恢复将创建新的备份记录。请确认已停止其他服务，并已查看以上完整预览。");
             var confirmation = "RESTORE " + id.ToString("N");
             output.Write($"输入 {confirmation} 以确认，其他输入取消：");
             await output.FlushAsync(token).ConfigureAwait(false);
             var answer = await (input ?? Console.In).ReadLineAsync(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            if (answer != confirmation) { output.WriteLine("恢复已取消。"); return CliExitCodes.Cancelled; }
+            if (answer != confirmation)
+            { output.WriteLine("恢复已取消。"); return CliExitCodes.Cancelled; }
             var result = await session.RestoreAsync(preparation, token).ConfigureAwait(false);
             output.WriteLine($"恢复结果：{result.State} · 新记录：{result.ChangeId:N} · 来源：{result.SourceChangeId:N}");
-            foreach (var problem in result.Errors) error.WriteLine(Display(problem));
+            foreach (var problem in result.Errors)
+                error.WriteLine(Display(problem));
             return result.State == "Committed" && !result.CleanupIncomplete ? CliExitCodes.Success : CliExitCodes.Failure;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -77,7 +86,8 @@ internal static class CliRecoveryCommand
         catch (Exception failure)
         { error.WriteLine("记录操作失败：" + CliText.Visible(failure.Message)); return CliExitCodes.Failure; }
 
-        int Invalid(string message) { error.WriteLine(message + " 使用 records --help 查看帮助。"); return CliExitCodes.InvalidInput; }
+        int Invalid(string message)
+        { error.WriteLine(message + " 使用 records --help 查看帮助。"); return CliExitCodes.InvalidInput; }
     }
 
     // Complete local preview, not a diagnostic message: never send it through log redaction/truncation.
@@ -85,8 +95,10 @@ internal static class CliRecoveryCommand
     {
         var result = new StringBuilder(value.Length);
         foreach (var character in value)
-            if (char.IsControl(character) && !(keepNewlines && character == '\n')) result.Append($"\\u{(int)character:x4}");
-            else result.Append(character);
+            if (char.IsControl(character) && !(keepNewlines && character == '\n'))
+                result.Append($"\\u{(int)character:x4}");
+            else
+                result.Append(character);
         return result.ToString();
     }
 }

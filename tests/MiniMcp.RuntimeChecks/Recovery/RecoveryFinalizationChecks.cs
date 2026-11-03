@@ -41,8 +41,10 @@ internal static class RecoveryFinalizationChecks
                 Fixture? fixtureRef = null;
                 using var fixture = new Fixture((stage, index) =>
                 {
-                    if (stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
-                    if (incomplete) { File.Delete(Path.Combine(fixtureRef!.Root, "sample.md")); Directory.CreateDirectory(Path.Combine(fixtureRef.Root, "sample.md")); }
+                    if (stage != PatchCommitStage.Installed || index != 0)
+                        return Task.CompletedTask;
+                    if (incomplete)
+                    { File.Delete(Path.Combine(fixtureRef!.Root, "sample.md")); Directory.CreateDirectory(Path.Combine(fixtureRef.Root, "sample.md")); }
                     return Task.FromException(new IOException("Injected installation failure."));
                 });
                 fixtureRef = fixture;
@@ -116,7 +118,8 @@ internal static class RecoveryFinalizationChecks
                 var failure = new IOException("Injected final metadata write failure.");
                 var store = fixture.Store((stage, _) =>
                 {
-                    if (!armed || !failOnce || stage != boundary) return Task.CompletedTask;
+                    if (!armed || !failOnce || stage != boundary)
+                        return Task.CompletedTask;
                     failOnce = false;
                     return Task.FromException(failure);
                 });
@@ -169,7 +172,8 @@ internal static class RecoveryFinalizationChecks
             string? temporary = null;
             var store = fixture.Store((stage, path) =>
             {
-                if (!armed || stage != RecoveryManifestReplacementStage.BeforeReplace) return Task.CompletedTask;
+                if (!armed || stage != RecoveryManifestReplacementStage.BeforeReplace)
+                    return Task.CompletedTask;
                 temporary = path;
                 var bytes = File.ReadAllBytes(path);
                 File.Move(path, Path.Combine(fixture.DirectoryPath, "detached-final"));
@@ -200,7 +204,8 @@ internal static class RecoveryFinalizationChecks
             var writes = 0;
             var store = fixture.Store(async (stage, _) =>
             {
-                if (!armed || stage != RecoveryManifestReplacementStage.TemporaryWritten) return;
+                if (!armed || stage != RecoveryManifestReplacementStage.TemporaryWritten)
+                    return;
                 writes++;
                 cancelled.Cancel();
                 entered.TrySetResult();
@@ -254,7 +259,8 @@ internal static class RecoveryFinalizationChecks
             var record = await store.PrepareAsync(plan);
             await store.BeginApplyingAsync(record, plan);
             var outcome = await fixture.Service.CommitWithContextAsync(plan, record.ExecutionContext);
-            for (var i = 0; i < 1000; i++) Directory.CreateDirectory(Path.Combine(fixture.Storage, $"foreign-{i}"));
+            for (var i = 0; i < 1000; i++)
+                Directory.CreateDirectory(Path.Combine(fixture.Storage, $"foreign-{i}"));
             var before = fixture.JournalSnapshot();
             var error = await Reject<RecoveryFinalizationException>(() => store.CompleteAsync(record, plan, outcome));
             Assert(ReferenceEquals(error.Outcome, outcome) && !record.IsInvalidated && record.Manifest.State == RecoveryRecordState.Applying && before.SequenceEqual(fixture.JournalSnapshot()),
@@ -303,7 +309,8 @@ internal static class RecoveryFinalizationChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
         public RecoveryStore Store(Func<RecoveryManifestReplacementStage, string, Task>? hook = null) => new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(
             new AppSettings { ProjectRoot = Root, BashPath = _bash, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } },

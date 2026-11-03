@@ -40,15 +40,18 @@ internal static class TunnelChild
             {
                 var chunk = new string('x', 4096);
                 await writer.WriteAsync("token=private-long-output");
-                for (var i = 0; i < 512; i++) await writer.WriteAsync(chunk);
+                for (var i = 0; i < 512; i++)
+                    await writer.WriteAsync(chunk);
                 await writer.WriteLineAsync();
-                for (var i = 0; i < 3000; i++) await writer.WriteLineAsync(label + i);
+                for (var i = 0; i < 3000; i++)
+                    await writer.WriteLineAsync(label + i);
                 await writer.FlushAsync();
             }
             await Task.WhenAll(WriteFlood(Console.Out, "stdout-"), WriteFlood(Console.Error, "stderr-"));
             await AtomicWriteAsync(Path.Combine(directory, "flood.done"), "done");
         }
-        if (scenario.Behavior == "exit") return 17;
+        if (scenario.Behavior == "exit")
+            return 17;
         await WaitUntilAsync(() => File.Exists(Path.Combine(directory, "exit")), Timeout.InfiniteTimeSpan);
         return 23;
     }
@@ -77,7 +80,8 @@ internal static class TunnelChild
     {
         var executable = Path.Combine(AppContext.BaseDirectory, "MiniMcp.RuntimeChecks" + (OperatingSystem.IsWindows() ? ".exe" : ""));
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true };
-        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
         return Process.Start(start) ?? throw new Exception("Cannot start the controlled child.");
     }
 
@@ -87,7 +91,8 @@ internal static class TunnelChild
     private static async Task WaitAsync(Func<bool> condition, TimeSpan timeout)
     {
         using var deadline = new CancellationTokenSource(timeout);
-        while (!condition()) await Task.Delay(10, deadline.Token);
+        while (!condition())
+            await Task.Delay(10, deadline.Token);
     }
 
     internal static async Task AtomicWriteAsync(string path, string content)

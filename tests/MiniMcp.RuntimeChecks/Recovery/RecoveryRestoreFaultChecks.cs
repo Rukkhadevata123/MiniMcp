@@ -18,13 +18,15 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var boundary in new[] { RecoveryPreparationStage.BeforeManifest, RecoveryPreparationStage.BeforeReturn })
             {
                 using var fixture = new PatchExecutionFixture();
-                var armed = false; var installs = 0;
+                var armed = false;
+                var installs = 0;
                 var failure = new IOException("Injected restore backup failure.");
                 await using var execution = fixture.Execution((stage, _) => { if (armed && stage == PatchCommitStage.Installed) installs++; return Task.CompletedTask; },
                     prepare: (stage, _) => armed && stage == boundary ? Task.FromException(failure) : Task.CompletedTask);
                 var source = await execution.ApplyPatchAsync(Patch(SourceBody));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                var current = Files(fixture); var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
+                var current = Files(fixture);
+                var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
                 armed = true;
                 var error = await Reject<IOException>(() => execution.CommitRecoveryAsync(plan));
                 Assert(ReferenceEquals(error, failure) && installs == 0 && current.SequenceEqual(Files(fixture)) &&
@@ -38,12 +40,14 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var boundary in new[] { RecoveryManifestReplacementStage.BeforeReplace, RecoveryManifestReplacementStage.Replaced })
             {
                 using var fixture = new PatchExecutionFixture();
-                var armed = false; var engineCalls = 0;
+                var armed = false;
+                var engineCalls = 0;
                 await using var execution = fixture.Execution((_, _) => { if (armed) engineCalls++; return Task.CompletedTask; },
                     replace: (stage, _) => armed && stage == boundary ? Task.FromException(new IOException("Injected restore Applying error.")) : Task.CompletedTask);
                 var source = await execution.ApplyPatchAsync(Patch(SourceBody));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                var current = Files(fixture); var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
+                var current = Files(fixture);
+                var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
                 armed = true;
                 await Reject<IOException>(() => execution.CommitRecoveryAsync(plan));
                 var record = await fixture.Load(fixture.RecordIds().Single(id => id != source.Commit.ChangeId));
@@ -59,25 +63,32 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var phase in new[] { "backup", "applying", "staged", "installed-first", "installed-last" })
             {
                 using var fixture = new PatchExecutionFixture();
-                var armed = false; var changed = false; var id = Guid.Empty;
-                void Change() { if (!changed) { changed = true; RewriteRun(fixture, id); } }
+                var armed = false;
+                var changed = false;
+                var id = Guid.Empty;
+                void Change()
+                { if (!changed) { changed = true; RewriteRun(fixture, id); } }
                 await using var execution = fixture.Execution((stage, index) =>
                 {
                     if (armed && ((phase == "staged" && stage == PatchCommitStage.Staged) ||
-                        (stage == PatchCommitStage.Installed && ((phase == "installed-first" && index == 0) || (phase == "installed-last" && index == 1))))) Change();
+                        (stage == PatchCommitStage.Installed && ((phase == "installed-first" && index == 0) || (phase == "installed-last" && index == 1)))))
+                        Change();
                     return Task.CompletedTask;
                 }, prepare: (stage, _) => { if (armed && phase == "backup" && stage == RecoveryPreparationStage.BeforeReturn) Change(); return Task.CompletedTask; },
                     replace: (stage, path) =>
                     {
                         if (armed && phase == "applying" && stage == RecoveryManifestReplacementStage.BeforeReturn &&
-                            RecoveryManifestJson.Parse(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(path)!, RecoveryStore.ManifestFileName))).State == RecoveryRecordState.Applying) Change();
+                            RecoveryManifestJson.Parse(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(path)!, RecoveryStore.ManifestFileName))).State == RecoveryRecordState.Applying)
+                            Change();
                         return Task.CompletedTask;
                     });
-                var source = await execution.ApplyPatchAsync(Patch(SourceBody)); id = source.Commit!.ChangeId;
+                var source = await execution.ApplyPatchAsync(Patch(SourceBody));
+                id = source.Commit!.ChangeId;
                 var plan = await execution.PrepareRecoveryAsync(id);
                 var current = Files(fixture);
                 armed = true;
-                if (phase == "backup") await Reject<WorkspaceException>(() => execution.CommitRecoveryAsync(plan));
+                if (phase == "backup")
+                    await Reject<WorkspaceException>(() => execution.CommitRecoveryAsync(plan));
                 else
                 {
                     var failure = await execution.CommitRecoveryAsync(plan);
@@ -107,18 +118,23 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var boundary in boundaries)
             {
                 CheckRunner.Scenario($"restore-stage={boundary.Item1}, install-index={boundary.Item2}");
-                using var fixture = new PatchExecutionFixture(); Seed(fixture);
+                using var fixture = new PatchExecutionFixture();
+                Seed(fixture);
                 using var cancel = new CancellationTokenSource();
-                var armed = false; var failure = new IOException("Injected restore installation failure.");
+                var armed = false;
+                var failure = new IOException("Injected restore installation failure.");
                 await using var execution = fixture.Execution((stage, index) =>
                 {
-                    if (!armed || (stage, index) != boundary) return Task.CompletedTask;
-                    cancel.Cancel(); return Task.FromException(failure);
+                    if (!armed || (stage, index) != boundary)
+                        return Task.CompletedTask;
+                    cancel.Cancel();
+                    return Task.FromException(failure);
                 });
                 var source = await execution.ApplyPatchAsync(Patch(MixedBody));
                 Directory.Delete(fixture.PathOf("gone"));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                var current = Files(fixture); var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
+                var current = Files(fixture);
+                var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
                 armed = true;
                 var result = await execution.CommitRecoveryAsync(plan, cancel.Token);
                 Assert(result.Commit.Outcome.VerifiedState == PatchCommitState.RolledBack && ReferenceEquals(result.Commit.Outcome.Failure, failure) &&
@@ -133,7 +149,8 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var boundary in new[] { "backup", "applying", "Staged", "BeforeInstall", "Installed", "BeforeVerification", "final-save" })
             {
                 using var fixture = new PatchExecutionFixture();
-                using var cancel = new CancellationTokenSource(); var armed = false;
+                using var cancel = new CancellationTokenSource();
+                var armed = false;
                 var original = Files(fixture);
                 await using var execution = fixture.Execution((stage, _) => { if (armed && stage.ToString() == boundary) cancel.Cancel(); return Task.CompletedTask; },
                     prepare: (stage, _) => { if (armed && boundary == "backup" && stage == RecoveryPreparationStage.BeforeManifest) cancel.Cancel(); return Task.CompletedTask; },
@@ -141,12 +158,14 @@ internal static class RecoveryRestoreFaultChecks
                     {
                         if (armed && ((boundary == "applying" && stage == RecoveryManifestReplacementStage.Replaced) ||
                             (boundary == "final-save" && stage == RecoveryManifestReplacementStage.BeforeReturn &&
-                            RecoveryManifestJson.Parse(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(path)!, RecoveryStore.ManifestFileName))).State == RecoveryRecordState.Committed))) cancel.Cancel();
+                            RecoveryManifestJson.Parse(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(path)!, RecoveryStore.ManifestFileName))).State == RecoveryRecordState.Committed)))
+                            cancel.Cancel();
                         return Task.CompletedTask;
                     });
                 var source = await execution.ApplyPatchAsync(Patch(SourceBody));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                var current = Files(fixture); armed = true;
+                var current = Files(fixture);
+                armed = true;
                 if (boundary == "backup")
                 {
                     await Reject<OperationCanceledException>(() => execution.CommitRecoveryAsync(plan, cancel.Token));
@@ -174,24 +193,30 @@ internal static class RecoveryRestoreFaultChecks
                 {
                     CheckRunner.Scenario($"terminal={terminal}, replacement={boundary}");
                     using var fixture = new PatchExecutionFixture();
-                    var armed = false; var finishing = false; var failOnce = true;
+                    var armed = false;
+                    var finishing = false;
+                    var failOnce = true;
                     await using var execution = fixture.Execution((stage, _) =>
                     {
-                        if (!armed || stage != PatchCommitStage.Installed || terminal == PatchCommitState.Committed) return Task.CompletedTask;
-                        if (terminal == PatchCommitState.Incomplete) { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
+                        if (!armed || stage != PatchCommitStage.Installed || terminal == PatchCommitState.Committed)
+                            return Task.CompletedTask;
+                        if (terminal == PatchCommitState.Incomplete)
+                        { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
                         return Task.FromException(new IOException("Injected restore rollback trigger."));
                     }, replace: (stage, path) =>
                     {
                         if (armed && stage == RecoveryManifestReplacementStage.BeforeTemporaryFile)
                             finishing = RecoveryManifestJson.Parse(File.ReadAllBytes(Path.Combine(Path.GetDirectoryName(path)!, RecoveryStore.ManifestFileName))).State == RecoveryRecordState.Applying;
-                        if (!armed || !finishing || !failOnce || stage != boundary) return Task.CompletedTask;
+                        if (!armed || !finishing || !failOnce || stage != boundary)
+                            return Task.CompletedTask;
                         failOnce = false;
                         return Task.FromException(boundary == RecoveryManifestReplacementStage.BeforeReturn ?
                             new OperationCanceledException("Injected restore final-readback cancellation error.") : new IOException("Injected restore final-state persistence failure."));
                     });
                     var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
                     var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                    var sourceData = RecordFiles(fixture, source.Commit.ChangeId); armed = true;
+                    var sourceData = RecordFiles(fixture, source.Commit.ChangeId);
+                    armed = true;
                     var error = await Reject<RecoveryFinalizationException>(() => execution.CommitRecoveryAsync(plan));
                     var uncertain = boundary is RecoveryManifestReplacementStage.Replaced or RecoveryManifestReplacementStage.BeforeReturn;
                     var expected = terminal switch { PatchCommitState.Committed => RecoveryRecordState.Committed, PatchCommitState.RolledBack => RecoveryRecordState.RolledBack, _ => RecoveryRecordState.Incomplete };
@@ -218,13 +243,17 @@ internal static class RecoveryRestoreFaultChecks
                 using var fixture = new PatchExecutionFixture();
                 await using var execution = fixture.Execution();
                 var source = await execution.ApplyPatchAsync(Patch(SourceBody));
-                if (!locked) for (var index = 0; index < 999; index++) Directory.CreateDirectory(Path.Combine(fixture.RecoveryDirectory, $"foreign-{index}"));
+                if (!locked)
+                    for (var index = 0; index < 999; index++)
+                        Directory.CreateDirectory(Path.Combine(fixture.RecoveryDirectory, $"foreign-{index}"));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                var current = Files(fixture); var originalRecord = RecordFiles(fixture, source.Commit.ChangeId);
+                var current = Files(fixture);
+                var originalRecord = RecordFiles(fixture, source.Commit.ChangeId);
                 FileStream? held = null;
                 try
                 {
-                    if (locked) { held = RecoveryFileSystem.OpenRead(Path.Combine(fixture.RecoveryDirectory, RecoveryStorageLimits.LockFileName)); RecoveryFileSystem.Lock(held); }
+                    if (locked)
+                    { held = RecoveryFileSystem.OpenRead(Path.Combine(fixture.RecoveryDirectory, RecoveryStorageLimits.LockFileName)); RecoveryFileSystem.Lock(held); }
                     await Reject<IOException>(() => execution.CommitRecoveryAsync(plan));
                     Assert(current.SequenceEqual(Files(fixture)) && originalRecord.SequenceEqual(RecordFiles(fixture, source.Commit.ChangeId)) &&
                         fixture.RecordIds().Length == 1 && execution.ActiveCalls == 0, "Backup capacity/lock failure performs no workspace staging, eviction or unrecorded fallback");
@@ -240,11 +269,13 @@ internal static class RecoveryRestoreFaultChecks
             await using var execution = fixture.Execution((stage, _) =>
             {
                 if (armed && stage == PatchCommitStage.BeforeVerification)
-                    for (var index = 0; index < 1000; index++) Directory.CreateDirectory(Path.Combine(fixture.RecoveryDirectory, $"foreign-{index}"));
+                    for (var index = 0; index < 1000; index++)
+                        Directory.CreateDirectory(Path.Combine(fixture.RecoveryDirectory, $"foreign-{index}"));
                 return Task.CompletedTask;
             });
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId); armed = true;
+            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
+            armed = true;
             var error = await Reject<RecoveryFinalizationException>(() => execution.CommitRecoveryAsync(plan));
             Assert(error.Outcome.VerifiedState == PatchCommitState.Committed && error.Record.Manifest.State == RecoveryRecordState.Applying &&
                 fixture.Get("sample.md") == "old\n" && (await fixture.Load(source.Commit.ChangeId)).Manifest.State == RecoveryRecordState.Committed &&
@@ -258,20 +289,25 @@ internal static class RecoveryRestoreFaultChecks
             foreach (var rollback in new[] { false, true })
             {
                 using var fixture = new PatchExecutionFixture();
-                var armed = false; string? retained = null;
+                var armed = false;
+                string? retained = null;
                 await using var execution = fixture.Execution((stage, _) =>
                 {
-                    if (!armed || stage != (rollback ? PatchCommitStage.Installed : PatchCommitStage.Staged)) return Task.CompletedTask;
-                    if (rollback) { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
+                    if (!armed || stage != (rollback ? PatchCommitStage.Installed : PatchCommitStage.Staged))
+                        return Task.CompletedTask;
+                    if (rollback)
+                    { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
                     else
                     {
                         retained = Directory.EnumerateFiles(fixture.Root, ".minimcp-*.tmp").Single();
-                        File.Move(retained, Path.Combine(fixture.DirectoryPath, "detached-stage")); Directory.CreateDirectory(retained);
+                        File.Move(retained, Path.Combine(fixture.DirectoryPath, "detached-stage"));
+                        Directory.CreateDirectory(retained);
                     }
                     return Task.FromException(new IOException("Injected incomplete restore cleanup/rollback."));
                 });
                 var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-                var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId); armed = true;
+                var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
+                armed = true;
                 var result = await execution.CommitRecoveryAsync(plan);
                 Assert(result.Commit.Outcome.VerifiedState == PatchCommitState.Incomplete && result.Commit.Record.Manifest.State == RecoveryRecordState.Incomplete &&
                     (rollback ? !result.Commit.Outcome.RollbackErrors.IsEmpty && Directory.Exists(fixture.PathOf("sample.md")) :
@@ -287,22 +323,27 @@ internal static class RecoveryRestoreFaultChecks
             var armed = false;
             await using var execution = fixture.Execution((stage, _) => { if (armed && stage == PatchCommitStage.BeforeVerification) fixture.Put("sample.md", "external\n"); return Task.CompletedTask; });
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId); armed = true;
+            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
+            armed = true;
             var result = await execution.CommitRecoveryAsync(plan);
             Assert(result.Commit.Outcome.State == PatchCommitState.Committed && result.Commit.Outcome.VerifiedState == PatchCommitState.Incomplete &&
                 result.Commit.Record.Manifest.State == RecoveryRecordState.Incomplete && fixture.Get("sample.md") == "external\n", "Installation facts and failed final observation remain separate");
             if (OperatingSystem.IsLinux())
             {
-                using var permissions = new PatchExecutionFixture(); Directory.CreateDirectory(permissions.PathOf("gone")); permissions.Put("gone/script.cs", "source\n");
+                using var permissions = new PatchExecutionFixture();
+                Directory.CreateDirectory(permissions.PathOf("gone"));
+                permissions.Put("gone/script.cs", "source\n");
                 File.SetUnixFileMode(permissions.PathOf("gone/script.cs"), (UnixFileMode)0x1ed);
                 var restoring = false;
                 await using var permissionExecution = permissions.Execution((stage, _) =>
                 {
-                    if (OperatingSystem.IsLinux() && restoring && stage == PatchCommitStage.Installed) File.SetUnixFileMode(permissions.PathOf("gone/script.cs"), (UnixFileMode)0x1a4);
+                    if (OperatingSystem.IsLinux() && restoring && stage == PatchCommitStage.Installed)
+                        File.SetUnixFileMode(permissions.PathOf("gone/script.cs"), (UnixFileMode)0x1a4);
                     return Task.CompletedTask;
                 });
                 var deletion = await permissionExecution.ApplyPatchAsync(Patch("*** Delete File: gone/script.cs"));
-                var preparation = await permissionExecution.PrepareRecoveryAsync(deletion.Commit!.ChangeId); restoring = true;
+                var preparation = await permissionExecution.PrepareRecoveryAsync(deletion.Commit!.ChangeId);
+                restoring = true;
                 var observed = await permissionExecution.CommitRecoveryAsync(preparation);
                 Assert(observed.Commit.Outcome.VerifiedState == PatchCommitState.Incomplete && observed.Commit.Outcome.VerificationFailure is not null,
                     "Restored additions must match exact recorded permissions; merely being a subset of a creation request is insufficient");
@@ -311,18 +352,21 @@ internal static class RecoveryRestoreFaultChecks
 
         await check("restore installation success retains cleanup warnings and its actual Committed history", async () =>
         {
-            using var fixture = new PatchExecutionFixture(); var armed = false;
+            using var fixture = new PatchExecutionFixture();
+            var armed = false;
             await using var execution = fixture.Execution((stage, _) =>
             {
                 if (armed && stage == PatchCommitStage.Installed)
                 {
                     var backup = Directory.EnumerateFiles(fixture.Root, ".minimcp-*.bak").Single();
-                    File.Move(backup, Path.Combine(fixture.DirectoryPath, "detached-before-restore")); Directory.CreateDirectory(backup);
+                    File.Move(backup, Path.Combine(fixture.DirectoryPath, "detached-before-restore"));
+                    Directory.CreateDirectory(backup);
                 }
                 return Task.CompletedTask;
             });
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId); armed = true;
+            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
+            armed = true;
             var result = await execution.CommitRecoveryAsync(plan);
             Assert(result.Commit.Outcome.VerifiedState == PatchCommitState.Committed && result.Commit.Outcome.CleanupErrors.Length == 1 &&
                 fixture.Get("sample.md") == "old\n" && (await fixture.Load(result.Commit.Record.Manifest.ChangeId)).Manifest.State == RecoveryRecordState.Committed,
@@ -331,16 +375,19 @@ internal static class RecoveryRestoreFaultChecks
 
         await check("failed restore rollback preserves new external content in an installed path and retains both recovery and engine backups", async () =>
         {
-            using var fixture = new PatchExecutionFixture(); var armed = false;
+            using var fixture = new PatchExecutionFixture();
+            var armed = false;
             var failure = new IOException("Injected failure after an external edit to the installed restore path.");
             await using var execution = fixture.Execution((stage, index) =>
             {
-                if (!armed || stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
+                if (!armed || stage != PatchCommitStage.Installed || index != 0)
+                    return Task.CompletedTask;
                 fixture.Put("sample.md", "external newer content\n");
                 return Task.FromException(failure);
             });
             var source = await execution.ApplyPatchAsync(Patch("*** Add File: added.md\n+added\n*** Update File: sample.md\n@@\n-old\n+new"));
-            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId); armed = true;
+            var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
+            armed = true;
             var result = await execution.CommitRecoveryAsync(plan);
             Assert(result.Commit.Outcome.VerifiedState == PatchCommitState.Incomplete && ReferenceEquals(result.Commit.Outcome.Failure, failure) &&
                 !result.Commit.Outcome.RollbackErrors.IsEmpty && fixture.Get("sample.md") == "external newer content\n" && fixture.Get("added.md") == "added\n",

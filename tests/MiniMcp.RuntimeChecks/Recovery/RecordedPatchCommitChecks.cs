@@ -24,7 +24,8 @@ internal static class RecordedPatchCommitChecks
             fixture.Put("sample.md", "\ufeffold\r\nlocal edit\r\n");
             fixture.Put("delete.md", "");
             fixture.Put("move.md", "move\n");
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(fixture.Path("move.md"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(fixture.Path("move.md"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             var originalMode = OperatingSystem.IsWindows() ? (UnixFileMode?)null : File.GetUnixFileMode(fixture.Path("move.md"));
             var original = fixture.ProjectSnapshot();
             var plan = await fixture.Plan("*** Update File: sample.md\n@@\n-old\n+new\n*** Delete File: delete.md\n" +
@@ -137,7 +138,8 @@ internal static class RecordedPatchCommitChecks
             fixture.Put("second.md", "second\n");
             var store = fixture.Store(prepare: (stage, _) =>
             {
-                if (stage == RecoveryPreparationStage.BeforeReturn) fixture.Put("second.md", "external\n");
+                if (stage == RecoveryPreparationStage.BeforeReturn)
+                    fixture.Put("second.md", "external\n");
                 return Task.CompletedTask;
             });
             var plan = await fixture.Plan("*** Add File: nested/new.md\n+new\n*** Update File: sample.md\n@@\n-old\n+new\n*** Delete File: second.md");
@@ -178,7 +180,8 @@ internal static class RecordedPatchCommitChecks
             using var fixture = new Fixture((stage, _) => { staged |= stage == PatchCommitStage.Staged; return Task.CompletedTask; });
             var store = fixture.Store(replacement: (stage, _) =>
             {
-                if (stage == RecoveryManifestReplacementStage.Replaced) cancelled.Cancel();
+                if (stage == RecoveryManifestReplacementStage.Replaced)
+                    cancelled.Cancel();
                 return Task.CompletedTask;
             });
             var before = fixture.ProjectSnapshot();
@@ -194,7 +197,8 @@ internal static class RecordedPatchCommitChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, index) =>
             {
-                if (stage == PatchCommitStage.BeforeInstall && index == 1) fixtureRef!.Put("sample.md", "external before install\n");
+                if (stage == PatchCommitStage.BeforeInstall && index == 1)
+                    fixtureRef!.Put("sample.md", "external before install\n");
                 return Task.CompletedTask;
             });
             fixtureRef = fixture;
@@ -216,8 +220,10 @@ internal static class RecordedPatchCommitChecks
                 var failure = new IOException("Injected installation failure.");
                 using var fixture = new Fixture((stage, index) =>
                 {
-                    if (stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
-                    if (incomplete) { File.Delete(fixtureRef!.Path("sample.md")); Directory.CreateDirectory(fixtureRef.Path("sample.md")); }
+                    if (stage != PatchCommitStage.Installed || index != 0)
+                        return Task.CompletedTask;
+                    if (incomplete)
+                    { File.Delete(fixtureRef!.Path("sample.md")); Directory.CreateDirectory(fixtureRef.Path("sample.md")); }
                     return Task.FromException(failure);
                 });
                 fixtureRef = fixture;
@@ -230,8 +236,10 @@ internal static class RecordedPatchCommitChecks
                 var saved = await store.LoadAsync(result.Record.Manifest.ChangeId);
                 Assert(ReferenceEquals(result.Outcome.Failure, failure) && result.Record.Manifest.State == expected && saved.Manifest.State == expected &&
                     saved.Backups.Single().Bytes.AsSpan().SequenceEqual(Encoding.UTF8.GetBytes("\ufeffold\r\n")), "Persisted state follows real rollback, original bytes remain recoverable");
-                if (incomplete) Assert(!result.Outcome.RollbackErrors.IsEmpty && fixture.Artifacts().Any(path => path.EndsWith(".bak", StringComparison.Ordinal)), "Incomplete rollback retains engine backup and error");
-                else Assert(original.SequenceEqual(fixture.ProjectSnapshot()) && !fixture.Artifacts().Any(), "Complete rollback restores full original workspace");
+                if (incomplete)
+                    Assert(!result.Outcome.RollbackErrors.IsEmpty && fixture.Artifacts().Any(path => path.EndsWith(".bak", StringComparison.Ordinal)), "Incomplete rollback retains engine backup and error");
+                else
+                    Assert(original.SequenceEqual(fixture.ProjectSnapshot()) && !fixture.Artifacts().Any(), "Complete rollback restores full original workspace");
             }
         });
 
@@ -240,14 +248,16 @@ internal static class RecordedPatchCommitChecks
             using var cancelled = new CancellationTokenSource();
             using var fixture = new Fixture((stage, index) =>
             {
-                if (stage == PatchCommitStage.Installed && index == 0) cancelled.Cancel();
+                if (stage == PatchCommitStage.Installed && index == 0)
+                    cancelled.Cancel();
                 return Task.CompletedTask;
             });
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var store = fixture.Store(replacement: async (stage, path) =>
             {
-                if (stage != RecoveryManifestReplacementStage.TemporaryWritten || RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State != RecoveryRecordState.Committed) return;
+                if (stage != RecoveryManifestReplacementStage.TemporaryWritten || RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State != RecoveryRecordState.Committed)
+                    return;
                 entered.TrySetResult();
                 await release.Task;
             });
@@ -272,7 +282,8 @@ internal static class RecordedPatchCommitChecks
             {
                 release.TrySetResult();
                 await committing;
-                if (waiting is not null) await waiting;
+                if (waiting is not null)
+                    await waiting;
             }
         });
 
@@ -289,7 +300,8 @@ internal static class RecordedPatchCommitChecks
                 {
                     if (stage == RecoveryManifestReplacementStage.TemporaryWritten)
                         finishing = RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed;
-                    if (finishing && failOnce && stage == boundary) { failOnce = false; return Task.FromException(failure); }
+                    if (finishing && failOnce && stage == boundary)
+                    { failOnce = false; return Task.FromException(failure); }
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
@@ -304,7 +316,8 @@ internal static class RecordedPatchCommitChecks
                     await store.CompleteAsync(error.Record, plan, error.Outcome);
                     Assert(error.Record.Manifest.State == RecoveryRecordState.Committed && installs == 1, "Only metadata retried");
                 }
-                else Assert(error.Record.IsInvalidated && saved.Manifest.State == RecoveryRecordState.Committed && error.Record.Manifest.State == RecoveryRecordState.Applying,
+                else
+                    Assert(error.Record.IsInvalidated && saved.Manifest.State == RecoveryRecordState.Committed && error.Record.Manifest.State == RecoveryRecordState.Applying,
                     "Uncertain replacement never promotes the old live handle or rewinds actual disk state");
             }
         });
@@ -314,7 +327,8 @@ internal static class RecordedPatchCommitChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, _) =>
             {
-                if (stage == PatchCommitStage.BeforeVerification) fixtureRef!.Put("sample.md", "external after install\n");
+                if (stage == PatchCommitStage.BeforeVerification)
+                    fixtureRef!.Put("sample.md", "external after install\n");
                 return Task.CompletedTask;
             });
             fixtureRef = fixture;
@@ -349,7 +363,8 @@ internal static class RecordedPatchCommitChecks
             _paths = new ConfigurationPaths(System.IO.Path.Combine(DirectoryPath, "user"), System.IO.Path.Combine(DirectoryPath, "state"));
             _bash = System.IO.Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
         public RecoveryStore Store(Func<RecoveryPreparationStage, RecoveryDraft, Task>? prepare = null,
             Func<RecoveryManifestReplacementStage, string, Task>? replacement = null, ExecutionMode mode = ExecutionMode.FullAccess) => new(RunId,
@@ -373,7 +388,8 @@ internal static class RecordedPatchCommitChecks
             var directory = System.IO.Path.GetFullPath(DirectoryPath);
             if (!string.Equals(System.IO.Path.GetDirectoryName(directory), System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())),
                     OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
-                !System.IO.Path.GetFileName(directory).StartsWith("minimcp-recorded-commit-", StringComparison.Ordinal)) throw new IOException("Unexpected test cleanup path.");
+                !System.IO.Path.GetFileName(directory).StartsWith("minimcp-recorded-commit-", StringComparison.Ordinal))
+                throw new IOException("Unexpected test cleanup path.");
             CheckRunner.Cleanup(directory, () => CheckRunner.DeleteTemporaryDirectory(directory));
         }
     }

@@ -15,18 +15,21 @@ internal static class RuntimeSnapshotChecks
         { Timeout = TimeSpan.FromSeconds(3) };
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Runtime snapshot assertion failed.");
+            if (!condition)
+                throw new Exception("Runtime snapshot assertion failed.");
         }
         async Task Reject<TException>(Func<Task> action) where TException : Exception
         {
-            try { await action(); }
+            try
+            { await action(); }
             catch (TException) { return; }
             throw new Exception($"Expected {typeof(TException).Name} from the configured runtime.");
         }
         int FreePort()
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
-            try { listener.Start(); return ((IPEndPoint)listener.LocalEndpoint).Port; }
+            try
+            { listener.Start(); return ((IPEndPoint)listener.LocalEndpoint).Port; }
             finally { listener.Stop(); }
         }
         async Task<RuntimeConfiguration> Configuration(int port)

@@ -90,7 +90,8 @@ internal sealed partial class RecoveryStore
         }
         catch
         {
-            if (replacementVerified) record.Invalidate();
+            if (replacementVerified)
+                record.Invalidate();
             throw;
         }
     }

@@ -7,11 +7,13 @@ internal static class ConfigurationSerializationChecks
     {
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Configuration serialization assertion failed.");
+            if (!condition)
+                throw new Exception("Configuration serialization assertion failed.");
         }
         void Reject<TException>(Action action) where TException : Exception
         {
-            try { action(); }
+            try
+            { action(); }
             catch (TException) { return; }
             throw new Exception($"Expected {typeof(TException).Name} during configuration serialization.");
         }
@@ -85,7 +87,8 @@ internal static class ConfigurationSerializationChecks
                 new AppSettings { Authentication = null! }, new AppSettings { Tunnel = null! },
                 new AppSettings { Tunnel = new TunnelSettings { ExecutablePath = null! } },
                 new AppSettings { Tunnel = new TunnelSettings { TokenFilePath = null! } }
-            }) Reject<JsonException>(() => ConfigurationJson.SerializeSettings(settings));
+            })
+                Reject<JsonException>(() => ConfigurationJson.SerializeSettings(settings));
             Reject<JsonException>(() => ConfigurationJson.SerializePolicy(new ExecutionPolicy { RecoveryDirectory = null! }));
             return Task.CompletedTask;
         });

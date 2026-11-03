@@ -18,8 +18,10 @@ internal sealed class MonitorFixture : IAsyncDisposable
     { _logger = factory.CreateLogger("Desktop.Fixture"); return Results.Ok(); });
     internal async Task Start()
     {
-        await Settings.Load(); var saved = await Settings.Editor.ReadSavedForStartupAsync();
-        await Runtime.StartAsync(saved.Configuration); await Capture();
+        await Settings.Load();
+        var saved = await Settings.Editor.ReadSavedForStartupAsync();
+        await Runtime.StartAsync(saved.Configuration);
+        await Capture();
     }
     internal async Task Capture() => (await _http.GetAsync(new Uri(Runtime.Address!, "capture-logger"))).EnsureSuccessStatusCode();
     public async ValueTask DisposeAsync() { await Runtime.DisposeAsync(); _http.Dispose(); await Settings.DisposeAsync(); }
@@ -34,7 +36,8 @@ internal sealed class ManualDispatcher
     internal async Task Until(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (!condition()) { Drain(); if (DateTime.UtcNow >= deadline) throw new TimeoutException("Monitor condition did not complete"); await Task.Delay(10); }
+        while (!condition())
+        { Drain(); if (DateTime.UtcNow >= deadline) throw new TimeoutException("Monitor condition did not complete"); await Task.Delay(10); }
         Drain();
     }
 }

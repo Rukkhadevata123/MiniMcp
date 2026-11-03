@@ -38,9 +38,17 @@ internal sealed class PatchCommitOutcome
         Exception? failure, ImmutableArray<Exception> rollbackErrors, ImmutableArray<Exception> cleanupErrors,
         bool verified, ImmutableArray<VerifiedPatchPath> paths, Exception? verificationFailure)
     {
-        Plan = plan; _issuer = issuer; _context = context; AttemptId = attemptId; State = state; Failure = failure;
-        RollbackErrors = rollbackErrors; CleanupErrors = cleanupErrors; _verified = verified;
-        Paths = paths; VerificationFailure = verificationFailure;
+        Plan = plan;
+        _issuer = issuer;
+        _context = context;
+        AttemptId = attemptId;
+        State = state;
+        Failure = failure;
+        RollbackErrors = rollbackErrors;
+        CleanupErrors = cleanupErrors;
+        _verified = verified;
+        Paths = paths;
+        VerificationFailure = verificationFailure;
     }
     internal PatchPlan Plan { get; }
     public Guid AttemptId { get; }
@@ -56,7 +64,8 @@ internal sealed class PatchCommitOutcome
     internal bool HasContext(PatchExecutionContext context) => ReferenceEquals(_context, context);
     internal PatchCommitOutcome WithVerification(object issuer, ImmutableArray<VerifiedPatchPath> paths, Exception? failure)
     {
-        if (!ReferenceEquals(_issuer, issuer) || _verified) throw new InvalidOperationException("Patch outcome cannot be verified by this caller or twice.");
+        if (!ReferenceEquals(_issuer, issuer) || _verified)
+            throw new InvalidOperationException("Patch outcome cannot be verified by this caller or twice.");
         return new(Plan, _issuer, _context, AttemptId, State, Failure, RollbackErrors, CleanupErrors, true, paths, failure);
     }
 }

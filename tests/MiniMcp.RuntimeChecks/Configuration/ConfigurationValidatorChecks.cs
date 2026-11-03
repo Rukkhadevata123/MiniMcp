@@ -15,11 +15,13 @@ internal static class ConfigurationValidatorChecks
         Directory.CreateDirectory(Path.GetDirectoryName(source)!);
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Configuration path validation assertion failed.");
+            if (!condition)
+                throw new Exception("Configuration path validation assertion failed.");
         }
         void Reject(string field, Action action)
         {
-            try { action(); }
+            try
+            { action(); }
             catch (ConfigurationValidationException exception) { Assert(exception.Field == field); return; }
             throw new Exception($"Expected a validation error for {field}.");
         }
@@ -29,7 +31,8 @@ internal static class ConfigurationValidatorChecks
             {
                 var draft = settings with
                 {
-                    ProjectRoot = "../project/.", BashPath = "./tools/bash",
+                    ProjectRoot = "../project/.",
+                    BashPath = "./tools/bash",
                     Tunnel = new TunnelSettings { ExecutablePath = "../bin/cloudflared", TokenFilePath = "./token" }
                 };
                 var draftPolicy = policy with { RecoveryDirectory = "../history" };
@@ -103,8 +106,10 @@ internal static class ConfigurationValidatorChecks
             var link = Path.Combine(temporary, "project-link");
             void RequireLink()
             {
-                if (Directory.Exists(link)) return;
-                try { Directory.CreateSymbolicLink(link, root); }
+                if (Directory.Exists(link))
+                    return;
+                try
+                { Directory.CreateSymbolicLink(link, root); }
                 catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
                 { CheckRunner.Skip("Windows symbolic link creation requires Developer Mode or permission."); }
             }
@@ -127,7 +132,8 @@ internal static class ConfigurationValidatorChecks
                 Reject("settingsFile", () => validator.NormalizePaths(settings, fileLink, policy));
                 Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
                 File.CreateSymbolicLink(paths.PolicyFile, Path.Combine(temporary, "missing.json"));
-                try { Reject("policyFile", () => validator.NormalizePaths(settings, source, policy)); }
+                try
+                { Reject("policyFile", () => validator.NormalizePaths(settings, source, policy)); }
                 finally { File.Delete(paths.PolicyFile); }
                 var linkedPolicy = new ConfigurationValidator(new ConfigurationPaths(link, Path.Combine(temporary, "state")));
                 Reject("policyFile", () => linkedPolicy.NormalizePaths(settings, source, policy));

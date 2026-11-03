@@ -68,7 +68,8 @@ internal static class RecordedToolExecutionChecks
         {
             using var fixture = new PatchExecutionFixture(ExecutionMode.FullAccess, new() { MaxPaths = 0, MaxChangedLines = 0, MaxChangedBytes = 0 });
             fixture.Put("sample.md", "\ufeffold\r\nlocal edit\r\n");
-            fixture.Put("delete.md", ""); fixture.Put("move.md", "move\n");
+            fixture.Put("delete.md", "");
+            fixture.Put("move.md", "move\n");
             await using var execution = fixture.Execution();
             var result = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new\n*** Delete File: delete.md\n" +
                 "*** Update File: move.md\n*** Move to: nested/moved.md\n*** Add File: unknown.data\n+data\n*** Add File: Directory.Build.cs\n+build"));
@@ -111,7 +112,8 @@ internal static class RecordedToolExecutionChecks
         await check("shared patch entry refuses a full recovery store before any workspace staging", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            for (var index = 0; index < 1000; index++) Directory.CreateDirectory(Path.Combine(fixture.RecoveryDirectory, $"foreign-{index}"));
+            for (var index = 0; index < 1000; index++)
+                Directory.CreateDirectory(Path.Combine(fixture.RecoveryDirectory, $"foreign-{index}"));
             await using var execution = fixture.Execution();
             var before = fixture.ProjectSnapshot();
             await Reject<McpException>(() => new WorkspaceTools(execution).ApplyPatch(Patch("*** Add File: nested/new.md\n+new"), CancellationToken.None));
@@ -159,10 +161,12 @@ internal static class RecordedToolExecutionChecks
                 const string secret = "DO_NOT_EXPOSE_RAW_ENGINE_ERROR";
                 await using var execution = fixture.Execution((stage, _) =>
                 {
-                    if (scenario == "verification" && stage == PatchCommitStage.BeforeVerification) fixture.Put("sample.md", "external\n");
+                    if (scenario == "verification" && stage == PatchCommitStage.BeforeVerification)
+                        fixture.Put("sample.md", "external\n");
                     if (scenario != "verification" && stage == PatchCommitStage.Installed)
                     {
-                        if (scenario == "incomplete") { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
+                        if (scenario == "incomplete")
+                        { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
                         return Task.FromException(new IOException(secret + fixture.Root));
                     }
                     return Task.CompletedTask;
@@ -171,7 +175,8 @@ internal static class RecordedToolExecutionChecks
                 var saved = await fixture.Load(fixture.RecordIds().Single());
                 Assert(saved.Manifest.State == (scenario == "rollback" ? RecoveryRecordState.RolledBack : RecoveryRecordState.Incomplete) &&
                     error.Message.Contains(saved.Manifest.ChangeId.ToString("N")) && !error.Message.Contains(secret) && !error.Message.Contains(fixture.Root), "Bound safe diagnostic carries record identity and truthful state");
-                if (scenario == "verification") Assert(fixture.Get("sample.md") == "external\n" && error.Message.Contains("engine result: Committed"), "Installed state and verification failure stay distinct; no extra rollback");
+                if (scenario == "verification")
+                    Assert(fixture.Get("sample.md") == "external\n" && error.Message.Contains("engine result: Committed"), "Installed state and verification failure stay distinct; no extra rollback");
             }
         });
 
@@ -185,7 +190,8 @@ internal static class RecordedToolExecutionChecks
                 await using var execution = fixture.Execution((stage, _) => { if (stage == PatchCommitStage.Installed) installs++; return Task.CompletedTask; },
                     replace: (stage, path) =>
                     {
-                        if (stage == RecoveryManifestReplacementStage.TemporaryWritten) finishing = RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed;
+                        if (stage == RecoveryManifestReplacementStage.TemporaryWritten)
+                            finishing = RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed;
                         return finishing && stage == boundary ? Task.FromException(new IOException("SECRET " + fixture.Root)) : Task.CompletedTask;
                     });
                 var error = await Reject<McpException>(() => new WorkspaceTools(execution).ApplyPatch(Patch("*** Update File: sample.md\n@@\n-old\n+new"), CancellationToken.None));

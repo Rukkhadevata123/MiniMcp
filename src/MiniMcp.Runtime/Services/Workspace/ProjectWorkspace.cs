@@ -53,7 +53,8 @@ internal sealed class ProjectWorkspace
             path.Contains('\\') || path.Contains(':') || path.Contains('\0'))
             throw new WorkspaceException("Use a relative project path with / separators.");
         string full;
-        try { full = Path.GetFullPath(Path.Combine(root, path)); }
+        try
+        { full = Path.GetFullPath(Path.Combine(root, path)); }
         catch (ArgumentException) { throw new WorkspaceException("Invalid project path."); }
         var relative = Path.GetRelativePath(root, full);
         if (relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
@@ -76,7 +77,8 @@ internal sealed class ProjectWorkspace
         var file = Resolve(path);
         var snapshot = await SnapshotAsync(file, cancellationToken);
         var lines = SplitLines(snapshot.Text);
-        if (startLine > Math.Max(1, lines.Count)) throw new WorkspaceException("start_line is beyond the end of the file.");
+        if (startLine > Math.Max(1, lines.Count))
+            throw new WorkspaceException("start_line is beyond the end of the file.");
         var end = Math.Min(endLine ?? lines.Count, lines.Count);
         var content = new StringBuilder();
         var last = startLine - 1;
@@ -85,7 +87,8 @@ internal sealed class ProjectWorkspace
         {
             var text = lines[i].Text + lines[i].Ending;
             var remaining = MaxOutputCharacters - content.Length;
-            if (remaining == 0) { truncated = true; break; }
+            if (remaining == 0)
+            { truncated = true; break; }
             if (text.Length > remaining)
             {
                 content.Append(Clip(text, remaining));
@@ -101,7 +104,8 @@ internal sealed class ProjectWorkspace
 
     internal async Task<TextFile> SnapshotAsync(string file, CancellationToken cancellationToken)
     {
-        if (!File.Exists(file)) throw new WorkspaceException("File does not exist.");
+        if (!File.Exists(file))
+            throw new WorkspaceException("File does not exist.");
         await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read,
             4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var bytes = new byte[MaxFileBytes + 1];
@@ -109,11 +113,14 @@ internal sealed class ProjectWorkspace
         while (count < bytes.Length)
         {
             var read = await stream.ReadAsync(bytes.AsMemory(count), cancellationToken);
-            if (read == 0) break;
+            if (read == 0)
+                break;
             count += read;
         }
-        if (count > MaxFileBytes) throw new WorkspaceException("File exceeds the 256 KiB limit.");
-        if (bytes.AsSpan(0, count).Contains((byte)0)) throw new WorkspaceException("Only UTF-8 text files are supported.");
+        if (count > MaxFileBytes)
+            throw new WorkspaceException("File exceeds the 256 KiB limit.");
+        if (bytes.AsSpan(0, count).Contains((byte)0))
+            throw new WorkspaceException("Only UTF-8 text files are supported.");
         try
         {
             var bom = count >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf;
@@ -130,25 +137,32 @@ internal sealed class ProjectWorkspace
     {
         var relative = Relative(file);
         Resolve(relative);
-        if (!Directory.Exists(Root)) throw new WorkspaceException("The project root no longer exists.");
-        if (!File.Exists(file)) throw new WorkspaceException("File does not exist.");
+        if (!Directory.Exists(Root))
+            throw new WorkspaceException("The project root no longer exists.");
+        if (!File.Exists(file))
+            throw new WorkspaceException("File does not exist.");
         using var stream = RecoveryFileSystem.OpenSharedRead(file);
         var identity = RecoveryFileSystem.FileIdentity(stream);
         var length = stream.Length;
-        if (length < 0) throw new IOException("The project file has an invalid length.");
-        if (length > MaxFileBytes) throw new WorkspaceException("File exceeds the 256 KiB limit.");
+        if (length < 0)
+            throw new IOException("The project file has an invalid length.");
+        if (length > MaxFileBytes)
+            throw new WorkspaceException("File exceeds the 256 KiB limit.");
         var buffer = new byte[(int)length + 1];
         var count = 0;
         while (count < buffer.Length)
         {
             var read = await stream.ReadAsync(buffer.AsMemory(count), cancellationToken).ConfigureAwait(false);
-            if (read == 0) break;
+            if (read == 0)
+                break;
             count += read;
         }
-        if (count > MaxFileBytes) throw new WorkspaceException("File exceeds the 256 KiB limit.");
+        if (count > MaxFileBytes)
+            throw new WorkspaceException("File exceeds the 256 KiB limit.");
         if (count != length || stream.Length != length || RecoveryFileSystem.FileIdentity(stream) != identity)
             throw new IOException("The project file changed during observation.");
-        if (buffer.AsSpan(0, count).Contains((byte)0)) throw new WorkspaceException("Only UTF-8 text files are supported.");
+        if (buffer.AsSpan(0, count).Contains((byte)0))
+            throw new WorkspaceException("Only UTF-8 text files are supported.");
         UnixFileMode? mode = OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(stream.SafeFileHandle);
         Resolve(relative);
         using var current = RecoveryFileSystem.OpenSharedRead(file);
@@ -166,9 +180,11 @@ internal sealed class ProjectWorkspace
 
     internal static byte[] Encode(string text, bool bom = false)
     {
-        if (text.Contains('\0')) throw new WorkspaceException("Only UTF-8 text files are supported.");
+        if (text.Contains('\0'))
+            throw new WorkspaceException("Only UTF-8 text files are supported.");
         byte[] bytes;
-        try { bytes = Utf8.GetBytes(text); }
+        try
+        { bytes = Utf8.GetBytes(text); }
         catch (EncoderFallbackException) { throw new WorkspaceException("Content is not valid UTF-8 text."); }
         if (bytes.Length + (bom ? 3 : 0) > MaxFileBytes)
             throw new WorkspaceException("Content exceeds the 256 KiB UTF-8 byte limit.");
@@ -181,19 +197,22 @@ internal sealed class ProjectWorkspace
         var start = 0;
         for (var i = 0; i < text.Length; i++)
         {
-            if (text[i] != '\n') continue;
+            if (text[i] != '\n')
+                continue;
             var crlf = i > start && text[i - 1] == '\r';
             result.Add(new TextLine(text[start..(crlf ? i - 1 : i)], crlf ? "\r\n" : "\n"));
             start = i + 1;
         }
-        if (start < text.Length) result.Add(new TextLine(text[start..], ""));
+        if (start < text.Length)
+            result.Add(new TextLine(text[start..], ""));
         return result;
     }
 
     internal static string Clip(string text, int maximum)
     {
         var length = Math.Min(text.Length, maximum);
-        if (length > 0 && length < text.Length && char.IsHighSurrogate(text[length - 1])) length--;
+        if (length > 0 && length < text.Length && char.IsHighSurrogate(text[length - 1]))
+            length--;
         return text[..length];
     }
 

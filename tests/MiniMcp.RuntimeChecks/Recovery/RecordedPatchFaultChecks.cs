@@ -24,7 +24,8 @@ internal static class RecordedPatchFaultChecks
                 var failure = new IOException("Injected mixed installation failure.");
                 using var fixture = new Fixture((stage, index) =>
                 {
-                    if ((stage, index) != boundary) return Task.CompletedTask;
+                    if ((stage, index) != boundary)
+                        return Task.CompletedTask;
                     cancelled.Cancel();
                     return Task.FromException(failure);
                 });
@@ -135,7 +136,8 @@ internal static class RecordedPatchFaultChecks
                     await Reject<IOException>(() => fixture.Service.CommitWithRecoveryAsync(plan, store));
                     Assert(engineCalls == 0 && original.SequenceEqual(fixture.ProjectSnapshot()) && journal.SequenceEqual(JournalSnapshot(fixture)), "Quota rejection creates no lock, record or workspace staging");
                 }
-                else await VerifyAsync(store, await fixture.Service.CommitWithRecoveryAsync(plan, store));
+                else
+                    await VerifyAsync(store, await fixture.Service.CommitWithRecoveryAsync(plan, store));
                 Assert(Directory.EnumerateDirectories(fixture.Storage).Count() == 1000 && File.ReadAllText(Path.Combine(fixture.Storage, "foreign-0", "keep")) == "operator data", "No old record evicted or changed");
             }
         });
@@ -147,14 +149,16 @@ internal static class RecordedPatchFaultChecks
                 Fixture? fixtureRef = null;
                 using var fixture = new Fixture((stage, _) =>
                 {
-                    if (!beforeEngine && stage == PatchCommitStage.BeforeVerification) AddSlots(fixtureRef!, 1000);
+                    if (!beforeEngine && stage == PatchCommitStage.BeforeVerification)
+                        AddSlots(fixtureRef!, 1000);
                     return Task.CompletedTask;
                 });
                 fixtureRef = fixture;
                 var armed = true;
                 var store = fixture.Store(replacement: (stage, _) =>
                 {
-                    if (beforeEngine && armed && stage == RecoveryManifestReplacementStage.BeforeTemporaryFile) { armed = false; AddSlots(fixture, 1000); }
+                    if (beforeEngine && armed && stage == RecoveryManifestReplacementStage.BeforeTemporaryFile)
+                    { armed = false; AddSlots(fixture, 1000); }
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
@@ -207,7 +211,8 @@ internal static class RecordedPatchFaultChecks
                     {
                         var error = await Reject<RecoveryFinalizationException>(() => fixture.Service.CommitWithRecoveryAsync(plan, store));
                         Assert(error.Outcome.VerifiedState == PatchCommitState.Committed && fixture.Get("sample.md") == "new\n" && !error.Record.IsInvalidated, "Busy final save preserves a retryable record and actual install");
-                        held!.Dispose(); held = null;
+                        held!.Dispose();
+                        held = null;
                         await store.CompleteAsync(error.Record, plan, error.Outcome);
                         await VerifyAsync(store, new(error.Record, error.Outcome));
                     }
@@ -225,9 +230,12 @@ internal static class RecordedPatchFaultChecks
                 string[]? foreign = null;
                 var store = fixture.Store(replacement: (stage, _) =>
                 {
-                    if (stage != RecoveryManifestReplacementStage.BeforeTemporaryFile) return Task.CompletedTask;
-                    if (tamper == "state") File.WriteAllBytes(fixture.ManifestPath, RecoveryManifestJson.Serialize(fixture.ReadManifest() with { State = RecoveryRecordState.Incomplete }));
-                    else if (tamper == "backup") File.WriteAllText(Path.Combine(fixture.RecordDirectories().Single(), "before-0000.bin"), "bad\n");
+                    if (stage != RecoveryManifestReplacementStage.BeforeTemporaryFile)
+                        return Task.CompletedTask;
+                    if (tamper == "state")
+                        File.WriteAllBytes(fixture.ManifestPath, RecoveryManifestJson.Serialize(fixture.ReadManifest() with { State = RecoveryRecordState.Incomplete }));
+                    else if (tamper == "backup")
+                        File.WriteAllText(Path.Combine(fixture.RecordDirectories().Single(), "before-0000.bin"), "bad\n");
                     else
                     {
                         var bytes = File.ReadAllBytes(fixture.ManifestPath);
@@ -252,7 +260,8 @@ internal static class RecordedPatchFaultChecks
             var failure = new IOException("Injected preparation failure with foreign occupancy.");
             var store = fixture.Store(prepare: (stage, draft) =>
             {
-                if (stage != RecoveryPreparationStage.BeforeManifest) return Task.CompletedTask;
+                if (stage != RecoveryPreparationStage.BeforeManifest)
+                    return Task.CompletedTask;
                 foreign = Path.Combine(fixture.Storage, draft.Manifest.ChangeId.ToString("N"), "operator.txt");
                 File.WriteAllText(foreign, "keep");
                 return Task.FromException(failure);
@@ -272,7 +281,8 @@ internal static class RecordedPatchFaultChecks
             var failure = new IOException("Injected staging failure.");
             using var fixture = new Fixture((stage, _) =>
             {
-                if (stage != PatchCommitStage.Staged) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Staged)
+                    return Task.CompletedTask;
                 occupied = fixtureRef!.Artifacts().First(path => path.EndsWith(".tmp", StringComparison.Ordinal));
                 File.Move(occupied, Path.Combine(fixtureRef.DirectoryPath, "detached-stage"));
                 Directory.CreateDirectory(occupied);
@@ -293,7 +303,8 @@ internal static class RecordedPatchFaultChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, index) =>
             {
-                if (stage != PatchCommitStage.Installed || index != 4) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed || index != 4)
+                    return Task.CompletedTask;
                 File.Delete(fixtureRef!.Path("sample.md"));
                 Directory.CreateDirectory(fixtureRef.Path("sample.md"));
                 return Task.FromException(new IOException("Injected rollback occupancy."));
@@ -314,7 +325,8 @@ internal static class RecordedPatchFaultChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, _) =>
             {
-                if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed)
+                    return Task.CompletedTask;
                 var backup = fixtureRef!.Artifacts().Single(path => path.EndsWith(".bak", StringComparison.Ordinal));
                 File.Move(backup, Path.Combine(fixtureRef.DirectoryPath, "saved-engine-original"));
                 Directory.CreateDirectory(backup);
@@ -337,8 +349,10 @@ internal static class RecordedPatchFaultChecks
                     Fixture? fixtureRef = null;
                     using var fixture = new Fixture((stage, _) =>
                     {
-                        if (stage != PatchCommitStage.Installed || terminal == PatchCommitState.Committed) return Task.CompletedTask;
-                        if (terminal == PatchCommitState.Incomplete) { File.Delete(fixtureRef!.Path("sample.md")); Directory.CreateDirectory(fixtureRef.Path("sample.md")); }
+                        if (stage != PatchCommitStage.Installed || terminal == PatchCommitState.Committed)
+                            return Task.CompletedTask;
+                        if (terminal == PatchCommitState.Incomplete)
+                        { File.Delete(fixtureRef!.Path("sample.md")); Directory.CreateDirectory(fixtureRef.Path("sample.md")); }
                         return Task.FromException(new IOException("Injected engine failure before final save."));
                     });
                     fixtureRef = fixture;
@@ -352,7 +366,8 @@ internal static class RecordedPatchFaultChecks
                         {
                             finishing = fixture.ReadManifest().State == RecoveryRecordState.Applying;
                         }
-                        if (finishing && failOnce && stage == boundary) { failOnce = false; return Task.FromException(failure); }
+                        if (finishing && failOnce && stage == boundary)
+                        { failOnce = false; return Task.FromException(failure); }
                         return Task.CompletedTask;
                     });
                     var plan = await fixture.Plan();
@@ -376,7 +391,8 @@ internal static class RecordedPatchFaultChecks
                         await store.CompleteAsync(error.Record, plan, error.Outcome);
                         await VerifyAsync(store, new(error.Record, error.Outcome));
                     }
-                    else Assert(error.InnerException is RecoveryManifestReplacementException replacement && ReferenceEquals(replacement.InnerException, failure), "Uncertain replacement retains its original cause");
+                    else
+                        Assert(error.InnerException is RecoveryManifestReplacementException replacement && ReferenceEquals(replacement.InnerException, failure), "Uncertain replacement retains its original cause");
                 }
         });
 
@@ -387,8 +403,10 @@ internal static class RecordedPatchFaultChecks
             string? foreign = null;
             var store = fixture.Store(replacement: (stage, path) =>
             {
-                if (stage == RecoveryManifestReplacementStage.BeforeTemporaryFile) finishing = fixture.ReadManifest().State == RecoveryRecordState.Applying;
-                if (!finishing || stage != RecoveryManifestReplacementStage.BeforeReplace) return Task.CompletedTask;
+                if (stage == RecoveryManifestReplacementStage.BeforeTemporaryFile)
+                    finishing = fixture.ReadManifest().State == RecoveryRecordState.Applying;
+                if (!finishing || stage != RecoveryManifestReplacementStage.BeforeReplace)
+                    return Task.CompletedTask;
                 foreign = path;
                 var bytes = File.ReadAllBytes(path);
                 File.Move(path, Path.Combine(fixture.DirectoryPath, "detached-final"));
@@ -408,7 +426,8 @@ internal static class RecordedPatchFaultChecks
             Fixture? fixtureRef = null;
             using var fixture = new Fixture((stage, index) =>
             {
-                if (stage == PatchCommitStage.BeforeInstall && index == 1) fixtureRef!.Put("nested/moved.md", "external destination\n");
+                if (stage == PatchCommitStage.BeforeInstall && index == 1)
+                    fixtureRef!.Put("nested/moved.md", "external destination\n");
                 return Task.CompletedTask;
             });
             fixtureRef = fixture;
@@ -472,10 +491,12 @@ internal static class RecordedPatchFaultChecks
                 Assert(backup.Bytes.AsSpan().SequenceEqual(planned.Bytes.AsSpan()) && before.UnixMode == planned.Mode &&
                     before.ByteLength == backup.Bytes.Length && before.Sha256 == Convert.ToHexString(SHA256.HashData(backup.Bytes.AsSpan())), "Persisted originals retain raw bytes and permissions from before the attempt");
             }
-            if (expected == RecoveryRecordState.Incomplete) continue; // No complete post-state claim for partial rollback/verification.
+            if (expected == RecoveryRecordState.Incomplete)
+                continue; // No complete post-state claim for partial rollback/verification.
             var image = expected == RecoveryRecordState.Committed ? path.After : path.Before;
             var full = Path.Combine(saved.Manifest.ProjectRoot, path.Path);
-            if (image is null) Assert(!File.Exists(full) && !Directory.Exists(full), "Absent path matches the terminal state");
+            if (image is null)
+                Assert(!File.Exists(full) && !Directory.Exists(full), "Absent path matches the terminal state");
             else
             {
                 var bytes = File.ReadAllBytes(full);
@@ -495,7 +516,8 @@ internal static class RecordedPatchFaultChecks
     { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task RejectInvalid(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected corrupt/replaced recovery metadata rejection.");
     }

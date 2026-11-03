@@ -61,8 +61,11 @@ internal static class RecoveryManifestReplacementChecks
                 var addPlan = await fixture.Plan("*** Add File: added.md\n+new");
                 var added = await store.PrepareAsync(addPlan);
                 var path = added.Manifest.Paths[0];
-                var changedRequest = added.Manifest with { State = RecoveryRecordState.Applying,
-                    Paths = [path with { After = path.After! with { UnixMode = path.After!.UnixMode!.Value | UnixFileMode.UserExecute } }] };
+                var changedRequest = added.Manifest with
+                {
+                    State = RecoveryRecordState.Applying,
+                    Paths = [path with { After = path.After! with { UnixMode = path.After!.UnixMode!.Value | UnixFileMode.UserExecute } }]
+                };
                 await Reject<InvalidDataException>(() => store.ReplaceManifestAsync(added, addPlan, changedRequest));
                 Assert(calls == 0 && !fixture.Temporaries(added).Any(), "Only actual observations may replace a creation request, never a different request");
             }
@@ -89,7 +92,8 @@ internal static class RecoveryManifestReplacementChecks
             var store = fixture.Store();
             var plan = await fixture.Plan();
             var record = await store.PrepareAsync(plan);
-            for (var i = 0; i < 999; i++) Directory.CreateDirectory(Path.Combine(fixture.Storage, $"old-{i}"));
+            for (var i = 0; i < 999; i++)
+                Directory.CreateDirectory(Path.Combine(fixture.Storage, $"old-{i}"));
             _ = await store.ReplaceManifestAsync(record, plan, record.Manifest with { State = RecoveryRecordState.Applying });
             Assert(Directory.EnumerateDirectories(fixture.Storage).Count() == 1000 && !fixture.Temporaries(record).Any(), "No extra slot or old-record deletion");
         });
@@ -147,7 +151,8 @@ internal static class RecoveryManifestReplacementChecks
             string? collision = null;
             var store = fixture.Store((stage, path) =>
             {
-                if (stage == RecoveryManifestReplacementStage.BeforeTemporaryFile) { collision = path; File.WriteAllText(path, "foreign data"); }
+                if (stage == RecoveryManifestReplacementStage.BeforeTemporaryFile)
+                { collision = path; File.WriteAllText(path, "foreign data"); }
                 return Task.CompletedTask;
             });
             var plan = await fixture.Plan();
@@ -167,12 +172,18 @@ internal static class RecoveryManifestReplacementChecks
                 RecoveryStore.PreparedRecord? record = null;
                 var store = fixture.Store((stage, path) =>
                 {
-                    if (stage != RecoveryManifestReplacementStage.BeforeReplace) return Task.CompletedTask;
-                    if (kind == "manifest") File.WriteAllText(fixture.Manifest(record!), "external manifest");
-                    else if (kind == "backup") File.WriteAllText(Path.Combine(record!.DirectoryPath, "before-0000.bin"), "bad\n");
-                    else if (kind == "temporary") File.WriteAllText(path, "corrupt temporary");
-                    else if (kind == "temporary-replaced") { var bytes = File.ReadAllBytes(path); File.Move(path, Path.Combine(fixture.DirectoryPath, "detached")); File.WriteAllBytes(path, bytes); }
-                    else File.WriteAllText(Path.Combine(record!.DirectoryPath, "foreign"), "preserve");
+                    if (stage != RecoveryManifestReplacementStage.BeforeReplace)
+                        return Task.CompletedTask;
+                    if (kind == "manifest")
+                        File.WriteAllText(fixture.Manifest(record!), "external manifest");
+                    else if (kind == "backup")
+                        File.WriteAllText(Path.Combine(record!.DirectoryPath, "before-0000.bin"), "bad\n");
+                    else if (kind == "temporary")
+                        File.WriteAllText(path, "corrupt temporary");
+                    else if (kind == "temporary-replaced")
+                    { var bytes = File.ReadAllBytes(path); File.Move(path, Path.Combine(fixture.DirectoryPath, "detached")); File.WriteAllBytes(path, bytes); }
+                    else
+                        File.WriteAllText(Path.Combine(record!.DirectoryPath, "foreign"), "preserve");
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
@@ -192,14 +203,16 @@ internal static class RecoveryManifestReplacementChecks
             var outside = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "outside")).FullName;
             File.WriteAllText(Path.Combine(outside, "sentinel"), "outside data");
             var probe = Path.Combine(fixture.DirectoryPath, "probe");
-            try { Directory.CreateSymbolicLink(probe, outside); }
+            try
+            { Directory.CreateSymbolicLink(probe, outside); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows()) { CheckRunner.Skip("Windows symbolic link permission unavailable."); return; }
             Directory.Delete(probe);
             RecoveryStore.PreparedRecord? record = null;
             var detached = Path.Combine(fixture.DirectoryPath, "detached-record");
             var store = fixture.Store((stage, _) =>
             {
-                if (stage == RecoveryManifestReplacementStage.TemporaryWritten) { Directory.Move(record!.DirectoryPath, detached); Directory.CreateSymbolicLink(record.DirectoryPath, outside); }
+                if (stage == RecoveryManifestReplacementStage.TemporaryWritten)
+                { Directory.Move(record!.DirectoryPath, detached); Directory.CreateSymbolicLink(record.DirectoryPath, outside); }
                 return Task.CompletedTask;
             });
             var plan = await fixture.Plan();
@@ -220,7 +233,8 @@ internal static class RecoveryManifestReplacementChecks
                 RecoveryStore.PreparedRecord? record = null;
                 var store = fixture.Store((stage, _) =>
                 {
-                    if (stage == RecoveryManifestReplacementStage.BeforeReplace) File.SetAttributes(fixture.Manifest(record!), FileAttributes.ReadOnly);
+                    if (stage == RecoveryManifestReplacementStage.BeforeReplace)
+                        File.SetAttributes(fixture.Manifest(record!), FileAttributes.ReadOnly);
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
@@ -264,10 +278,13 @@ internal static class RecoveryManifestReplacementChecks
                 RecoveryStore.PreparedRecord? record = null;
                 var store = fixture.Store((stage, _) =>
                 {
-                    if (stage != RecoveryManifestReplacementStage.BeforeReturn) return Task.CompletedTask;
+                    if (stage != RecoveryManifestReplacementStage.BeforeReturn)
+                        return Task.CompletedTask;
                     var path = backup ? Path.Combine(record!.DirectoryPath, "before-0000.bin") : fixture.Manifest(record!);
-                    if (backup) { var bytes = File.ReadAllBytes(path); File.Move(path, Path.Combine(fixture.DirectoryPath, "old-backup")); File.WriteAllBytes(path, bytes); }
-                    else File.WriteAllText(path, "corrupt after rename");
+                    if (backup)
+                    { var bytes = File.ReadAllBytes(path); File.Move(path, Path.Combine(fixture.DirectoryPath, "old-backup")); File.WriteAllBytes(path, bytes); }
+                    else
+                        File.WriteAllText(path, "corrupt after rename");
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
@@ -328,7 +345,8 @@ internal static class RecoveryManifestReplacementChecks
     { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task<Exception> RejectInvalid(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return error; }
         throw new Exception("Expected invalid manifest replacement.");
     }
@@ -351,7 +369,8 @@ internal static class RecoveryManifestReplacementChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
         public RecoveryStore Store(Func<RecoveryManifestReplacementStage, string, Task>? hook = null) => new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(
             new AppSettings { ProjectRoot = Root, BashPath = _bash, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } },

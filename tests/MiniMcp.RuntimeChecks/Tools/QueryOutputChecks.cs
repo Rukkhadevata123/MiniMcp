@@ -29,7 +29,8 @@ internal static class QueryOutputChecks
         foreach (var mode in new[] { "invalid-utf8", "incomplete-utf8", "incomplete-record" })
             await check($"query output: {mode} without truncation remains a protocol error", async () =>
             {
-                try { await RunAsync(mode, 128, 1024, _ => true); }
+                try
+                { await RunAsync(mode, 128, 1024, _ => true); }
                 catch (WorkspaceException error)
                 {
                     Assert(error.Message.Contains(mode == "incomplete-record" ? "incomplete output record" : "invalid UTF-8"),
@@ -94,16 +95,21 @@ internal static class QueryOutputChecks
             byte[] suffix = [0xb8, 0xad, .. Encoding.UTF8.GetBytes("👋\n")];
             await output.WriteAsync(suffix);
         }
-        else if (mode == "invalid-utf8") await output.WriteAsync(new byte[] { 0xff, 10 });
-        else if (mode == "incomplete-utf8") await output.WriteAsync(new byte[] { 0xe4, 0xb8 });
-        else if (mode == "incomplete-record") await output.WriteAsync(Encoding.UTF8.GetBytes("no separator"));
-        else throw new ArgumentException("Unknown query output fixture mode.");
+        else if (mode == "invalid-utf8")
+            await output.WriteAsync(new byte[] { 0xff, 10 });
+        else if (mode == "incomplete-utf8")
+            await output.WriteAsync(new byte[] { 0xe4, 0xb8 });
+        else if (mode == "incomplete-record")
+            await output.WriteAsync(Encoding.UTF8.GetBytes("no separator"));
+        else
+            throw new ArgumentException("Unknown query output fixture mode.");
         await output.FlushAsync();
         return 0;
     }
 
     private static void Assert(bool condition, string message)
     {
-        if (!condition) throw new Exception("Query output check: " + message);
+        if (!condition)
+            throw new Exception("Query output check: " + message);
     }
 }

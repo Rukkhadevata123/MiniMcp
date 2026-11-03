@@ -107,7 +107,8 @@ public sealed class McpRuntime : IAsyncDisposable
     public async Task RestartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        if (configuration.ForRecoveryOnly) throw new InvalidOperationException("Load a complete runtime configuration before restarting the MCP host.");
+        if (configuration.ForRecoveryOnly)
+            throw new InvalidOperationException("Load a complete runtime configuration before restarting the MCP host.");
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
@@ -135,7 +136,8 @@ public sealed class McpRuntime : IAsyncDisposable
             deadline.CancelAfter(ShutdownTimeout);
             if (_tunnel is not null)
             {
-                if (!_tunnel.HasExited) throw new InvalidOperationException("The runtime already owns a running tunnel.");
+                if (!_tunnel.HasExited)
+                    throw new InvalidOperationException("The runtime already owns a running tunnel.");
                 await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
             }
             try
@@ -182,9 +184,11 @@ public sealed class McpRuntime : IAsyncDisposable
 
     private async Task StartCoreAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken)
     {
-        if (configuration.ForRecoveryOnly) throw new InvalidOperationException("Recovery-only configuration cannot start the MCP host; load a complete runtime configuration.");
+        if (configuration.ForRecoveryOnly)
+            throw new InvalidOperationException("Recovery-only configuration cannot start the MCP host; load a complete runtime configuration.");
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_application is not null) throw new InvalidOperationException("The runtime already owns an HTTP host. Stop it before starting again.");
+        if (_application is not null)
+            throw new InvalidOperationException("The runtime already owns an HTTP host. Stop it before starting again.");
 
         var runId = Guid.NewGuid();
         var logProvider = new RuntimeLoggerProvider(_diagnostics, runId);
@@ -255,7 +259,8 @@ public sealed class McpRuntime : IAsyncDisposable
                 Address = _application is null ? null : Snapshot.Address,
                 Error = cancelled ? null : error.Message
             });
-            if (_application is null) _diagnostics.EndRun(runId);
+            if (_application is null)
+                _diagnostics.EndRun(runId);
             throw;
         }
     }
@@ -323,7 +328,8 @@ public sealed class McpRuntime : IAsyncDisposable
         }
         application.MapGet("/healthz", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
         var mcp = application.MapMcp("/mcp");
-        if (authenticationMode == AuthenticationMode.CloudflareAccess) mcp.RequireAuthorization();
+        if (authenticationMode == AuthenticationMode.CloudflareAccess)
+            mcp.RequireAuthorization();
         _configureEndpoints?.Invoke(application);
     }
 
@@ -348,7 +354,8 @@ public sealed class McpRuntime : IAsyncDisposable
         await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
-            if (_disposed) return;
+            if (_disposed)
+                return;
             await StopCoreAsync(cancellationToken).ConfigureAwait(false);
             _disposed = true;
             Publish(Snapshot with { State = RuntimeState.Disposed });
@@ -365,7 +372,8 @@ public sealed class McpRuntime : IAsyncDisposable
     {
         if (_application is null)
         {
-            if (!_disposed) Publish(Snapshot with { State = RuntimeState.Stopped, Address = null, Error = null });
+            if (!_disposed)
+                Publish(Snapshot with { State = RuntimeState.Stopped, Address = null, Error = null });
             return;
         }
         cancellationToken.ThrowIfCancellationRequested();
@@ -448,7 +456,8 @@ public sealed class McpRuntime : IAsyncDisposable
 
     private void ObserveTunnel()
     {
-        if (_tunnel is not { } tunnel || Snapshot.RunId is not { } runId) return;
+        if (_tunnel is not { } tunnel || Snapshot.RunId is not { } runId)
+            return;
         var logger = _logProvider!.CreateLogger("MiniMcp.Tunnel");
         tunnel.Observe((exitCode, error) =>
         {
@@ -489,15 +498,18 @@ public sealed class McpRuntime : IAsyncDisposable
             {
                 if (snapshot.Tunnel.Error is { } failure)
                     _runtimeLogger?.LogError("Tunnel state: {State}. {Error}", snapshot.Tunnel.State, failure);
-                else _runtimeLogger?.LogInformation("Tunnel state: {State}; process: {ProcessId}.", snapshot.Tunnel.State, snapshot.Tunnel.ProcessId);
+                else
+                    _runtimeLogger?.LogInformation("Tunnel state: {State}; process: {ProcessId}.", snapshot.Tunnel.State, snapshot.Tunnel.ProcessId);
             }
         }
     }
 
     private void LogState(RuntimeSnapshot snapshot)
     {
-        if (snapshot.Error is { } error) _runtimeLogger?.LogError("Runtime state: {State}. {Error}", snapshot.State, error);
-        else _runtimeLogger?.LogInformation("Runtime state: {State}.", snapshot.State);
+        if (snapshot.Error is { } error)
+            _runtimeLogger?.LogError("Runtime state: {State}. {Error}", snapshot.State, error);
+        else
+            _runtimeLogger?.LogInformation("Runtime state: {State}.", snapshot.State);
     }
 
     private sealed class CallerControlledLifetime : IHostLifetime

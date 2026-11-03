@@ -33,7 +33,8 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
         }
         finally
         {
-            if (entered) _running.Release();
+            if (entered)
+                _running.Release();
             _capacity.Release();
         }
     }
@@ -197,7 +198,8 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
             start.ArgumentList.Add("--");
             start.ArgumentList.Add(executable);
         }
-        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
 
         // No user rg configuration, Git overrides, pager, preprocessing or injected loader options.
         string[] inheritedNames = ["SystemRoot", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG"];
@@ -208,14 +210,16 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
         }
         if (environment is not null)
         {
-            foreach (var (key, value) in environment) start.Environment[key] = value;
+            foreach (var (key, value) in environment)
+                start.Environment[key] = value;
         }
         return start;
     }
 
     private static QueryFailure ClassifyFailure(bool hasErrors, string diagnostic)
     {
-        if (!hasErrors) return QueryFailure.None;
+        if (!hasErrors)
+            return QueryFailure.None;
 
         if (diagnostic.Contains("regex parse error", StringComparison.OrdinalIgnoreCase) ||
             diagnostic.Contains("regex could not be compiled", StringComparison.OrdinalIgnoreCase))

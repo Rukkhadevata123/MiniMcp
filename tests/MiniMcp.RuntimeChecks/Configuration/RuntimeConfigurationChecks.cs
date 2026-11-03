@@ -13,7 +13,8 @@ internal static class RuntimeConfigurationChecks
         var store = new ConfigurationStore(paths);
         var draft = new AppSettings
         {
-            ProjectRoot = "./project", BashPath = "./tools/bash",
+            ProjectRoot = "./project",
+            BashPath = "./tools/bash",
             Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
         };
         Directory.CreateDirectory(root);
@@ -21,14 +22,17 @@ internal static class RuntimeConfigurationChecks
         Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
         var bash = Path.Combine(temporary, "tools", "bash");
         File.WriteAllText(bash, "Configuration fixture; do not execute.");
-        if (OperatingSystem.IsLinux()) File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (OperatingSystem.IsLinux())
+            File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Runtime configuration assertion failed.");
+            if (!condition)
+                throw new Exception("Runtime configuration assertion failed.");
         }
         async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
         {
-            try { await action(); }
+            try
+            { await action(); }
             catch (TException exception) { return exception; }
             throw new Exception($"Expected {typeof(TException).Name} while loading a runtime configuration.");
         }

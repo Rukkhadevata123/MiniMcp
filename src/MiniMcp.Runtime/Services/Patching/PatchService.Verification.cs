@@ -9,7 +9,8 @@ internal sealed partial class PatchService
     // facts at this point, not permission or a promise that external writers cannot change files later.
     private async Task<PatchCommitOutcome> VerifyOutcomeCoreAsync(PatchPlan plan, PatchCommitOutcome outcome)
     {
-        if (outcome.State == PatchCommitState.Incomplete) return outcome.WithVerification(_outcomeIssuer, [], null);
+        if (outcome.State == PatchCommitState.Incomplete)
+            return outcome.WithVerification(_outcomeIssuer, [], null);
         try
         {
             await Checkpoint(PatchCommitStage.BeforeVerification, -1).ConfigureAwait(false);
@@ -19,29 +20,35 @@ internal sealed partial class PatchService
                 if (outcome.State == PatchCommitState.RolledBack)
                 {
                     await ObserveAsync(change.Source, change.Before?.Bytes, change.Before?.Mode, creation: false).ConfigureAwait(false);
-                    if (change.Source != change.Destination) await ObserveAsync(change.Destination, null, null, creation: false).ConfigureAwait(false);
+                    if (change.Source != change.Destination)
+                        await ObserveAsync(change.Destination, null, null, creation: false).ConfigureAwait(false);
                 }
                 else
                 {
-                    if (change.Source != change.Destination) await ObserveAsync(change.Source, null, null, creation: false).ConfigureAwait(false);
+                    if (change.Source != change.Destination)
+                        await ObserveAsync(change.Source, null, null, creation: false).ConfigureAwait(false);
                     await ObserveAsync(change.Destination, change.After, change.TargetMode(plan),
                         creation: change.Before is null && change.ExactAfterMode is null).ConfigureAwait(false);
                 }
             }
             workspace.Resolve(".");
-            if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root disappeared during outcome verification.");
+            if (!Directory.Exists(workspace.Root))
+                throw new WorkspaceException("The project root disappeared during outcome verification.");
             return outcome.WithVerification(_outcomeIssuer, paths.ToImmutable(), null);
 
             async Task ObserveAsync(string path, ImmutableArray<byte>? expected, UnixFileMode? mode, bool creation)
             {
                 var relative = workspace.Relative(path);
                 workspace.Resolve(relative);
-                if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root disappeared during outcome verification.");
+                if (!Directory.Exists(workspace.Root))
+                    throw new WorkspaceException("The project root disappeared during outcome verification.");
                 for (var parent = Path.GetDirectoryName(path); parent != workspace.Root && parent is not null; parent = Path.GetDirectoryName(parent))
-                    if (File.Exists(parent)) throw new WorkspaceException("A patch parent became a file during outcome verification.");
+                    if (File.Exists(parent))
+                        throw new WorkspaceException("A patch parent became a file during outcome verification.");
                 if (expected is null)
                 {
-                    try { _ = File.GetAttributes(path); }
+                    try
+                    { _ = File.GetAttributes(path); }
                     catch (FileNotFoundException) { paths.Add(new(relative, null)); return; }
                     catch (DirectoryNotFoundException) { paths.Add(new(relative, null)); return; }
                     throw new WorkspaceException("A path expected to be absent is occupied after the patch.");

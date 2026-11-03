@@ -11,7 +11,8 @@ internal sealed class NamedEnumConverter<T> : JsonConverter<T> where T : struct,
         if (reader.TokenType == JsonTokenType.String)
         {
             var name = reader.GetString();
-            if (Enum.TryParse<T>(name, out var value) && Enum.GetName(value) == name) return value;
+            if (Enum.TryParse<T>(name, out var value) && Enum.GetName(value) == name)
+                return value;
         }
         throw new JsonException($"Use an exact {typeof(T).Name} name: {string.Join(", ", Enum.GetNames<T>())}.");
     }

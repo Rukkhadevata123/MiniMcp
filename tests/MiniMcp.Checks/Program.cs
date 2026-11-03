@@ -107,10 +107,12 @@ try
         var file = Path.Combine(root, "format.txt");
         File.WriteAllBytes(file, [0xef, 0xbb, 0xbf, .. Encoding.UTF8.GetBytes("a\r\nb")]);
         var mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(file, mode);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(file, mode);
         await Patch("*** Update File: format.txt\n@@\n-a\n+A\n b");
         Assert(File.ReadAllBytes(file).SequenceEqual(new byte[] { 0xef, 0xbb, 0xbf }.Concat(Encoding.UTF8.GetBytes("A\r\nb"))));
-        if (!OperatingSystem.IsWindows()) Assert(File.GetUnixFileMode(file) == mode);
+        if (!OperatingSystem.IsWindows())
+            Assert(File.GetUnixFileMode(file) == mode);
         await Patch("*** Update File: format.txt\n@@\n+c");
         Assert(Get("format.txt") == "A\r\nb\r\nc");
     });
@@ -262,7 +264,8 @@ try
         {
             using var cancelled = new CancellationTokenSource();
             var running = bash.Value.RunAsync("sleep 30 & printf '%s' \"$!\" > cancel-child.pid; wait", cancellationToken: cancelled.Token);
-            for (var i = 0; i < 200 && !File.Exists(Path.Combine(root, "cancel-child.pid")); i++) await Task.Delay(10);
+            for (var i = 0; i < 200 && !File.Exists(Path.Combine(root, "cancel-child.pid")); i++)
+                await Task.Delay(10);
             cancelled.Cancel();
             await RejectAsync<OperationCanceledException>(() => running);
             await AssertStopped(int.Parse(Get("cancel-child.pid")));
@@ -303,7 +306,8 @@ static async Task AssertStopped(int pid)
         {
             using var child = Process.GetProcessById(pid);
             var stat = $"/proc/{pid}/stat";
-            if (child.HasExited || File.ReadAllText(stat).Contains(") Z ")) return;
+            if (child.HasExited || File.ReadAllText(stat).Contains(") Z "))
+                return;
         }
         catch (ArgumentException) { return; }
         // /proc can disappear after HasExited, including ESRCH during the read itself.
@@ -316,19 +320,22 @@ static async Task AssertStopped(int pid)
 
 static void Assert(bool condition, string message = "Assertion failed.")
 {
-    if (!condition) throw new Exception(message);
+    if (!condition)
+        throw new Exception(message);
 }
 
 static void Reject<TException>(Action action) where TException : Exception
 {
-    try { action(); }
+    try
+    { action(); }
     catch (TException) { return; }
     throw new Exception($"Expected {typeof(TException).Name}.");
 }
 
 static async Task RejectAsync<TException>(Func<Task> action) where TException : Exception
 {
-    try { await action(); }
+    try
+    { await action(); }
     catch (TException) { return; }
     throw new Exception($"Expected {typeof(TException).Name}.");
 }

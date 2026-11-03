@@ -20,7 +20,8 @@ internal sealed class RuntimeLoggerProvider(RuntimeDiagnostics diagnostics, Guid
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (!IsEnabled(logLevel)) return;
+            if (!IsEnabled(logLevel))
+                return;
             string message;
             var truncated = false;
             try
@@ -45,9 +46,12 @@ internal sealed class RuntimeLoggerProvider(RuntimeDiagnostics diagnostics, Guid
                     var count = 0;
                     foreach (var field in fields)
                     {
-                        if (++count > 128) { message = LogSanitizer.Omitted; truncated = true; break; }
-                        if (field.Key.Length > 256) { message = LogSanitizer.Omitted; truncated = true; break; }
-                        if (field.Key == "{OriginalFormat}" || !LogSanitizer.IsSensitiveKey(field.Key)) continue;
+                        if (++count > 128)
+                        { message = LogSanitizer.Omitted; truncated = true; break; }
+                        if (field.Key.Length > 256)
+                        { message = LogSanitizer.Omitted; truncated = true; break; }
+                        if (field.Key == "{OriginalFormat}" || !LogSanitizer.IsSensitiveKey(field.Key))
+                            continue;
                         message = "[log entry redacted: credential field]";
                         break;
                     }

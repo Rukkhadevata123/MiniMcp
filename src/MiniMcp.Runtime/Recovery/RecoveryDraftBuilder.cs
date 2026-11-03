@@ -9,7 +9,8 @@ internal static class RecoveryDraftBuilder
     public static RecoveryDraft Create(Guid runId, PatchPlan plan, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (runId == Guid.Empty) throw new ArgumentException("A run ID is required.", nameof(runId));
+        if (runId == Guid.Empty)
+            throw new ArgumentException("A run ID is required.", nameof(runId));
         ArgumentNullException.ThrowIfNull(plan);
         var operations = ImmutableArray.CreateBuilder<RecoveryOperation>(plan.Changes.Length);
         var paths = ImmutableArray.CreateBuilder<RecoveryPathState>();
@@ -38,7 +39,8 @@ internal static class RecoveryDraftBuilder
                 paths.Add(new(summary.Path, before, null, backupFile));
                 paths.Add(new(destination, null, after, null));
             }
-            else paths.Add(new(summary.Path, before, after, backupFile));
+            else
+                paths.Add(new(summary.Path, before, after, backupFile));
         }
         cancellationToken.ThrowIfCancellationRequested();
         var manifest = new RecoveryManifest(Guid.NewGuid(), runId, plan.Owner.ProjectRoot, DateTimeOffset.UtcNow,

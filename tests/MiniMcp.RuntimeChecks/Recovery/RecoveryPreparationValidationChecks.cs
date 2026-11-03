@@ -86,7 +86,10 @@ internal static class RecoveryPreparationValidationChecks
                 foreach (var entry in Directory.EnumerateFileSystemEntries(detached))
                 {
                     var destination = Path.Combine(path, Path.GetFileName(entry));
-                    if (Directory.Exists(entry)) Directory.Move(entry, destination); else File.Move(entry, destination);
+                    if (Directory.Exists(entry))
+                        Directory.Move(entry, destination);
+                    else
+                        File.Move(entry, destination);
                 }
                 _ = await store.LoadAsync(record.Manifest.ChangeId);
                 var before = fixture.Snapshot();
@@ -116,8 +119,10 @@ internal static class RecoveryPreparationValidationChecks
             await Reject<InvalidDataException>(() => store.RevalidatePreparedAsync(record, plan));
             var state = record.Manifest.Paths[0];
             File.WriteAllText(Path.Combine(record.DirectoryPath, "before-0000.bin"), "alt\n", new UTF8Encoding(false));
-            File.WriteAllBytes(manifestPath, RecoveryManifestJson.Serialize(record.Manifest with {
-                Paths = [state with { Before = state.Before! with { Sha256 = Hash("alt\n") } }] }));
+            File.WriteAllBytes(manifestPath, RecoveryManifestJson.Serialize(record.Manifest with
+            {
+                Paths = [state with { Before = state.Before! with { Sha256 = Hash("alt\n") } }]
+            }));
             _ = await store.LoadAsync(record.Manifest.ChangeId);
             var before = fixture.Snapshot();
             await Reject<InvalidDataException>(() => store.RevalidatePreparedAsync(record, plan));
@@ -133,10 +138,14 @@ internal static class RecoveryPreparationValidationChecks
                 var plan = await fixture.Plan();
                 var record = await store.PrepareAsync(plan);
                 var backup = Path.Combine(record.DirectoryPath, "before-0000.bin");
-                if (kind == "missing") File.Delete(backup);
-                else if (kind == "extra") File.WriteAllText(Path.Combine(record.DirectoryPath, "foreign"), "preserve");
-                else if (kind == "hash") File.WriteAllText(backup, "bad\n");
-                else File.WriteAllText(Path.Combine(record.DirectoryPath, RecoveryStore.ManifestFileName), "{\"state\":");
+                if (kind == "missing")
+                    File.Delete(backup);
+                else if (kind == "extra")
+                    File.WriteAllText(Path.Combine(record.DirectoryPath, "foreign"), "preserve");
+                else if (kind == "hash")
+                    File.WriteAllText(backup, "bad\n");
+                else
+                    File.WriteAllText(Path.Combine(record.DirectoryPath, RecoveryStore.ManifestFileName), "{\"state\":");
                 var before = fixture.Snapshot();
                 await RejectInvalid(() => store.RevalidatePreparedAsync(record, plan));
                 Assert(before.SequenceEqual(fixture.Snapshot()), "Invalid data stays available for inspection");
@@ -170,8 +179,10 @@ internal static class RecoveryPreparationValidationChecks
             try
             {
                 foreach (var file in files)
-                    if (OperatingSystem.IsWindows()) File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
-                    else File.SetUnixFileMode(file, UnixFileMode.UserRead);
+                    if (OperatingSystem.IsWindows())
+                        File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+                    else
+                        File.SetUnixFileMode(file, UnixFileMode.UserRead);
                 await store.RevalidatePreparedAsync(record, plan);
                 using (var held = RecoveryFileSystem.OpenRead(marker))
                 {
@@ -183,8 +194,10 @@ internal static class RecoveryPreparationValidationChecks
             finally
             {
                 foreach (var file in files)
-                    if (OperatingSystem.IsWindows()) File.SetAttributes(file, FileAttributes.Normal);
-                    else File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                    if (OperatingSystem.IsWindows())
+                        File.SetAttributes(file, FileAttributes.Normal);
+                    else
+                        File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
         });
 
@@ -219,7 +232,8 @@ internal static class RecoveryPreparationValidationChecks
     { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task RejectInvalid(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected invalid prepared record.");
     }
@@ -242,7 +256,8 @@ internal static class RecoveryPreparationValidationChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
         public RecoveryStore Store(Func<RecoveryLoadingStage, Task>? hook = null) => new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(
             new AppSettings { ProjectRoot = Root, BashPath = _bash, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } },

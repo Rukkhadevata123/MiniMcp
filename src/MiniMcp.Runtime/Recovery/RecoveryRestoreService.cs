@@ -27,7 +27,8 @@ internal sealed class RecoveryRestorePlan
     {
         if (!ReferenceEquals(owner, _owner) || !ReferenceEquals(issuer, _issuer))
             throw new InvalidOperationException("The restore plan belongs to another session or restore coordinator.");
-        if (Volatile.Read(ref _started) != 0) throw new InvalidOperationException("This one-time restore plan has already been used; obtain a new preview.");
+        if (Volatile.Read(ref _started) != 0)
+            throw new InvalidOperationException("This one-time restore plan has already been used; obtain a new preview.");
     }
     internal void Start(RecoveryRestoreService owner, object issuer)
     {
@@ -64,7 +65,8 @@ internal sealed class RecoveryRestoreService
 
     public async Task<RecoveryRestorePlan> PrepareAsync(Guid changeId, CancellationToken cancellationToken = default)
     {
-        if (changeId == Guid.Empty) throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
+        if (changeId == Guid.Empty)
+            throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
         EnsureWritable();
         await _workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try

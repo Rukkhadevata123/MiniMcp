@@ -41,19 +41,23 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
                 {
                     token.ThrowIfCancellationRequested();
                     var parsed = ParseStatusRecord(record, notices);
-                    if (parsed is null) return true;
+                    if (parsed is null)
+                        return true;
                     var relative = SafeResultPath(parsed.Value.Path, scope, notices);
-                    if (relative is null) return true;
+                    if (relative is null)
+                        return true;
                     var status = parsed.Value.Status;
                     var entry = new GitStatusEntry(relative, status[..1], status.Substring(1, 1));
                     var cost = JsonSerializer.SerializeToUtf8Bytes(entry).Length + 1;
-                    if (entries.Count == maxEntries || bytes + cost > QueryText.MaxResultBytes - 8192) return false;
+                    if (entries.Count == maxEntries || bytes + cost > QueryText.MaxResultBytes - 8192)
+                        return false;
                     entries.Add(entry);
                     bytes += cost;
                     return true;
                 }, token: token).ConfigureAwait(false);
             GitRepository.CheckResult(result, allowLimited: true);
-            if (result.OutputLimited) notices.Add("EntryOrOutputLimit");
+            if (result.OutputLimited)
+                notices.Add("EntryOrOutputLimit");
             return new GitStatusResult(scope, entries.ToImmutableArray(), notices.Count == 0, result.OutputLimited, Notices(notices));
         }, cancellationToken);
     }
@@ -67,7 +71,8 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
             var notices = new HashSet<string>();
             var metadata = await ReadDiffCandidatesAsync(repository, scope, staged, maxFiles, notices, token).ConfigureAwait(false);
             var truncated = metadata.OutputLimited;
-            if (truncated) notices.Add("FileOrMetadataLimit");
+            if (truncated)
+                notices.Add("FileOrMetadataLimit");
 
             var files = new List<GitDiffFile>();
             var linesRemaining = maxLines;
@@ -117,10 +122,12 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
                     {
                         token.ThrowIfCancellationRequested();
                         var display = QueryText.Display(ProjectWorkspace.Clip(line.TrimEnd('\r'), 2000));
-                        if (line.Length > 2000 || display.Length > 2000) notices.Add("LinePreviewsClipped");
+                        if (line.Length > 2000 || display.Length > 2000)
+                            notices.Add("LinePreviewsClipped");
                         display = ProjectWorkspace.Clip(display, 2000);
                         var cost = JsonSerializer.SerializeToUtf8Bytes(display).Length + 1;
-                        if (linesRemaining == 0 || bytes + cost > QueryText.MaxResultBytes - 8192) return false;
+                        if (linesRemaining == 0 || bytes + cost > QueryText.MaxResultBytes - 8192)
+                            return false;
                         linesRemaining--;
                         bytes += cost;
                         lines.Add(display);
@@ -166,25 +173,30 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
                 {
                     token.ThrowIfCancellationRequested();
                     fields.Add(value);
-                    if (fields.Count < 4) return true;
+                    if (fields.Count < 4)
+                        return true;
                     var entry = ParseLogEntry(fields, notices);
                     fields.Clear();
                     var cost = JsonSerializer.SerializeToUtf8Bytes(entry).Length + 1;
-                    if (commits.Count == maxCount || bytes + cost > QueryText.MaxResultBytes - 8192) return false;
+                    if (commits.Count == maxCount || bytes + cost > QueryText.MaxResultBytes - 8192)
+                        return false;
                     commits.Add(entry);
                     bytes += cost;
                     return true;
                 }, token: token).ConfigureAwait(false);
             GitRepository.CheckResult(result, allowLimited: true);
-            if (fields.Count != 0 && !result.OutputLimited) throw new WorkspaceException("Git returned incomplete commit metadata.");
-            if (result.OutputLimited) notices.Add("CommitOrOutputLimit");
+            if (fields.Count != 0 && !result.OutputLimited)
+                throw new WorkspaceException("Git returned incomplete commit metadata.");
+            if (result.OutputLimited)
+                notices.Add("CommitOrOutputLimit");
             return new GitLogResult(scope, head, commits.ToImmutableArray(), notices.Count == 0, result.OutputLimited, Notices(notices));
         }, cancellationToken);
     }
 
     private static (string Path, string Status)? ParseStatusRecord(string record, HashSet<string> notices)
     {
-        if (record.StartsWith("? ", StringComparison.Ordinal)) return (record[2..], "??");
+        if (record.StartsWith("? ", StringComparison.Ordinal))
+            return (record[2..], "??");
 
         if (!record.StartsWith("1 ", StringComparison.Ordinal) && !record.StartsWith("u ", StringComparison.Ordinal))
             throw new WorkspaceException("Git returned an unsupported status record (renames must be disabled).");
@@ -231,13 +243,15 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
             var fields = pending;
             pending = null;
             var relative = SafeResultPath(record, scope, notices);
-            if (relative is null) return true;
+            if (relative is null)
+                return true;
             if (!RegularMode(fields[0][1..]) || !RegularMode(fields[1]) || fields[4] is "U" or "X")
             {
                 notices.Add("NonRegularOrUnmergedChangesSkipped");
                 return true;
             }
-            if (candidates.Count == maxFiles) return false;
+            if (candidates.Count == maxFiles)
+                return false;
             candidates.Add(new(relative, fields[4], fields[2], fields[3]));
             return true;
         }
@@ -261,7 +275,8 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
                     return true;
                 }, token).ConfigureAwait(false);
             GitRepository.CheckResult(result);
-            if (length is null) throw new WorkspaceException("Git returned no object size metadata.");
+            if (length is null)
+                throw new WorkspaceException("Git returned no object size metadata.");
             oversized |= length > ProjectWorkspace.MaxFileBytes;
         }
         return oversized;
@@ -278,10 +293,12 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
                 head = value;
                 return true;
             }, token).ConfigureAwait(false);
-        if (result.ExitCode == 1 && !result.HasErrors && !result.OutputLimited) return null;
+        if (result.ExitCode == 1 && !result.HasErrors && !result.OutputLimited)
+            return null;
 
         GitRepository.CheckResult(result);
-        if (head is null) throw new WorkspaceException("Git returned no HEAD metadata.");
+        if (head is null)
+            throw new WorkspaceException("Git returned no HEAD metadata.");
         return head;
     }
 
@@ -297,7 +314,8 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
     private static string DisplayLogField(string input, HashSet<string> notices)
     {
         var text = QueryText.Display(ProjectWorkspace.Clip(input, 2000));
-        if (input.Length > 2000 || text.Length > 2000) notices.Add("CommitMetadataClipped");
+        if (input.Length > 2000 || text.Length > 2000)
+            notices.Add("CommitMetadataClipped");
         return ProjectWorkspace.Clip(text, 2000);
     }
 
@@ -345,7 +363,8 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
         var full = workspace.Resolve(path);
         if (!File.Exists(full))
         {
-            if (Directory.Exists(full)) throw new WorkspaceException("A diff file path is occupied by a directory.");
+            if (Directory.Exists(full))
+                throw new WorkspaceException("A diff file path is occupied by a directory.");
             return null;
         }
         using var stream = RecoveryFileSystem.OpenSharedRead(full);
@@ -353,7 +372,8 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
         var length = stream.Length;
         token.ThrowIfCancellationRequested();
         // Observe bytes for a stable result even when an editor preserves the file's timestamp.
-        if (length > ProjectWorkspace.MaxFileBytes) return new(identity, length, "", null);
+        if (length > ProjectWorkspace.MaxFileBytes)
+            return new(identity, length, "", null);
         var image = await workspace.SnapshotRegularAsync(full, token).ConfigureAwait(false);
         return new(identity, length, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(image.Bytes.AsSpan())), image.Mode);
     }

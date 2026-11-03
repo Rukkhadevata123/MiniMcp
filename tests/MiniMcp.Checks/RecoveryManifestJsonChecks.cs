@@ -139,7 +139,8 @@ internal static class RecoveryManifestJsonChecks
         await check("recovery JSON bounds operation and path arrays and rejects missing collections or null elements", async () =>
         {
             using var fixture = new Fixture();
-            for (var i = 0; i < 64; i++) fixture.Put($"file{i}.md", "old\n");
+            for (var i = 0; i < 64; i++)
+                fixture.Put($"file{i}.md", "old\n");
             var plan = await fixture.Prepare(string.Join('\n', Enumerable.Range(0, 64).Select(i => $"*** Update File: file{i}.md\n*** Move to: moved/file{i}.md")));
             var manifest = RecoveryDraftBuilder.Create(Guid.NewGuid(), plan).Manifest;
             var parsed = RecoveryManifestJson.Parse(RecoveryManifestJson.Serialize(manifest));
@@ -167,8 +168,11 @@ internal static class RecoveryManifestJsonChecks
             var manifest = await fixture.Manifest();
             var initial = RecoveryManifestJson.Serialize(manifest);
             // Exercise byte framing independently of the later topology/path validation layer.
-            var exact = manifest with { Operations = [manifest.Operations[0] with
-                { Path = manifest.Operations[0].Path + new string('a', RecoveryManifestJson.MaxManifestBytes - initial.Length) }] };
+            var exact = manifest with
+            {
+                Operations = [manifest.Operations[0] with
+                { Path = manifest.Operations[0].Path + new string('a', RecoveryManifestJson.MaxManifestBytes - initial.Length) }]
+            };
             var bytes = RecoveryManifestJson.Serialize(exact);
             Assert(bytes.Length == RecoveryManifestJson.MaxManifestBytes && RecoveryManifestJson.Parse(bytes).Operations.Length == 1, "Exact encoded boundary");
             Reject(() => RecoveryManifestJson.Serialize(exact with { Operations = [exact.Operations[0] with { Path = exact.Operations[0].Path + "a" }] }));
@@ -199,7 +203,9 @@ internal static class RecoveryManifestJsonChecks
     private static JsonException Reject(byte[] bytes) => Reject(() => RecoveryManifestJson.Parse(bytes));
     private static JsonException Reject(Action action)
     {
-        try { action(); } catch (JsonException error) { return error; }
+        try
+        { action(); }
+        catch (JsonException error) { return error; }
         throw new Exception("Expected invalid recovery manifest rejection.");
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery JSON: " + message); }

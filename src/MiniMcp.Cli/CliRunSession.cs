@@ -16,7 +16,8 @@ internal static class CliRunSession
 
         void CancelStartup()
         {
-            if (startupCancellation.IsCancellationRequested) return;
+            if (startupCancellation.IsCancellationRequested)
+                return;
             cancellingStartup = startupCancellation.CancelAsync();
             Observe(cancellingStartup);
         }
@@ -38,7 +39,8 @@ internal static class CliRunSession
             {
                 if (budget.Started.Task.IsCompleted)
                     await starting.WaitAsync(budget.CleanupRemaining).ConfigureAwait(false);
-                else await starting.ConfigureAwait(false);
+                else
+                    await starting.ConfigureAwait(false);
                 started = true;
             }
             catch (Exception exception)
@@ -77,8 +79,10 @@ internal static class CliRunSession
         {
             // A startup that ignores cancellation remains owned by Runtime. The CLI may stop
             // waiting, but never hides a late exception or disposes its token source too early.
-            if (!starting.IsCompleted) CancelStartup();
-            if (starting.IsCompleted && cancellingStartup.IsCompleted) startupCancellation.Dispose();
+            if (!starting.IsCompleted)
+                CancelStartup();
+            if (starting.IsCompleted && cancellingStartup.IsCompleted)
+                startupCancellation.Dispose();
             else
             {
                 _ = Task.WhenAll(starting, cancellingStartup).ContinueWith(task =>
@@ -107,7 +111,8 @@ internal static class CliRunSession
     {
         var failed = !cleaned || runtime.Snapshot.FaultCount != 0 || presentation.HadFault ||
             presentation.OutputFailed || (problem is not null && !cancelledStartup);
-        if (failed) return CliExitCodes.Failure;
+        if (failed)
+            return CliExitCodes.Failure;
         return cancelledStartup ? CliExitCodes.Cancelled : CliExitCodes.Success;
     }
 
@@ -117,8 +122,10 @@ internal static class CliRunSession
         if (!cleaned)
             return $"启动或停止失败：清理尚未完成，请核对受管进程与修改记录。{detail}";
 
-        if (code == CliExitCodes.Cancelled) return "启动已取消；清理完成。";
-        if (code == CliExitCodes.Success) return "已停止。";
+        if (code == CliExitCodes.Cancelled)
+            return "启动已取消；清理完成。";
+        if (code == CliExitCodes.Success)
+            return "已停止。";
 
         if (problem is not null || presentation.OutputFailed)
             return $"启动或停止失败：{detail}；清理完成。";

@@ -55,7 +55,8 @@ internal sealed partial class RecoveryStore
         ArgumentNullException.ThrowIfNull(replacement);
         RecoveryManifestValidator.Validate(replacement, _configuration.Settings.ProjectRoot, original.ChangeId);
         var bytes = RecoveryManifestJson.Serialize(replacement);
-        if (replacement.Paths.Length != original.Paths.Length) throw new InvalidDataException("Replacement path states must match the prepared record.");
+        if (replacement.Paths.Length != original.Paths.Length)
+            throw new InvalidDataException("Replacement path states must match the prepared record.");
         // Only status and actual permissions for newly created files can vary. Approval/state policy
         // and observation of those permissions belong to the caller, never to untrusted tool arguments.
         var normalized = replacement with
@@ -141,7 +142,8 @@ internal sealed partial class RecoveryStore
         {
             // An attempted rename may have changed persistent state even if it reported an error.
             // Preserve all evidence in that case; never roll back or delete an uncertain manifest.
-            if (attempted) throw new RecoveryManifestReplacementException(true, path, failure, []);
+            if (attempted)
+                throw new RecoveryManifestReplacementException(true, path, failure, []);
             var errors = ImmutableArray.CreateBuilder<Exception>();
             if (files.Count != 0)
             {
@@ -161,7 +163,8 @@ internal sealed partial class RecoveryStore
                     errors.Add(error);
                 }
             }
-            if (errors.Count != 0) throw new RecoveryManifestReplacementException(false, path, failure, errors.ToImmutable());
+            if (errors.Count != 0)
+                throw new RecoveryManifestReplacementException(false, path, failure, errors.ToImmutable());
             throw;
         }
     }
@@ -189,10 +192,13 @@ internal sealed partial class RecoveryStore
         bool flush, CancellationToken cancellationToken)
     {
         using var stream = flush ? RecoveryFileSystem.OpenFile(path, FileMode.Open) : RecoveryFileSystem.OpenRead(path);
-        if (RecoveryFileSystem.FileIdentity(stream) != identity) throw new IOException("The recovery manifest file identity changed.");
-        if (flush) stream.Flush(flushToDisk: true);
+        if (RecoveryFileSystem.FileIdentity(stream) != identity)
+            throw new IOException("The recovery manifest file identity changed.");
+        if (flush)
+            stream.Flush(flushToDisk: true);
         await VerifyAsync(stream, expected, cancellationToken).ConfigureAwait(false);
-        if (RecoveryFileSystem.FileIdentity(stream) != identity) throw new IOException("The recovery manifest file changed during verification.");
+        if (RecoveryFileSystem.FileIdentity(stream) != identity)
+            throw new IOException("The recovery manifest file changed during verification.");
     }
 
     private Task ReplacementCheckpoint(RecoveryManifestReplacementStage stage, string temporary) =>

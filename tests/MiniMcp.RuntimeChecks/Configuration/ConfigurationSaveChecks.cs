@@ -25,17 +25,22 @@ internal static class ConfigurationSaveChecks
                     Directory.CreateDirectory(root);
                     await action();
                 }
-                finally { CheckRunner.Cleanup(temporary, () =>
-                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }); }
+                finally
+                {
+                    CheckRunner.Cleanup(temporary, () =>
+                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); });
+                }
             });
         }
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Configuration save assertion failed.");
+            if (!condition)
+                throw new Exception("Configuration save assertion failed.");
         }
         async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
         {
-            try { await action(); }
+            try
+            { await action(); }
             catch (TException exception) { return exception; }
             throw new Exception($"Expected {typeof(TException).Name} while saving configuration.");
         }
@@ -150,7 +155,8 @@ internal static class ConfigurationSaveChecks
                         locked = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
                         return Task.CompletedTask;
                     });
-                    try { await Reject<ConfigurationSaveException>(() => lockedStore.SaveSettingsAsync(original)); }
+                    try
+                    { await Reject<ConfigurationSaveException>(() => lockedStore.SaveSettingsAsync(original)); }
                     finally { locked?.Dispose(); }
                     Assert((await File.ReadAllBytesAsync(source)).SequenceEqual(oldBytes));
                 }
@@ -176,7 +182,8 @@ internal static class ConfigurationSaveChecks
                 }
                 Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
                 await File.WriteAllTextAsync(paths.PolicyFile, """{"mode":"Unknown"}""");
-                try { await Reject<ConfigurationLoadException>(() => store.SaveSettingsAsync(original)); }
+                try
+                { await Reject<ConfigurationLoadException>(() => store.SaveSettingsAsync(original)); }
                 finally { await File.WriteAllTextAsync(paths.PolicyFile, "{}"); }
                 Assert((await File.ReadAllBytesAsync(source)).SequenceEqual(oldBytes));
                 NoTemporaryFiles();

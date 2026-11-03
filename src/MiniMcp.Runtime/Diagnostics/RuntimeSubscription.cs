@@ -35,8 +35,10 @@ public sealed class RuntimeSubscription<T> : IDisposable
         var registration = cancellationToken.UnsafeRegister(static value => ((RuntimeSubscription<T>)value!).Dispose(), this);
         lock (_gate)
         {
-            if (_closed) registration.Unregister();
-            else _cancellation = registration;
+            if (_closed)
+                registration.Unregister();
+            else
+                _cancellation = registration;
         }
     }
 
@@ -50,13 +52,16 @@ public sealed class RuntimeSubscription<T> : IDisposable
     {
         lock (_gate)
         {
-            if (_closed) return;
+            if (_closed)
+                return;
             _closed = true;
             // Never wait for a callback that may be waiting for the publisher's lock.
             _cancellation.Unregister();
         }
         _remove(this);
         _channel.Writer.TryComplete();
-        if (discardPending) while (_channel.Reader.TryRead(out _)) { }
+        if (discardPending)
+            while (_channel.Reader.TryRead(out _))
+            { }
     }
 }

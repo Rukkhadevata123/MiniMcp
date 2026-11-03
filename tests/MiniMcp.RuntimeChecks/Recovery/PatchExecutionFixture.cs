@@ -22,7 +22,8 @@ internal sealed class PatchExecutionFixture : IDisposable
         var paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
         Configuration = new ConfigurationValidator(paths).Validate(new AppSettings
         {
-            ProjectRoot = Root, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local },
+            ProjectRoot = Root,
+            Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local },
             BashPath = mode == ExecutionMode.ReadOnly ? "" : ExternalProgramLocator.FindBash(Environment.GetEnvironmentVariable("MINIMCP_TEST_BASH_PATH") ?? "",
                 Path.Combine(DirectoryPath, "settings.json")) ?? throw new Exception("Bash required for editing-mode checks.")
         }, Path.Combine(DirectoryPath, "settings.json"), new ExecutionPolicy { Mode = mode, ProjectEditLimits = limits ?? new() });
@@ -75,7 +76,8 @@ internal sealed class PatchExecutionFixture : IDisposable
         var directory = Path.GetFullPath(DirectoryPath);
         if (!string.Equals(Path.GetDirectoryName(directory), Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
-            !Path.GetFileName(directory).StartsWith("minimcp-patch-execution-", StringComparison.Ordinal)) throw new IOException("Unexpected test cleanup path.");
+            !Path.GetFileName(directory).StartsWith("minimcp-patch-execution-", StringComparison.Ordinal))
+            throw new IOException("Unexpected test cleanup path.");
         CheckRunner.Cleanup(directory, () => CheckRunner.DeleteTemporaryDirectory(directory));
     }
 }

@@ -39,7 +39,8 @@ internal sealed partial class ProcessLifetime
             var inherited = new[] { input.ClientSafePipeHandle.DangerousGetHandle(),
                 output.ClientSafePipeHandle.DangerousGetHandle(), error.ClientSafePipeHandle.DangerousGetHandle() };
             handles = Marshal.AllocHGlobal(IntPtr.Size * inherited.Length);
-            for (var index = 0; index < inherited.Length; index++) Marshal.WriteIntPtr(handles, index * IntPtr.Size, inherited[index]);
+            for (var index = 0; index < inherited.Length; index++)
+                Marshal.WriteIntPtr(handles, index * IntPtr.Size, inherited[index]);
             if (!UpdateProcThreadAttribute(attributes, 0, 0x20002, handles,
                 (nuint)(IntPtr.Size * inherited.Length), IntPtr.Zero, IntPtr.Zero))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -50,15 +51,19 @@ internal sealed partial class ProcessLifetime
                     Size = Marshal.SizeOf<StartupInformationEx>(),
                     Flags = 0x100 | (!start.CreateNoWindow ? 0x1u : 0u), // Standard handles; hidden new console for controlled checks.
                     ShowWindow = 0,
-                    StandardInput = inherited[0], StandardOutput = inherited[1], StandardError = inherited[2]
+                    StandardInput = inherited[0],
+                    StandardOutput = inherited[1],
+                    StandardError = inherited[2]
                 },
                 Attributes = attributes
             };
             environment = Marshal.StringToHGlobalUni(string.Join('\0', start.Environment
                 .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(pair => pair.Key + "=" + pair.Value)) + "\0\0");
             var arguments = new StringBuilder(QuoteArgument(start.FileName));
-            foreach (var argument in start.ArgumentList) arguments.Append(' ').Append(QuoteArgument(argument));
-            if (arguments.Length >= 32767) throw new IOException("The managed process command line is too long.");
+            foreach (var argument in start.ArgumentList)
+                arguments.Append(' ').Append(QuoteArgument(argument));
+            if (arguments.Length >= 32767)
+                throw new IOException("The managed process command line is too long.");
 
             // Hidden console creation does not suppress Windows loader error dialogs. Keep this
             // synchronous scope on the same thread and preserve the caller's other error flags.
@@ -84,12 +89,15 @@ internal sealed partial class ProcessLifetime
             if (startError is not null && restoreError is not null)
                 throw new AggregateException("Process creation and thread error mode restoration both failed.",
                     startError, restoreError);
-            if (startError is not null) throw startError;
-            if (restoreError is not null) throw restoreError;
+            if (startError is not null)
+                throw startError;
+            if (restoreError is not null)
+                throw restoreError;
 
             process = Process.GetProcessById(created.ProcessId);
             _ = process.Handle; // Keep its process identity alive independently of the PID.
-            if (ResumeThread(created.Thread) == uint.MaxValue) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (ResumeThread(created.Thread) == uint.MaxValue)
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             input.DisposeLocalCopyOfClientHandle();
             output.DisposeLocalCopyOfClientHandle();
             error.DisposeLocalCopyOfClientHandle();
@@ -108,13 +116,20 @@ internal sealed partial class ProcessLifetime
         }
         finally
         {
-            if (created.Thread != IntPtr.Zero) CloseHandle(created.Thread);
-            if (created.Process != IntPtr.Zero) CloseHandle(created.Process);
-            if (initialized) DeleteProcThreadAttributeList(attributes);
-            if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
-            if (jobList != IntPtr.Zero) Marshal.FreeHGlobal(jobList);
-            if (handles != IntPtr.Zero) Marshal.FreeHGlobal(handles);
-            if (environment != IntPtr.Zero) Marshal.FreeHGlobal(environment);
+            if (created.Thread != IntPtr.Zero)
+                CloseHandle(created.Thread);
+            if (created.Process != IntPtr.Zero)
+                CloseHandle(created.Process);
+            if (initialized)
+                DeleteProcThreadAttributeList(attributes);
+            if (attributes != IntPtr.Zero)
+                Marshal.FreeHGlobal(attributes);
+            if (jobList != IntPtr.Zero)
+                Marshal.FreeHGlobal(jobList);
+            if (handles != IntPtr.Zero)
+                Marshal.FreeHGlobal(handles);
+            if (environment != IntPtr.Zero)
+                Marshal.FreeHGlobal(environment);
         }
     }
 
@@ -125,7 +140,8 @@ internal sealed partial class ProcessLifetime
         var slashes = 0;
         foreach (var value in argument)
         {
-            if (value == '\\') { slashes++; continue; }
+            if (value == '\\')
+            { slashes++; continue; }
             result.Append('\\', value == '"' ? slashes * 2 + 1 : slashes);
             result.Append(value);
             slashes = 0;

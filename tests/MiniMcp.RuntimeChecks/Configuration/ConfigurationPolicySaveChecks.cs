@@ -12,7 +12,8 @@ internal static class ConfigurationPolicySaveChecks
         ConfigurationStore store = null!;
         var draft = new AppSettings
         {
-            ProjectRoot = "./project", BashPath = "./tools/bash",
+            ProjectRoot = "./project",
+            BashPath = "./tools/bash",
             Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
         };
         async Task Case(string name, Func<Task> action)
@@ -34,17 +35,22 @@ internal static class ConfigurationPolicySaveChecks
                         File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
                     await action();
                 }
-                finally { CheckRunner.Cleanup(temporary, () =>
-                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }); }
+                finally
+                {
+                    CheckRunner.Cleanup(temporary, () =>
+                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); });
+                }
             });
         }
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Policy save assertion failed.");
+            if (!condition)
+                throw new Exception("Policy save assertion failed.");
         }
         async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
         {
-            try { await action(); }
+            try
+            { await action(); }
             catch (TException exception) { return exception; }
             throw new Exception($"Expected {typeof(TException).Name} while saving local policy.");
         }
@@ -156,7 +162,8 @@ internal static class ConfigurationPolicySaveChecks
                     original.Value with { Mode = (ExecutionMode)999 },
                     original.Value with { SchemaVersion = 2 },
                     original.Value with { RecoveryDirectory = Path.Combine(root, "recovery") }
-                }) await Reject<ConfigurationValidationException>(() => store.SavePolicyAsync(original with { Value = value }, settings));
+                })
+                    await Reject<ConfigurationValidationException>(() => store.SavePolicyAsync(original with { Value = value }, settings));
                 var otherRoot = Path.Combine(temporary, "other-project");
                 Directory.CreateDirectory(otherRoot);
                 var unsavedContext = settings with { Value = settings.Value with { ProjectRoot = otherRoot } };

@@ -13,12 +13,18 @@ internal static class RecoveryRestoreLifetimeChecks
         await check("duplicate restore evidence cannot replay an active engine and cancelling another queued restore cannot interrupt its owner", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var armed = false; var entered = Signal(); var release = Signal(); var installs = 0;
+            var armed = false;
+            var entered = Signal();
+            var release = Signal();
+            var installs = 0;
             await using var execution = fixture.Execution(async (stage, _) =>
             {
-                if (!armed) return;
-                if (stage == PatchCommitStage.Staged) { entered.TrySetResult(); await release.Task; }
-                if (stage == PatchCommitStage.Installed) installs++;
+                if (!armed)
+                    return;
+                if (stage == PatchCommitStage.Staged)
+                { entered.TrySetResult(); await release.Task; }
+                if (stage == PatchCommitStage.Installed)
+                    installs++;
             });
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
@@ -46,13 +52,19 @@ internal static class RecoveryRestoreLifetimeChecks
 
         await check("distinct restore plans sharing a workspace serialize through final metadata and retain independent source and execution identities", async () =>
         {
-            using var fixture = new PatchExecutionFixture(); fixture.Put("second.md", "old\n");
-            var armed = false; var entered = Signal(); var release = Signal(); var preparedRecords = 0;
+            using var fixture = new PatchExecutionFixture();
+            fixture.Put("second.md", "old\n");
+            var armed = false;
+            var entered = Signal();
+            var release = Signal();
+            var preparedRecords = 0;
             await using var execution = fixture.Execution(prepare: async (stage, _) =>
             {
-                if (!armed || stage != RecoveryPreparationStage.BeforeDirectory) return;
+                if (!armed || stage != RecoveryPreparationStage.BeforeDirectory)
+                    return;
                 preparedRecords++;
-                if (preparedRecords == 1) { entered.TrySetResult(); await release.Task; }
+                if (preparedRecords == 1)
+                { entered.TrySetResult(); await release.Task; }
             });
             var firstSource = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var secondSource = await execution.ApplyPatchAsync(Patch("*** Update File: second.md\n@@\n-old\n+new"));
@@ -67,7 +79,8 @@ internal static class RecoveryRestoreLifetimeChecks
                 second = execution.CommitRecoveryAsync(secondPlan);
                 Assert(!second.IsCompleted && preparedRecords == 1 && fixture.RecordIds().Length == 2, "Peer cannot prepare a new record while another restoration owns the workspace");
                 release.TrySetResult();
-                var a = await first; var b = await second;
+                var a = await first;
+                var b = await second;
                 await VerifyCommit(fixture, a, firstSource.Commit.ChangeId, execution.RunId);
                 await VerifyCommit(fixture, b, secondSource.Commit.ChangeId, execution.RunId);
                 Assert(a.Commit.Outcome.AttemptId != b.Commit.Outcome.AttemptId && a.Commit.Record.Manifest.ChangeId != b.Commit.Record.Manifest.ChangeId &&
@@ -78,11 +91,15 @@ internal static class RecoveryRestoreLifetimeChecks
 
         await check("restoration in another workspace can finish while one restore engine remains paused", async () =>
         {
-            using var firstFixture = new PatchExecutionFixture(); using var secondFixture = new PatchExecutionFixture();
-            var armed = false; var entered = Signal(); var release = Signal();
+            using var firstFixture = new PatchExecutionFixture();
+            using var secondFixture = new PatchExecutionFixture();
+            var armed = false;
+            var entered = Signal();
+            var release = Signal();
             await using var firstExecution = firstFixture.Execution(async (stage, _) =>
             {
-                if (armed && stage == PatchCommitStage.BeforeInstall) { entered.TrySetResult(); await release.Task; }
+                if (armed && stage == PatchCommitStage.BeforeInstall)
+                { entered.TrySetResult(); await release.Task; }
             });
             await using var secondExecution = secondFixture.Execution();
             var a = await firstExecution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
@@ -107,14 +124,17 @@ internal static class RecoveryRestoreLifetimeChecks
         await check("caller-cancelled runtime stop retains restore finalization and invalidates old-session plans after drain", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var armed = false; var entered = Signal(); var release = Signal();
+            var armed = false;
+            var entered = Signal();
+            var release = Signal();
             await using var runtime = fixture.Runtime(replace: async (stage, path) =>
             {
                 if (armed && stage == RecoveryManifestReplacementStage.TemporaryWritten && RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed)
                 { entered.TrySetResult(); await release.Task; }
             });
             await runtime.StartAsync(fixture.Configuration);
-            var execution = runtime.Execution!; var oldRun = execution.RunId;
+            var execution = runtime.Execution!;
+            var oldRun = execution.RunId;
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
             var unused = await execution.PrepareRecoveryAsync(source.Commit.ChangeId);
@@ -155,19 +175,25 @@ internal static class RecoveryRestoreLifetimeChecks
         await check("runtime stop cancels restore backup preparation and another waiting restore before disposing the shared session", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var armed = false; var entered = Signal(); var release = Signal();
+            var armed = false;
+            var entered = Signal();
+            var release = Signal();
             await using var runtime = fixture.Runtime(prepare: async (stage, _) =>
             {
-                if (armed && stage == RecoveryPreparationStage.BackupWritten) { entered.TrySetResult(); await release.Task; }
+                if (armed && stage == RecoveryPreparationStage.BackupWritten)
+                { entered.TrySetResult(); await release.Task; }
             });
             await runtime.StartAsync(fixture.Configuration);
             var execution = runtime.Execution!;
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var firstPlan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
             var secondPlan = await execution.PrepareRecoveryAsync(source.Commit.ChangeId);
-            var current = Files(fixture); var originalRecord = RecordFiles(fixture, source.Commit.ChangeId); armed = true;
+            var current = Files(fixture);
+            var originalRecord = RecordFiles(fixture, source.Commit.ChangeId);
+            armed = true;
             var first = execution.CommitRecoveryAsync(firstPlan);
-            Task<RecoveryRestoreCommit>? second = null; Task? stopping = null;
+            Task<RecoveryRestoreCommit>? second = null;
+            Task? stopping = null;
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
@@ -187,12 +213,18 @@ internal static class RecoveryRestoreLifetimeChecks
 
         await check("runtime stop waits for actual failed-restore rollback and its final manifest without converting the result into cancellation", async () =>
         {
-            using var fixture = new PatchExecutionFixture(); fixture.Put("sample.md", "\ufeffold\r\n");
-            var armed = false; var installed = Signal(); var fail = Signal(); var finishing = Signal(); var save = Signal();
+            using var fixture = new PatchExecutionFixture();
+            fixture.Put("sample.md", "\ufeffold\r\n");
+            var armed = false;
+            var installed = Signal();
+            var fail = Signal();
+            var finishing = Signal();
+            var save = Signal();
             var failure = new IOException("Injected restore installation failure after session stop.");
             await using var runtime = fixture.Runtime(async (stage, _) =>
             {
-                if (armed && stage == PatchCommitStage.Installed) { installed.TrySetResult(); await fail.Task; throw failure; }
+                if (armed && stage == PatchCommitStage.Installed)
+                { installed.TrySetResult(); await fail.Task; throw failure; }
             }, replace: async (stage, path) =>
             {
                 if (armed && stage == RecoveryManifestReplacementStage.TemporaryWritten && RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.RolledBack)
@@ -202,13 +234,15 @@ internal static class RecoveryRestoreLifetimeChecks
             var execution = runtime.Execution!;
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-            var current = Files(fixture); armed = true;
+            var current = Files(fixture);
+            armed = true;
             var restoring = execution.CommitRecoveryAsync(plan);
             Task? stopping = null;
             try
             {
                 await installed.Task.WaitAsync(TimeSpan.FromSeconds(15));
-                stopping = runtime.StopAsync(); fail.TrySetResult();
+                stopping = runtime.StopAsync();
+                fail.TrySetResult();
                 await finishing.Task.WaitAsync(TimeSpan.FromSeconds(15));
                 Assert(!stopping.IsCompleted && !restoring.IsCompleted && execution.ActiveCalls == 1 && current.SequenceEqual(Files(fixture)),
                     "Rollback is complete but the runtime must also await its truthful final record");
@@ -234,8 +268,12 @@ internal static class RecoveryRestoreLifetimeChecks
             var source = await runtime.Execution!.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var preview = await client.CallToolAsync("apply_patch", new Dictionary<string, object?>
             {
-                ["patch"] = Patch("*** Update File: sample.md\n@@\n-new\n+different"), ["dry_run"] = true,
-                ["sourceChangeId"] = source.Commit!.ChangeId, ["restore"] = true, ["confirmed"] = true, ["approved"] = true
+                ["patch"] = Patch("*** Update File: sample.md\n@@\n-new\n+different"),
+                ["dry_run"] = true,
+                ["sourceChangeId"] = source.Commit!.ChangeId,
+                ["restore"] = true,
+                ["confirmed"] = true,
+                ["approved"] = true
             });
             Assert(McpHttpChecks.Structured(preview).GetProperty("dryRun").GetBoolean() && fixture.Get("sample.md") == "new\n" && fixture.RecordIds().Length == 1,
                 "Forged restore and confirmation fields cannot invoke the private restore coordinator or modify the workspace");

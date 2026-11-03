@@ -17,7 +17,8 @@ internal static class RecoveryPreviewLifetimeChecks
                 using var cancelled = new CancellationTokenSource();
                 await using var execution = fixture.Execution(preview: (stage, _) => { if (stage == boundary) cancelled.Cancel(); return Task.CompletedTask; });
                 var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-                var before = fixture.ProjectSnapshot(); var journal = RecoveryPreviewChecks.StoreSnapshot(fixture);
+                var before = fixture.ProjectSnapshot();
+                var journal = RecoveryPreviewChecks.StoreSnapshot(fixture);
                 await Reject<OperationCanceledException>(() => execution.PreviewRecoveryAsync(committed.Commit!.ChangeId, cancelled.Token));
                 var ordinary = await execution.ApplyPatchAsync(Patch("*** Add File: probe.md\n+probe"), dryRun: true);
                 Assert(ordinary.DryRun && execution.ActiveCalls == 0 && before.SequenceEqual(fixture.ProjectSnapshot()) &&
@@ -28,15 +29,19 @@ internal static class RecoveryPreviewLifetimeChecks
         await check("recovery preview retains the workspace lock through final observations while queued modification cancellation remains independent", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var entered = Signal(); var release = Signal(); var blockedOnce = false;
+            var entered = Signal();
+            var release = Signal();
+            var blockedOnce = false;
             await using var execution = fixture.Execution(preview: async (stage, _) =>
             {
-                if (stage == RecoveryPreviewStage.BeforeReturn && !blockedOnce) { blockedOnce = true; entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreviewStage.BeforeReturn && !blockedOnce)
+                { blockedOnce = true; entered.TrySetResult(); await release.Task; }
             });
             var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var preview = execution.PreviewRecoveryAsync(committed.Commit!.ChangeId);
             using var cancelled = new CancellationTokenSource();
-            Task<PatchApplyResult>? rejected = null; Task<PatchApplyResult>? writer = null;
+            Task<PatchApplyResult>? rejected = null;
+            Task<PatchApplyResult>? writer = null;
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
@@ -84,10 +89,12 @@ internal static class RecoveryPreviewLifetimeChecks
             using var blocker = new RecordedPatchCommitChecks.Fixture();
             var store = fixture.Store();
             var committed = await fixture.Service.CommitWithRecoveryAsync(await fixture.Plan(), store);
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             var blockingStore = blocker.Store(prepare: async (stage, _) =>
             {
-                if (stage == RecoveryPreparationStage.BeforeDirectory) { entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreparationStage.BeforeDirectory)
+                { entered.TrySetResult(); await release.Task; }
             });
             var preparing = blockingStore.PrepareAsync(await blocker.Plan());
             Task<RecoveryPreviewResult>? queued = null;
@@ -110,7 +117,8 @@ internal static class RecoveryPreviewLifetimeChecks
             using var fixture = new PatchExecutionFixture();
             await using var execution = fixture.Execution();
             var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-            var before = fixture.ProjectSnapshot(); var journal = RecoveryPreviewChecks.StoreSnapshot(fixture);
+            var before = fixture.ProjectSnapshot();
+            var journal = RecoveryPreviewChecks.StoreSnapshot(fixture);
             using (var held = RecoveryFileSystem.OpenRead(Path.Combine(fixture.RecoveryDirectory, RecoveryStorageLimits.LockFileName)))
             {
                 RecoveryFileSystem.Lock(held);
@@ -124,10 +132,13 @@ internal static class RecoveryPreviewLifetimeChecks
         await check("local runtime recovery previews drain on stop, retain historical run identity after restart and add no MCP tools", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var entered = Signal(); var release = Signal(); var blockedOnce = false;
+            var entered = Signal();
+            var release = Signal();
+            var blockedOnce = false;
             await using var runtime = fixture.Runtime(preview: async (stage, _) =>
             {
-                if (stage == RecoveryPreviewStage.BeforeReturn && !blockedOnce) { blockedOnce = true; entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreviewStage.BeforeReturn && !blockedOnce)
+                { blockedOnce = true; entered.TrySetResult(); await release.Task; }
             });
             await Reject<InvalidOperationException>(() => runtime.PreviewRecoveryAsync(Guid.NewGuid()));
             await runtime.StartAsync(fixture.Configuration);

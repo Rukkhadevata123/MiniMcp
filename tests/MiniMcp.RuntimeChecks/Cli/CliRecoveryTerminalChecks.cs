@@ -32,8 +32,11 @@ internal static class CliRecoveryTerminalChecks
             catch (OperationCanceledException) when (watchdog.IsCancellationRequested) { }
         });
         int result;
-        try { result = await CliEntry.RunAsync(["records", "restore", id.ToString("N"), "--config", fixture.Configuration.SettingsFilePath],
-            Console.Out, Console.Error, new ConfigurationStore(paths), fixture.DirectoryPath); }
+        try
+        {
+            result = await CliEntry.RunAsync(["records", "restore", id.ToString("N"), "--config", fixture.Configuration.SettingsFilePath],
+            Console.Out, Console.Error, new ConfigurationStore(paths), fixture.DirectoryPath);
+        }
         finally { await watchdog.CancelAsync(); await rescue; }
         var restored = expected == "restore";
         if (unblocked || result != (restored ? 0 : 130) || fixture.Get("sample.md") != (restored ? "old\n" : "new\n") || fixture.RecordIds().Length != (restored ? 2 : 1))

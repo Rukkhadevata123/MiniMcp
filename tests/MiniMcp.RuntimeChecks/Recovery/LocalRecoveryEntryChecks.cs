@@ -60,7 +60,8 @@ internal static class LocalRecoveryEntryChecks
             await using var host = new McpRuntime();
             await Reject<InvalidOperationException>(() => host.StartAsync(config));
             Assert(host.Snapshot.State == RuntimeState.Stopped && !host.Snapshot.HasOwnedResources, "Offline snapshot cannot bypass runtime dependency validation");
-            var output = new StringWriter(); var error = new StringWriter();
+            var output = new StringWriter();
+            var error = new StringWriter();
             var listed = await Run(["records", "list"], output, error, store, fixture);
             Assert(listed == 0 && output.ToString().Contains(source.ToString("N")), "Actual list entry point");
             output.GetStringBuilder().Clear();
@@ -74,9 +75,11 @@ internal static class LocalRecoveryEntryChecks
         });
         await check("local recovery CLI rechecks external changes after confirmation and refuses ReadOnly", async () =>
         {
-            using var fixture = new PatchExecutionFixture(); await using var writer = fixture.Execution();
+            using var fixture = new PatchExecutionFixture();
+            await using var writer = fixture.Execution();
             var source = (await writer.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"))).Commit!.ChangeId;
-            var output = new StringWriter(); var error = new StringWriter();
+            var output = new StringWriter();
+            var error = new StringWriter();
             var readOnly = Store(fixture, ExecutionMode.ReadOnly);
             Assert(await Run(["records", "restore", source.ToString()], output, error, readOnly, fixture, new StringReader("RESTORE " + source.ToString("N"))) == 2, "ReadOnly cannot confirm writes");
             var writable = Store(fixture, ExecutionMode.ProjectEdit);
@@ -88,15 +91,19 @@ internal static class LocalRecoveryEntryChecks
         await check("local recovery runtime access shares execution ownership and rejects old session preparations", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            await using var runtime = fixture.Runtime(); await runtime.StartAsync(fixture.Configuration);
+            await using var runtime = fixture.Runtime();
+            await runtime.StartAsync(fixture.Configuration);
             var id = (await runtime.Execution!.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"))).Commit!.ChangeId;
-            var access = runtime.OpenRecoverySession(); var preparation = await access.PrepareAsync(id);
+            var access = runtime.OpenRecoverySession();
+            var preparation = await access.PrepareAsync(id);
             await access.DisposeAsync();
             Assert(runtime.Snapshot.State == RuntimeState.Running && !runtime.Execution.IsDisposed, "Closing a history view does not stop runtime execution");
             await Reject<ObjectDisposedException>(() => access.RestoreAsync(preparation));
-            await using var active = runtime.OpenRecoverySession(); var old = await active.PrepareAsync(id);
+            await using var active = runtime.OpenRecoverySession();
+            var old = await active.PrepareAsync(id);
             await runtime.StopAsync();
-            try { await active.RestoreAsync(old); throw new Exception("Stopped session accepted restore"); }
+            try
+            { await active.RestoreAsync(old); throw new Exception("Stopped session accepted restore"); }
             catch (Exception failure) when (failure is ObjectDisposedException or WorkspaceException) { }
             Assert(fixture.Get("sample.md") == "new\n" && fixture.RecordIds().Length == 1, "Stopped run cannot write through old evidence");
         });
@@ -106,8 +113,11 @@ internal static class LocalRecoveryEntryChecks
         var paths = new ConfigurationPaths(Path.Combine(fixture.DirectoryPath, "user"), Path.Combine(fixture.DirectoryPath, "state"));
         Directory.CreateDirectory(Path.GetDirectoryName(paths.PolicyFile)!);
         File.WriteAllText(fixture.Configuration.SettingsFilePath, ConfigurationJson.SerializeSettings(fixture.Configuration.Settings with
-        { BashPath = Path.Combine(fixture.DirectoryPath, "missing-bash"), Tunnel = new() { Enabled = true, ExecutablePath = "missing-cloudflared", TokenFilePath = "missing-token" },
-          Authentication = new() { Mode = AuthenticationMode.CloudflareAccess, PublicOrigin = "https://fixture.invalid", Team = "fixture", Audience = "fixture" } }));
+        {
+            BashPath = Path.Combine(fixture.DirectoryPath, "missing-bash"),
+            Tunnel = new() { Enabled = true, ExecutablePath = "missing-cloudflared", TokenFilePath = "missing-token" },
+            Authentication = new() { Mode = AuthenticationMode.CloudflareAccess, PublicOrigin = "https://fixture.invalid", Team = "fixture", Audience = "fixture" }
+        }));
         File.WriteAllText(paths.PolicyFile, ConfigurationJson.SerializePolicy(fixture.Configuration.Policy with { Mode = mode }));
         return new(paths);
     }

@@ -18,7 +18,8 @@ internal static class CliApplication
         catch (Exception exception)
         {
             // Preserve the failure code even if a closed output pipe also prevents reporting it.
-            try { error.WriteLine($"CLI 执行失败：{Visible(exception.Message)}"); }
+            try
+            { error.WriteLine($"CLI 执行失败：{Visible(exception.Message)}"); }
             catch { }
             return CliExitCodes.Failure;
         }
@@ -49,7 +50,8 @@ internal static class CliApplication
                 check = await store.CheckAsync(options.Configuration, workingDirectory, cancellationToken).ConfigureAwait(false);
                 configuration = check.Configuration;
             }
-            else configuration = await store.LoadAsync(options.Configuration, workingDirectory,
+            else
+                configuration = await store.LoadAsync(options.Configuration, workingDirectory,
                 options.Mode, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -115,7 +117,8 @@ internal static class CliApplication
             return true;
         }
         var command = args[0] switch { "run" => Command.Run, "check" => Command.Check, _ => Command.Root };
-        if (command == Command.Root) { error = "无法识别命令。"; return false; }
+        if (command == Command.Root)
+        { error = "无法识别命令。"; return false; }
         string? config = null;
         ExecutionMode? mode = null;
         var help = false;
@@ -124,7 +127,8 @@ internal static class CliApplication
             var option = args[index];
             if (option is "--help" or "-h")
             {
-                if (help) { error = "--help 不能重复。"; return false; }
+                if (help)
+                { error = "--help 不能重复。"; return false; }
                 help = true;
                 continue;
             }
@@ -136,12 +140,14 @@ internal static class CliApplication
             var value = args[++index];
             if (option == "--config")
             {
-                if (config is not null) { error = "--config 不能重复。"; return false; }
+                if (config is not null)
+                { error = "--config 不能重复。"; return false; }
                 config = value;
             }
             else
             {
-                if (mode is not null) { error = "--mode 不能重复。"; return false; }
+                if (mode is not null)
+                { error = "--mode 不能重复。"; return false; }
                 if (!Enum.TryParse<ExecutionMode>(value, out var selected) || Enum.GetName(selected) != value)
                 { error = "--mode 必须为 ReadOnly、ProjectEdit 或 FullAccess。"; return false; }
                 mode = selected;
@@ -155,15 +161,19 @@ internal static class CliApplication
     {
         output.WriteLine("MiniMcp");
         output.WriteLine();
-        if (command != Command.Check) output.WriteLine("用法：minimcp run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]");
-        if (command != Command.Run) output.WriteLine("用法：minimcp check [--config <path>]");
+        if (command != Command.Check)
+            output.WriteLine("用法：minimcp run [--config <path>] [--mode ReadOnly|ProjectEdit|FullAccess]");
+        if (command != Command.Run)
+            output.WriteLine("用法：minimcp check [--config <path>]");
         output.WriteLine("      minimcp --help");
-        if (command == Command.Root) output.WriteLine("      minimcp records list|show|restore [<change-id>] [--config <path>]");
+        if (command == Command.Root)
+            output.WriteLine("      minimcp records list|show|restore [<change-id>] [--config <path>]");
         output.WriteLine();
         output.WriteLine("选项：");
         output.WriteLine("  -h, --help  显示帮助，不加载配置");
         output.WriteLine("  --config    settings.json 路径，省略时读取默认用户配置；policy.json 固定来自用户目录");
-        if (command != Command.Check) output.WriteLine("  --mode      仅覆盖 run 本次会话的执行模式，省略时使用本机 policy.json");
+        if (command != Command.Check)
+            output.WriteLine("  --mode      仅覆盖 run 本次会话的执行模式，省略时使用本机 policy.json");
         output.WriteLine();
         if (command != Command.Run)
             output.WriteLine("check 只校验保存的配置、策略及已启用依赖，并给出端口当时的绑定提示；不启动 MCP/隧道、不写文件。");

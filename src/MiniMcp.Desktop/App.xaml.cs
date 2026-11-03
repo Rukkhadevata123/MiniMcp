@@ -13,7 +13,8 @@ public partial class App : Application
 
     public App(McpRuntime runtime, SettingsEditor settings)
     {
-        Runtime = runtime; Settings = settings;
+        Runtime = runtime;
+        Settings = settings;
         InitializeComponent();
     }
 

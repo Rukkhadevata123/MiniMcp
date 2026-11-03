@@ -42,7 +42,8 @@ internal sealed class TunnelProcess
     {
         get
         {
-            try { return _exit.IsCompleted || _lifetime.Process.HasExited; }
+            try
+            { return _exit.IsCompleted || _lifetime.Process.HasExited; }
             catch (InvalidOperationException) when (_exit.IsCompleted) { return true; } // Cleanup may have disposed the handle between reads.
         }
     }
@@ -50,7 +51,8 @@ internal sealed class TunnelProcess
 
     internal static TunnelProcess Start(TunnelSettings settings, ILoggerProvider logs, TunnelCheckpoints? checks)
     {
-        if (!settings.Enabled) throw new InvalidOperationException("The saved session configuration disables the managed tunnel.");
+        if (!settings.Enabled)
+            throw new InvalidOperationException("The saved session configuration disables the managed tunnel.");
         if (!Path.IsPathFullyQualified(settings.ExecutablePath) || !Path.IsPathFullyQualified(settings.TokenFilePath))
             throw new InvalidOperationException("The managed tunnel requires validated absolute program and token-file paths.");
         if (OperatingSystem.IsLinux() && !File.Exists("/usr/bin/setsid"))
@@ -67,24 +69,31 @@ internal sealed class TunnelProcess
             StandardOutputEncoding = new UTF8Encoding(false),
             StandardErrorEncoding = new UTF8Encoding(false)
         };
-        if (OperatingSystem.IsLinux()) { start.ArgumentList.Add("--"); start.ArgumentList.Add(settings.ExecutablePath); }
+        if (OperatingSystem.IsLinux())
+        { start.ArgumentList.Add("--"); start.ArgumentList.Add(settings.ExecutablePath); }
         foreach (var argument in new[] { "tunnel", "--no-autoupdate", "run", "--token-file", settings.TokenFilePath })
             start.ArgumentList.Add(argument);
         // Inherited TUNNEL_* options/tokens must not override this session's explicit arguments.
         foreach (var key in start.Environment.Keys.ToArray())
-            if (!KeepEnvironment(key)) start.Environment.Remove(key);
+            if (!KeepEnvironment(key))
+                start.Environment.Remove(key);
         var lifetime = ProcessLifetime.Start(start);
-        try { return new(lifetime, logs, checks); }
+        try
+        { return new(lifetime, logs, checks); }
         catch { lifetime.Dispose(); throw; }
     }
 
     internal async Task CheckStartedAsync(CancellationToken cancellationToken)
     {
-        if (_checks?.AfterStart is { } checkpoint) await checkpoint().WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (_checks?.AfterStart is { } checkpoint)
+            await checkpoint().WaitAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        if (HasExited) throw new IOException($"The tunnel exited during startup (exit code {ExitCode?.ToString() ?? "pending"}).");
-        if (_stdout.IsFaulted) await _stdout.ConfigureAwait(false);
-        if (_stderr.IsFaulted) await _stderr.ConfigureAwait(false);
+        if (HasExited)
+            throw new IOException($"The tunnel exited during startup (exit code {ExitCode?.ToString() ?? "pending"}).");
+        if (_stdout.IsFaulted)
+            await _stdout.ConfigureAwait(false);
+        if (_stderr.IsFaulted)
+            await _stderr.ConfigureAwait(false);
     }
 
     internal void Observe(Action<int?, string> fault)
@@ -100,7 +109,8 @@ internal sealed class TunnelProcess
                     await completed.ConfigureAwait(false);
                     if (ReferenceEquals(completed, _exit))
                     {
-                        if (_checks?.BeforeExitNotification is { } checkpoint) await checkpoint().ConfigureAwait(false);
+                        if (_checks?.BeforeExitNotification is { } checkpoint)
+                            await checkpoint().ConfigureAwait(false);
                         if (Volatile.Read(ref _stopRequested) == 0)
                             fault(ExitCode, $"The tunnel process exited unexpectedly (exit code {ExitCode}).");
                         break;
@@ -110,9 +120,11 @@ internal sealed class TunnelProcess
             }
             catch (Exception error)
             {
-                if (Volatile.Read(ref _stopRequested) == 0) fault(ExitCode, "Tunnel observation failed: " + error.Message);
+                if (Volatile.Read(ref _stopRequested) == 0)
+                    fault(ExitCode, "Tunnel observation failed: " + error.Message);
             }
-            try { await EnsureStopTask().ConfigureAwait(false); }
+            try
+            { await EnsureStopTask().ConfigureAwait(false); }
             catch (Exception error)
             {
                 _logger.LogError(error, "Tunnel cleanup did not complete.");
@@ -125,7 +137,8 @@ internal sealed class TunnelProcess
     {
         cancellationToken.ThrowIfCancellationRequested();
         await EnsureStopTask(retry: true).WaitAsync(cancellationToken).ConfigureAwait(false);
-        if (_observation is { } observation) await observation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (_observation is { } observation)
+            await observation.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private Task EnsureStopTask(bool retry = false)
@@ -143,9 +156,11 @@ internal sealed class TunnelProcess
     {
         await _lifetime.TerminateAsync().ConfigureAwait(false);
         await _exit.ConfigureAwait(false);
-        try { await Task.WhenAll(_stdout, _stderr).ConfigureAwait(false); }
+        try
+        { await Task.WhenAll(_stdout, _stderr).ConfigureAwait(false); }
         catch (Exception error) { _logger.LogWarning(error, "Tunnel output ended with an IO error."); }
-        if (_checks?.BeforeRelease is { } checkpoint) await checkpoint().ConfigureAwait(false);
+        if (_checks?.BeforeRelease is { } checkpoint)
+            await checkpoint().ConfigureAwait(false);
         _lifetime.Dispose();
     }
 

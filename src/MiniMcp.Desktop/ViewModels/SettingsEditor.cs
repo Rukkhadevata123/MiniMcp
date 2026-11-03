@@ -54,7 +54,8 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
         get => _requestedPath;
         set
         {
-            if (_requestedPath == value) return;
+            if (_requestedPath == value)
+                return;
             _requestedPath = value ?? "";
             Raise();
         }
@@ -74,7 +75,8 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
     {
         get
         {
-            if (_policyBaseline is null) return false;
+            if (_policyBaseline is null)
+                return false;
             var savedPolicy = _policyBaseline.Value;
             var limits = savedPolicy.ProjectEditLimits;
             return _policyDraft != savedPolicy ||
@@ -88,8 +90,10 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
     {
         get
         {
-            if (!IsLoaded) return "加载配置文件后开始编辑。";
-            if (HasUnsavedChanges) return "有未保存的修改。启动服务使用已保存的配置。";
+            if (!IsLoaded)
+                return "加载配置文件后开始编辑。";
+            if (HasUnsavedChanges)
+                return "有未保存的修改。启动服务使用已保存的配置。";
             return HasSavedSettings ? "草稿与已保存文件一致。" : "保存运行配置后创建文件。";
         }
     }
@@ -114,7 +118,8 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
         get => _portText;
         set
         {
-            if (_portText == value) return;
+            if (_portText == value)
+                return;
             _portText = value ?? "";
             _settingsEditVersion++;
             Changed();
@@ -128,7 +133,8 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
         get => (int)_settingsDraft.Authentication.Mode;
         set
         {
-            if (value is < 0 or > 1) return;
+            if (value is < 0 or > 1)
+                return;
             var mode = (AuthenticationMode)value;
             var next = _settingsDraft with { Authentication = _settingsDraft.Authentication with { Mode = mode } };
             if (mode == AuthenticationMode.Local)
@@ -174,7 +180,8 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
         get => (int)_policyDraft.Mode;
         set
         {
-            if (value is < 0 or > 2) return;
+            if (value is < 0 or > 2)
+                return;
             EditPolicy(_policyDraft with { Mode = (ExecutionMode)value });
             Raise(nameof(ModeDescription));
         }
@@ -219,21 +226,24 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
 
     private void EditSettings(AppSettings value, [CallerMemberName] string property = "")
     {
-        if (_settingsDraft == value) return;
+        if (_settingsDraft == value)
+            return;
         _settingsDraft = value;
         _settingsEditVersion++;
         Changed(property);
     }
     private void EditPolicy(ExecutionPolicy value, [CallerMemberName] string property = "")
     {
-        if (_policyDraft == value) return;
+        if (_policyDraft == value)
+            return;
         _policyDraft = value;
         _policyEditVersion++;
         Changed(property);
     }
     private void EditLimit(ref string field, string value, [CallerMemberName] string property = "")
     {
-        if (field == value) return;
+        if (field == value)
+            return;
         field = value ?? "";
         _policyEditVersion++;
         Changed(property);
@@ -253,7 +263,8 @@ public sealed partial class SettingsEditor : INotifyPropertyChanged
             nameof(CanSaveSettings), nameof(CanSavePolicy), nameof(IsSettingsDirty), nameof(IsPolicyDirty), nameof(HasUnsavedChanges),
             nameof(DraftStatus), nameof(SavedMode), nameof(NeedsRestart), nameof(HasError), nameof(ErrorMessage), nameof(Message), nameof(Dependencies)
         ];
-        foreach (var property in properties) Raise(property);
+        foreach (var property in properties)
+            Raise(property);
     }
     private void Raise([CallerMemberName] string property = "") => PropertyChanged?.Invoke(this, new(property));
     private static string Number(int value) => value.ToString(CultureInfo.InvariantCulture);

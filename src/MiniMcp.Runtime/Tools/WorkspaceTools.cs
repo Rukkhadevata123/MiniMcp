@@ -59,7 +59,8 @@ internal sealed class WorkspaceTools(ToolExecutionService execution)
 
     private static async Task<T> Run<T>(Func<Task<T>> action)
     {
-        try { return await action(); }
+        try
+        { return await action(); }
         catch (RecoveryFinalizationException ex) { throw new McpException(ex.Message); }
         catch (RecordedPatchExecutionException ex) { throw new McpException(ex.Message); }
         catch (InvalidDataException) { throw new McpException("Recovery data is invalid; patch installation was not started."); }

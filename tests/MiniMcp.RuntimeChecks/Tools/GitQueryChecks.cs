@@ -74,12 +74,16 @@ internal static class GitQueryChecks
         {
             await using var fixture = new Fixture();
             var names = new List<string> { "space [literal]/中.txt", "-dash.txt", "glob*.txt" };
-            if (OperatingSystem.IsWindows()) names.Remove("glob*.txt");
-            else names.Add("line\nfile.txt");
-            foreach (var name in names) fixture.Put(name, "old\n");
+            if (OperatingSystem.IsWindows())
+                names.Remove("glob*.txt");
+            else
+                names.Add("line\nfile.txt");
+            foreach (var name in names)
+                fixture.Put(name, "old\n");
             fixture.Put("other.txt", "other\n");
             await fixture.Commit("special files");
-            foreach (var name in names) fixture.Put(name, "new\n");
+            foreach (var name in names)
+                fixture.Put(name, "new\n");
             foreach (var name in names)
             {
                 Assert((await fixture.Execution.GitStatusAsync(name)).Entries.Single().Path == name, "Literal status path");
@@ -99,7 +103,8 @@ internal static class GitQueryChecks
             fixture.Put("second.txt", "second\n");
             fixture.Put("third.txt", "third\n");
             await fixture.Git("add", "--", "second.txt", "third.txt");
-            for (var i = 0; i < 10; i++) fixture.Put($"untracked/{i}.txt", "x\n");
+            for (var i = 0; i < 10; i++)
+                fixture.Put($"untracked/{i}.txt", "x\n");
             Assert((await fixture.Execution.GitStatusAsync(maxEntries: 3)) is { Entries.Length: 3, Truncated: true, Complete: false }, "Entry budget");
             Assert((await fixture.Execution.GitDiffAsync(maxLines: 2)).Truncated, "Line budget");
             var limited = await fixture.Execution.GitDiffAsync(staged: true, maxFiles: 1);
@@ -114,22 +119,26 @@ internal static class GitQueryChecks
             await fixture.Git("add", "--", "base.txt");
             fixture.Put("base.txt", "small\n");
             Assert((await fixture.Execution.GitDiffAsync()).Notices.Contains("OversizedObjectsSkipped"), "Large index blob skipped");
-            foreach (var count in new[] { 0, 101 }) await Reject<WorkspaceException>(() => fixture.Execution.GitLogAsync(maxCount: count));
+            foreach (var count in new[] { 0, 101 })
+                await Reject<WorkspaceException>(() => fixture.Execution.GitLogAsync(maxCount: count));
             await Reject<WorkspaceException>(() => fixture.Execution.GitDiffAsync(maxFiles: 101));
             await Reject<WorkspaceException>(() => fixture.Execution.GitDiffAsync(maxLines: 4001));
         });
         await check("git queries: HEAD log is bounded and escapes control characters without exposing full messages", async () =>
         {
             await using var fixture = new Fixture();
-            fixture.Put("a.txt", "one\n"); await fixture.Commit("first");
-            fixture.Put("a.txt", "two\n"); await fixture.Commit("second\t中\n\nbody-not-exported");
+            fixture.Put("a.txt", "one\n");
+            await fixture.Commit("first");
+            fixture.Put("a.txt", "two\n");
+            await fixture.Commit("second\t中\n\nbody-not-exported");
             var log = await fixture.Execution.GitLogAsync(maxCount: 1);
             Assert(log.Commits.Length == 1 && log.Truncated && log.Commits[0].Subject.Contains("\\t") && !JsonSerializer.Serialize(log).Contains("body-not-exported"), "Bounded subject only");
         });
         await check("git queries: serialized Unicode diff output stops at the byte budget", async () =>
         {
             await using var fixture = new Fixture();
-            fixture.Put("a.txt", "base\n"); await fixture.Commit("base");
+            fixture.Put("a.txt", "base\n");
+            await fixture.Commit("base");
             fixture.Put("a.txt", string.Concat(Enumerable.Repeat("needle" + new string('中', 1500) + "\n", 50)));
             var diff = await fixture.Execution.GitDiffAsync(maxLines: 4000);
             Assert(diff.Truncated && !diff.Complete && diff.Files.Length == 1, "Byte cap reaches before line cap");
@@ -138,7 +147,8 @@ internal static class GitQueryChecks
         await check("git queries: renames cannot expose private endpoints and indexed links never expose targets", async () =>
         {
             await using var fixture = new Fixture();
-            fixture.Put("source.txt", "ordinary-source\n"); await fixture.Commit("base");
+            fixture.Put("source.txt", "ordinary-source\n");
+            await fixture.Commit("base");
             File.Move(fixture.PathOf("source.txt"), fixture.PathOf(".env.moved"));
             await fixture.Git("add", "-A");
             var status = await fixture.Execution.GitStatusAsync();
@@ -161,7 +171,8 @@ internal static class GitQueryChecks
             var head = Path.Combine(fixture.Root, ".git", "HEAD");
             File.WriteAllText(head, "invalid HEAD metadata");
             await Reject<WorkspaceException>(() => fixture.Execution.GitLogAsync());
-            var plain = Path.Combine(fixture.DirectoryPath, "plain"); Directory.CreateDirectory(plain);
+            var plain = Path.Combine(fixture.DirectoryPath, "plain");
+            Directory.CreateDirectory(plain);
             await using var noRepository = fixture.CreateExecution(plain);
             await Reject<WorkspaceException>(() => noRepository.GitStatusAsync());
         });
@@ -170,7 +181,9 @@ internal static class GitQueryChecks
             foreach (var mode in Enum.GetValues<ExecutionMode>())
             {
                 await using var fixture = new Fixture(mode);
-                fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+                fixture.Put("a.txt", "one\n");
+                await fixture.Commit("initial");
+                fixture.Put("a.txt", "two\n");
                 var included = Path.Combine(fixture.DirectoryPath, "included-config");
                 File.WriteAllText(included, "[pull]\nrebase = true\n");
                 await fixture.Git("config", "--local", "include.path", included);
@@ -191,7 +204,9 @@ internal static class GitQueryChecks
             {
                 await using var fixture = new Fixture(mode);
                 fixture.Put(".gitattributes", "*.txt filter=demo\n");
-                fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+                fixture.Put("a.txt", "one\n");
+                await fixture.Commit("initial");
+                fixture.Put("a.txt", "two\n");
                 var marker = Path.Combine(fixture.DirectoryPath, "filter-ran");
                 await fixture.Git("config", "--local", "filter.demo.clean", HelperCommand(marker));
                 Assert(!File.Exists(marker), "No marker before querying");
@@ -212,20 +227,24 @@ internal static class GitQueryChecks
         {
             await using var fixture = new Fixture();
             fixture.Put(".gitattributes", "*.txt diff=demo\n");
-            fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+            fixture.Put("a.txt", "one\n");
+            await fixture.Commit("initial");
+            fixture.Put("a.txt", "two\n");
             var marker = Path.Combine(fixture.DirectoryPath, "disabled-helper-ran");
             var helper = HelperCommand(marker);
             await fixture.Git("config", "--local", "core.fsmonitor", helper);
             await fixture.Git("config", "--local", "diff.external", helper);
             await fixture.Git("config", "--local", "diff.demo.textconv", helper);
             var before = fixture.Snapshot();
-            foreach (var query in fixture.Queries()) await query();
+            foreach (var query in fixture.Queries())
+                await query();
             Assert(!File.Exists(marker) && before.SequenceEqual(fixture.Snapshot()), "Explicitly disabled helpers do not run or write the repository");
         });
         await check("git queries: inherited config/helpers/paths are ignored and cannot redirect a query", async () =>
         {
             await using var fixture = new Fixture();
-            fixture.Put("a.txt", "one\n"); await fixture.Commit("base");
+            fixture.Put("a.txt", "one\n");
+            await fixture.Commit("base");
             fixture.Put("a.txt", "two\n");
             fixture.Put(".gitattributes", "*.txt filter=attack diff=attack\n");
             var marker = Path.Combine(fixture.DirectoryPath, "ambient-helper-ran");
@@ -233,18 +252,26 @@ internal static class GitQueryChecks
             File.WriteAllText(global, "[filter \"attack\"]\nclean = " + HelperCommand(marker) + "\n[diff]\nexternal = " + HelperCommand(marker) + "\n");
             var values = new Dictionary<string, string>
             {
-                ["GIT_CONFIG_GLOBAL"] = global, ["GIT_CONFIG_SYSTEM"] = global, ["GIT_DIR"] = fixture.DirectoryPath,
-                ["GIT_INDEX_FILE"] = Path.Combine(fixture.DirectoryPath, "external-index"), ["GIT_CONFIG_COUNT"] = "1",
-                ["GIT_CONFIG_KEY_0"] = "core.fsmonitor", ["GIT_CONFIG_VALUE_0"] = HelperCommand(marker),
-                ["GIT_EXTERNAL_DIFF"] = HelperCommand(marker), ["GIT_OBJECT_DIRECTORY"] = fixture.DirectoryPath,
-                ["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = fixture.DirectoryPath, ["GIT_PAGER"] = HelperCommand(marker)
+                ["GIT_CONFIG_GLOBAL"] = global,
+                ["GIT_CONFIG_SYSTEM"] = global,
+                ["GIT_DIR"] = fixture.DirectoryPath,
+                ["GIT_INDEX_FILE"] = Path.Combine(fixture.DirectoryPath, "external-index"),
+                ["GIT_CONFIG_COUNT"] = "1",
+                ["GIT_CONFIG_KEY_0"] = "core.fsmonitor",
+                ["GIT_CONFIG_VALUE_0"] = HelperCommand(marker),
+                ["GIT_EXTERNAL_DIFF"] = HelperCommand(marker),
+                ["GIT_OBJECT_DIRECTORY"] = fixture.DirectoryPath,
+                ["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = fixture.DirectoryPath,
+                ["GIT_PAGER"] = HelperCommand(marker)
             };
             var previous = values.Keys.ToDictionary(key => key, Environment.GetEnvironmentVariable);
             try
             {
-                foreach (var (key, value) in values) Environment.SetEnvironmentVariable(key, value);
+                foreach (var (key, value) in values)
+                    Environment.SetEnvironmentVariable(key, value);
                 var before = fixture.Snapshot();
-                foreach (var query in fixture.Queries()) await query();
+                foreach (var query in fixture.Queries())
+                    await query();
                 Assert(!File.Exists(marker) && !File.Exists(values["GIT_INDEX_FILE"]) && before.SequenceEqual(fixture.Snapshot()), "Ambient inputs isolated and no index writes");
             }
             finally { foreach (var (key, value) in previous) Environment.SetEnvironmentVariable(key, value); }
@@ -257,7 +284,8 @@ internal static class GitQueryChecks
                 var path = Path.Combine(fixture.Root, ".git", relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, fixture.DirectoryPath);
-                try { foreach (var query in fixture.Queries()) await Reject<WorkspaceException>(query); }
+                try
+                { foreach (var query in fixture.Queries()) await Reject<WorkspaceException>(query); }
                 finally { File.Delete(path); }
             }
             var project = Path.Combine(fixture.DirectoryPath, "linked-worktree");
@@ -265,7 +293,8 @@ internal static class GitQueryChecks
             File.WriteAllText(Path.Combine(project, ".git"), "gitdir: " + Path.Combine(fixture.Root, ".git"));
             await using var linked = fixture.CreateExecution(project);
             await Reject<WorkspaceException>(() => linked.GitStatusAsync());
-            var nested = Path.Combine(fixture.Root, "nested"); Directory.CreateDirectory(nested);
+            var nested = Path.Combine(fixture.Root, "nested");
+            Directory.CreateDirectory(nested);
             await using var parentDiscovery = fixture.CreateExecution(nested);
             await Reject<WorkspaceException>(() => parentDiscovery.GitStatusAsync());
         });
@@ -275,16 +304,19 @@ internal static class GitQueryChecks
             var external = Path.Combine(fixture.DirectoryPath, "outside-index");
             File.WriteAllBytes(external, []);
             var index = Path.Combine(fixture.Root, ".git", "index");
-            try { File.CreateSymbolicLink(index, external); }
+            try
+            { File.CreateSymbolicLink(index, external); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
             { CheckRunner.Skip("Windows Developer Mode or symbolic link permission required."); return; }
-            try { foreach (var query in fixture.Queries()) await Reject<WorkspaceException>(query); }
+            try
+            { foreach (var query in fixture.Queries()) await Reject<WorkspaceException>(query); }
             finally { File.Delete(index); }
         });
         await check("git queries: missing local objects do not invoke a remote helper or fetch", async () =>
         {
             await using var fixture = new Fixture();
-            fixture.Put("a.txt", "base\n"); await fixture.Commit("initial");
+            fixture.Put("a.txt", "base\n");
+            await fixture.Commit("initial");
             var blob = (await fixture.Git("rev-parse", "HEAD:a.txt")).Trim();
             var objectFile = Path.Combine(fixture.Root, ".git", "objects", blob[..2], blob[2..]);
             File.SetAttributes(objectFile, FileAttributes.Normal);
@@ -302,7 +334,8 @@ internal static class GitQueryChecks
             var store = new ConfigurationStore(new ConfigurationPaths(Path.Combine(fixture.DirectoryPath, "user"), Path.Combine(fixture.DirectoryPath, "state")));
             var diagnostic = await store.CheckAsync(fixture.Configuration.SettingsFilePath, fixture.DirectoryPath);
             Assert(diagnostic.GitPath is null && diagnostic.GitError is not null && fixture.Configuration.Settings.GitPath == Path.Combine(fixture.DirectoryPath, "missing-git"), "Normalized optional dependency report");
-            using var output = new StringWriter(); using var error = new StringWriter();
+            using var output = new StringWriter();
+            using var error = new StringWriter();
             Assert(await CliApplication.RunAsync(["check", "--config", fixture.Configuration.SettingsFilePath], output, error,
                 default, store, fixture.DirectoryPath) == 0 && output.ToString().Contains("Git 查询：程序不可用"), "CLI optional dependency remains a diagnostic");
             await using var runtime = new McpRuntime(0);
@@ -319,7 +352,9 @@ internal static class GitQueryChecks
             foreach (var mode in Enum.GetValues<ExecutionMode>())
             {
                 await using var fixture = new Fixture(mode);
-                fixture.Put("a.txt", "one\n"); await fixture.Commit("initial"); fixture.Put("a.txt", "two\n");
+                fixture.Put("a.txt", "one\n");
+                await fixture.Commit("initial");
+                fixture.Put("a.txt", "two\n");
                 await fixture.Git("config", "--local", "branch.main.vscode-merge-base", "origin/main");
                 await using var runtime = new McpRuntime(0);
                 await runtime.StartAsync(fixture.Configuration);
@@ -327,7 +362,8 @@ internal static class GitQueryChecks
                 await using var client = await McpHttpChecks.ConnectAsync(runtime.Address!, http);
                 var tools = await client.ListToolsAsync();
                 var current = JsonSerializer.Serialize(tools.OrderBy(tool => tool.Name).Select(tool => tool.ProtocolTool));
-                catalog ??= current; Assert(current == catalog && tools.Count == 8, "Schemas/descriptions/annotations identical");
+                catalog ??= current;
+                Assert(current == catalog && tools.Count == 8, "Schemas/descriptions/annotations identical");
                 foreach (var tool in tools.Where(tool => tool.Name.StartsWith("git_", StringComparison.Ordinal)))
                 {
                     Assert(tool.ProtocolTool.Annotations is { ReadOnlyHint: true, DestructiveHint: false, OpenWorldHint: false }, "Git annotations");
@@ -359,11 +395,16 @@ internal static class GitQueryChecks
                     // Do not let malformed/flood output terminate the process before the
                     // test has obtained the real descendant's process handle.
                     fixture.Put("git-query-observed", "ready");
-                    if (operation == "cancel") cancel.Cancel();
-                    if (operation == "stop") await runtime.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-                    if (operation is "cancel" or "stop") await Reject<OperationCanceledException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
-                    else if (operation == "flood") Assert((await query.WaitAsync(TimeSpan.FromSeconds(5))).Truncated, "Output capped");
-                    else await Reject<WorkspaceException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
+                    if (operation == "cancel")
+                        cancel.Cancel();
+                    if (operation == "stop")
+                        await runtime.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    if (operation is "cancel" or "stop")
+                        await Reject<OperationCanceledException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
+                    else if (operation == "flood")
+                        Assert((await query.WaitAsync(TimeSpan.FromSeconds(5))).Truncated, "Output capped");
+                    else
+                        await Reject<WorkspaceException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
                     await RuntimeCallChecks.AssertStoppedAsync(child);
                 }
                 finally { cancel.Cancel(); RuntimeCallChecks.KillIfRunning(child); }
@@ -376,15 +417,21 @@ internal static class GitQueryChecks
         Console.OutputEncoding = new UTF8Encoding(false);
         var marker = Path.Combine(Environment.CurrentDirectory, "git-query-child.pid");
         var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
-        start.ArgumentList.Add("--execution-child"); start.ArgumentList.Add(marker);
+        start.ArgumentList.Add("--execution-child");
+        start.ArgumentList.Add(marker);
         using var child = Process.Start(start)!;
-        while (!File.Exists(marker)) await Task.Delay(10);
+        while (!File.Exists(marker))
+            await Task.Delay(10);
         while (!File.Exists(Path.Combine(Environment.CurrentDirectory, "git-query-observed")))
             await Task.Delay(10);
         var mode = await File.ReadAllTextAsync(Path.Combine(Environment.CurrentDirectory, ".git-query-control"));
-        if (mode == "malformed") { Console.Write("invalid\0"); await Console.Out.FlushAsync(); }
-        if (mode == "flood") while (true) { Console.Write(new string('x', 4096)); Console.Error.Write(new string('e', 4096)); }
-        Console.Write(" M partial"); await Console.Out.FlushAsync();
+        if (mode == "malformed")
+        { Console.Write("invalid\0"); await Console.Out.FlushAsync(); }
+        if (mode == "flood")
+            while (true)
+            { Console.Write(new string('x', 4096)); Console.Error.Write(new string('e', 4096)); }
+        Console.Write(" M partial");
+        await Console.Out.FlushAsync();
         await Task.Delay(Timeout.InfiniteTimeSpan);
         return 0;
     }
@@ -406,8 +453,10 @@ internal static class GitQueryChecks
         public ToolExecutionService Execution { get; }
         public Fixture(ExecutionMode mode = ExecutionMode.ReadOnly, string? gitPath = null)
         {
-            Root = Path.Combine(DirectoryPath, "project"); Directory.CreateDirectory(Root);
-            _paths = new(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state")); Recovery = _paths.RecoveryDirectory;
+            Root = Path.Combine(DirectoryPath, "project");
+            Directory.CreateDirectory(Root);
+            _paths = new(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
+            Recovery = _paths.RecoveryDirectory;
             var source = Path.Combine(DirectoryPath, "settings.json");
             _git = ExternalProgramLocator.FindGit("", source) ?? throw new Exception("Git required for checks");
             Directory.CreateDirectory(Path.Combine(DirectoryPath, "empty-templates"));
@@ -416,7 +465,8 @@ internal static class GitQueryChecks
             Git("config", "user.email", "checks@example.invalid").GetAwaiter().GetResult();
             Configuration = new ConfigurationValidator(_paths).Validate(new AppSettings
             {
-                ProjectRoot = Root, GitPath = gitPath ?? _git,
+                ProjectRoot = Root,
+                GitPath = gitPath ?? _git,
                 BashPath = mode == ExecutionMode.FullAccess ? ExternalProgramLocator.FindBash("", source)! : "missing-bash",
                 Authentication = new() { Mode = AuthenticationMode.Local }
             }, source, new() { Mode = mode });
@@ -431,17 +481,30 @@ internal static class GitQueryChecks
         public IEnumerable<Func<Task>> Queries() => [async () => { await Execution.GitStatusAsync(); }, async () => { await Execution.GitDiffAsync(); }, async () => { await Execution.GitLogAsync(); }];
         public async Task<string> Git(params string[] arguments)
         {
-            var start = new ProcessStartInfo(_git) { WorkingDirectory = Root, UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false) };
-            foreach (var key in start.Environment.Keys.ToArray()) if (key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)) start.Environment.Remove(key);
+            var start = new ProcessStartInfo(_git)
+            {
+                WorkingDirectory = Root,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = new UTF8Encoding(false)
+            };
+            foreach (var key in start.Environment.Keys.ToArray())
+                if (key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase))
+                    start.Environment.Remove(key);
             start.Environment["GIT_CONFIG_NOSYSTEM"] = "1";
             start.Environment["GIT_CONFIG_GLOBAL"] = OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
-            foreach (var argument in arguments) start.ArgumentList.Add(argument);
+            foreach (var argument in arguments)
+                start.ArgumentList.Add(argument);
             using var process = Process.Start(start)!;
-            var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
-            var output = await stdout; var error = await stderr;
-            if (process.ExitCode != 0) throw new Exception("Git fixture setup failed: " + error);
+            var output = await stdout;
+            var error = await stderr;
+            if (process.ExitCode != 0)
+                throw new Exception("Git fixture setup failed: " + error);
             return output;
         }
         public string[] Snapshot() => Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
@@ -452,8 +515,10 @@ internal static class GitQueryChecks
             await Execution.DisposeAsync();
             var resolved = Path.GetFullPath(DirectoryPath);
             if (Path.GetDirectoryName(resolved) != Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())) ||
-                !Path.GetFileName(resolved).StartsWith("minimcp-git-", StringComparison.Ordinal)) throw new Exception("Unexpected Git fixture root");
-            foreach (var file in Directory.EnumerateFiles(resolved, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+                !Path.GetFileName(resolved).StartsWith("minimcp-git-", StringComparison.Ordinal))
+                throw new Exception("Unexpected Git fixture root");
+            foreach (var file in Directory.EnumerateFiles(resolved, "*", SearchOption.AllDirectories))
+                File.SetAttributes(file, FileAttributes.Normal);
             Directory.Delete(resolved, true);
         }
     }

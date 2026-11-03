@@ -15,8 +15,10 @@ internal static class VisualCapture
         var width = checked((int)Math.Round(element.ActualWidth * scale));
         var height = checked((int)Math.Round(element.ActualHeight * scale));
         var bitmap = new RenderTargetBitmap();
-        if (scale == nativeScale) await bitmap.RenderAsync(element);
-        else await bitmap.RenderAsync(element, (int)Math.Round(element.ActualWidth * scale / nativeScale),
+        if (scale == nativeScale)
+            await bitmap.RenderAsync(element);
+        else
+            await bitmap.RenderAsync(element, (int)Math.Round(element.ActualWidth * scale / nativeScale),
             (int)Math.Round(element.ActualHeight * scale / nativeScale));
         // RenderToSize uses display coordinates before the window's DPI transform.
         var rounding = (int)Math.Ceiling(nativeScale);
@@ -32,7 +34,8 @@ internal static class VisualCapture
         stream.Seek(0);
         using var reader = new DataReader(stream.GetInputStreamAt(0));
         await reader.LoadAsync((uint)stream.Size);
-        var bytes = new byte[(int)stream.Size]; reader.ReadBytes(bytes);
+        var bytes = new byte[(int)stream.Size];
+        reader.ReadBytes(bytes);
         await File.WriteAllBytesAsync(file, bytes);
         Console.WriteLine($"PNG {Path.GetFileName(file)}: {bitmap.PixelWidth}x{bitmap.PixelHeight}, render scale {scale:F2}, window scale {nativeScale:F2}");
     }

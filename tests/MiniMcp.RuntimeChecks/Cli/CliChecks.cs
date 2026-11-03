@@ -20,12 +20,14 @@ internal static class CliChecks
         { Timeout = TimeSpan.FromSeconds(3) };
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("CLI assertion failed.");
+            if (!condition)
+                throw new Exception("CLI assertion failed.");
         }
         int FreePort()
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
-            try { listener.Start(); return ((IPEndPoint)listener.LocalEndpoint).Port; }
+            try
+            { listener.Start(); return ((IPEndPoint)listener.LocalEndpoint).Port; }
             finally { listener.Stop(); }
         }
         async Task WriteSettings(string path, int port, string? bashPath = null, string? projectRoot = null)
@@ -33,7 +35,9 @@ internal static class CliChecks
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             await File.WriteAllTextAsync(path, ConfigurationJson.SerializeSettings(new AppSettings
             {
-                ProjectRoot = projectRoot ?? root, Port = port, BashPath = bashPath ?? "",
+                ProjectRoot = projectRoot ?? root,
+                Port = port,
+                BashPath = bashPath ?? "",
                 Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
             }));
         }
@@ -55,7 +59,8 @@ internal static class CliChecks
             try
             {
                 var first = await Task.WhenAny(running, output.Ready.Task).WaitAsync(TimeSpan.FromSeconds(10));
-                if (first == running) throw new Exception($"CLI exited before startup: {await running}; {error}");
+                if (first == running)
+                    throw new Exception($"CLI exited before startup: {await running}; {error}");
                 var address = await output.Ready.Task;
                 using var response = await client.GetAsync(address);
                 Assert(response.StatusCode == HttpStatusCode.OK);
@@ -65,10 +70,16 @@ internal static class CliChecks
                     var read = await mcp.CallToolAsync("read_file", new Dictionary<string, object?> { ["path"] = "cli.txt" }, cancellationToken: stop.Token);
                     Assert(McpHttpChecks.Structured(read).GetProperty("content").GetString() == "CLI MCP fixture\n");
                     var file = $"cli-{mode}.md";
-                    var arguments = new Dictionary<string, object?> { ["patch"] = PatchExecutionFixture.Patch($"*** Add File: {file}\n+first"),
-                        ["approved"] = true, ["mode"] = "FullAccess", ["disableRecovery"] = true };
+                    var arguments = new Dictionary<string, object?>
+                    {
+                        ["patch"] = PatchExecutionFixture.Patch($"*** Add File: {file}\n+first"),
+                        ["approved"] = true,
+                        ["mode"] = "FullAccess",
+                        ["disableRecovery"] = true
+                    };
                     var write = await mcp.CallToolAsync("apply_patch", arguments, cancellationToken: stop.Token);
-                    if (mode == ExecutionMode.ReadOnly) Assert(write.IsError == true && !File.Exists(Path.Combine(root, file)));
+                    if (mode == ExecutionMode.ReadOnly)
+                        Assert(write.IsError == true && !File.Exists(Path.Combine(root, file)));
                     else
                     {
                         var committed = McpHttpChecks.Structured(write).GetProperty("commit");
@@ -90,7 +101,8 @@ internal static class CliChecks
                 Assert(output.ToString().Contains($"配置执行模式：{mode}", StringComparison.Ordinal));
                 Assert(output.ToString().Contains(new Uri(address, "mcp").AbsoluteUri, StringComparison.Ordinal));
                 var released = new TcpListener(IPAddress.Loopback, address.Port);
-                try { released.Start(); }
+                try
+                { released.Start(); }
                 finally { released.Stop(); }
             }
             finally
@@ -164,7 +176,8 @@ internal static class CliChecks
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 var bash = Path.Combine(working, "configs", "bash");
                 await File.WriteAllTextAsync(bash, "Fixture only; never execute.");
-                if (OperatingSystem.IsLinux()) File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                if (OperatingSystem.IsLinux())
+                    File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
                 const string policy = """{"mode":"FullAccess"}""";
                 await File.WriteAllTextAsync(paths.PolicyFile, policy);
                 foreach (var mode in Enum.GetValues<ExecutionMode>())

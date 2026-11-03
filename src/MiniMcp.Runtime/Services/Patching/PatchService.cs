@@ -37,7 +37,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         try
         {
             workspace.Resolve(".");
-            if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
+            if (!Directory.Exists(workspace.Root))
+                throw new WorkspaceException("The project root no longer exists.");
             var changes = new List<PlannedPatchChange>();
             var paths = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
             foreach (var operation in operations)
@@ -89,7 +90,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                 throw new WorkspaceException("Patch file paths cannot be ancestors of other patch paths.");
             for (var parent = Path.GetDirectoryName(path); parent != workspace.Root && parent is not null; parent = Path.GetDirectoryName(parent))
             {
-                if (File.Exists(parent)) throw new WorkspaceException("A parent path is a file.");
+                if (File.Exists(parent))
+                    throw new WorkspaceException("A parent path is a file.");
             }
         }
     }
@@ -101,7 +103,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             throw new WorkspaceException("Patch installation or rollback finished, but the resulting files could not be verified. Inspect the affected paths before continuing.");
         if (outcome.VerifiedState == PatchCommitState.Incomplete)
             throw new WorkspaceException("Patch failed and rollback or staging cleanup was incomplete. Stop editing and inspect .minimcp-* files beside the affected paths; original files may remain in .minimcp-*.bak.");
-        if (outcome.Failure is { } failure) ExceptionDispatchInfo.Capture(failure).Throw();
+        if (outcome.Failure is { } failure)
+            ExceptionDispatchInfo.Capture(failure).Throw();
         return plan.ToResult(dryRun: false);
     }
 
@@ -129,7 +132,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
     private async Task<PatchCommitOutcome> CommitWithOutcomeCoreAsync(PatchPlan plan, PatchExecutionContext? context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        if (!ReferenceEquals(plan.Owner, this)) throw new WorkspaceException("The patch plan belongs to a different patch service.");
+        if (!ReferenceEquals(plan.Owner, this))
+            throw new WorkspaceException("The patch plan belongs to a different patch service.");
         await workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -146,14 +150,16 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         Func<CancellationToken, Task>? validateSourceRecord = null)
     {
         // Reject stale plans before creating any directories, staging files or rollback backups.
-        if (context is null) await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (context is null)
+            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
         else
         {
             context.Start(plan);
             try
             {
                 await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-                if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+                if (validateSourceRecord is not null)
+                    await validateSourceRecord(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception failure)
             {
@@ -170,7 +176,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
     private async Task ValidatePlanAsync(PatchPlan plan, CancellationToken cancellationToken)
     {
         workspace.Resolve(".");
-        if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
+        if (!Directory.Exists(workspace.Root))
+            throw new WorkspaceException("The project root no longer exists.");
         foreach (var change in plan.Changes)
             await ValidateChangeAsync(change, cancellationToken).ConfigureAwait(false);
     }
@@ -180,14 +187,16 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         cancellationToken.ThrowIfCancellationRequested();
         workspace.Resolve(workspace.Relative(change.Source));
         workspace.Resolve(workspace.Relative(change.Destination));
-        if (!Directory.Exists(workspace.Root)) throw new WorkspaceException("The project root no longer exists.");
+        if (!Directory.Exists(workspace.Root))
+            throw new WorkspaceException("The project root no longer exists.");
         if (Directory.Exists(change.Source) || Directory.Exists(change.Destination))
             throw new WorkspaceException("A patch path became a directory; prepare a new plan.");
         foreach (var path in new[] { change.Source, change.Destination })
         {
             for (var parent = Path.GetDirectoryName(path); parent != workspace.Root && parent is not null; parent = Path.GetDirectoryName(parent))
             {
-                if (File.Exists(parent)) throw new WorkspaceException("A patch parent path became a file; prepare a new plan.");
+                if (File.Exists(parent))
+                    throw new WorkspaceException("A patch parent path became a file; prepare a new plan.");
             }
         }
         if (change.Before is not null)
@@ -215,7 +224,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             await StageChangesAsync(changes, directories, cancellationToken);
             await Checkpoint(PatchCommitStage.Staged, -1).ConfigureAwait(false);
             await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            if (validateSourceRecord is not null) await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+            if (validateSourceRecord is not null)
+                await validateSourceRecord(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
             // Once commit starts, finish or roll back instead of leaving half a patch on cancellation.
@@ -223,7 +233,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             {
                 var change = changes[i];
                 await Checkpoint(PatchCommitStage.BeforeInstall, i).ConfigureAwait(false);
-                if (validateSourceRecord is not null) await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
+                if (validateSourceRecord is not null)
+                    await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
                 // Earlier operations may already be installed, so recheck this untouched operation
                 // rather than the full original plan. Late cancellation must not split the batch.
                 await ValidateChangeAsync(plan.Changes[i], CancellationToken.None).ConfigureAwait(false);
@@ -241,7 +252,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                 }
                 await Checkpoint(PatchCommitStage.Installed, i).ConfigureAwait(false);
             }
-            if (validateSourceRecord is not null) await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
+            if (validateSourceRecord is not null)
+                await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
             committed = true;
         }
         catch (Exception error)
@@ -255,8 +267,10 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         }
 
         var state = PatchCommitState.Incomplete;
-        if (committed) state = PatchCommitState.Committed;
-        else if (rollbackErrors.Count == 0 && cleanupErrors.Count == 0) state = PatchCommitState.RolledBack;
+        if (committed)
+            state = PatchCommitState.Committed;
+        else if (rollbackErrors.Count == 0 && cleanupErrors.Count == 0)
+            state = PatchCommitState.RolledBack;
         return new PatchCommitOutcome(plan, _outcomeIssuer, context, state, failure, rollbackErrors.ToImmutable(), cleanupErrors.ToImmutable());
     }
 
@@ -281,7 +295,8 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
                 Access = FileAccess.Write,
                 Options = FileOptions.Asynchronous
             };
-            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            if (!OperatingSystem.IsWindows())
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             await using (var stream = new FileStream(change.Temporary, options))
             {
                 await stream.WriteAsync(change.After!.Value.AsMemory(), cancellationToken);
@@ -324,10 +339,13 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
     {
         foreach (var change in changes)
         {
-            if (change.Temporary is not null) TryDelete(change.Temporary, errors);
-            if (committed && change.Backup is not null) TryDelete(change.Backup, errors);
+            if (change.Temporary is not null)
+                TryDelete(change.Temporary, errors);
+            if (committed && change.Backup is not null)
+                TryDelete(change.Backup, errors);
         }
-        if (committed) return;
+        if (committed)
+            return;
 
         foreach (var directory in directories.AsEnumerable().Reverse())
         {

@@ -69,12 +69,25 @@ internal static class PatchPlanChecks
                 var plan = await fixture.Prepare("*** Add File: preview/new.txt\n+first\n" + operation);
                 switch (scenario)
                 {
-                    case "source": File.Delete(fixture.Path("sample.txt")); break;
-                    case "file": Directory.CreateDirectory(fixture.Path("preview")); fixture.Put("preview/new.txt", "external\n"); break;
-                    case "directory": Directory.CreateDirectory(fixture.Path("preview/new.txt")); break;
-                    case "parent": fixture.Put("preview", "parent file\n"); break;
-                    case "move": fixture.Put("target.txt", "external target\n"); break;
-                    case "root": System.IO.Directory.Delete(fixture.Root, recursive: true); break;
+                    case "source":
+                        File.Delete(fixture.Path("sample.txt"));
+                        break;
+                    case "file":
+                        Directory.CreateDirectory(fixture.Path("preview"));
+                        fixture.Put("preview/new.txt", "external\n");
+                        break;
+                    case "directory":
+                        Directory.CreateDirectory(fixture.Path("preview/new.txt"));
+                        break;
+                    case "parent":
+                        fixture.Put("preview", "parent file\n");
+                        break;
+                    case "move":
+                        fixture.Put("target.txt", "external target\n");
+                        break;
+                    case "root":
+                        System.IO.Directory.Delete(fixture.Root, recursive: true);
+                        break;
                 }
                 await RejectedWithoutWrites(fixture, plan);
             }
@@ -159,7 +172,9 @@ internal static class PatchPlanChecks
     private static void Assert(bool condition) { if (!condition) throw new Exception("Patch plan assertion failed."); }
     private static async Task Reject<TException>(Func<Task> action) where TException : Exception
     {
-        try { await action(); } catch (TException) { return; }
+        try
+        { await action(); }
+        catch (TException) { return; }
         throw new Exception($"Expected {typeof(TException).Name}.");
     }
 

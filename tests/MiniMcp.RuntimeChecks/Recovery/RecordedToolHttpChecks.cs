@@ -84,12 +84,15 @@ internal static class RecordedToolHttpChecks
                 var finishing = false;
                 await using var runtime = fixture.Runtime((stage, _) =>
                 {
-                    if (scenario == "rollback" && stage == PatchCommitStage.Installed) return Task.FromException(new IOException(secret + fixture.Root));
-                    if (scenario == "verification" && stage == PatchCommitStage.BeforeVerification) fixture.Put("sample.md", "external\n");
+                    if (scenario == "rollback" && stage == PatchCommitStage.Installed)
+                        return Task.FromException(new IOException(secret + fixture.Root));
+                    if (scenario == "verification" && stage == PatchCommitStage.BeforeVerification)
+                        fixture.Put("sample.md", "external\n");
                     return Task.CompletedTask;
                 }, replace: (stage, path) =>
                 {
-                    if (stage == RecoveryManifestReplacementStage.TemporaryWritten) finishing = RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed;
+                    if (stage == RecoveryManifestReplacementStage.TemporaryWritten)
+                        finishing = RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed;
                     return scenario == "final-save" && finishing && stage == RecoveryManifestReplacementStage.BeforeReplace ? Task.FromException(new IOException(secret + fixture.Root)) : Task.CompletedTask;
                 });
                 await runtime.StartAsync(fixture.Configuration);
@@ -109,7 +112,8 @@ internal static class RecordedToolHttpChecks
         await check("MCP HTTP client cancellation during final save leaves the real commit tracked until durable completion", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             await using var runtime = fixture.Runtime(replace: async (stage, path) =>
             {
                 if (stage == RecoveryManifestReplacementStage.TemporaryWritten && RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed)
@@ -169,8 +173,17 @@ internal static class RecordedToolHttpChecks
 
     private static HttpClient Client() => new(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
     private static Task<CallToolResult> Call(McpClient client, string patch, bool dryRun = false, CancellationToken cancellationToken = default) => client.CallToolAsync("apply_patch",
-        new Dictionary<string, object?> { ["patch"] = patch, ["dry_run"] = dryRun, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = false,
-            ["disableRecovery"] = true, ["runId"] = Guid.Empty, ["changeId"] = Guid.Empty }, cancellationToken: cancellationToken).AsTask();
+        new Dictionary<string, object?>
+        {
+            ["patch"] = patch,
+            ["dry_run"] = dryRun,
+            ["approved"] = true,
+            ["mode"] = "FullAccess",
+            ["recoveryReady"] = false,
+            ["disableRecovery"] = true,
+            ["runId"] = Guid.Empty,
+            ["changeId"] = Guid.Empty
+        }, cancellationToken: cancellationToken).AsTask();
     private static JsonElement Result(CallToolResult result)
     {
         var json = McpHttpChecks.Structured(result);

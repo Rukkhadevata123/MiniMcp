@@ -40,7 +40,8 @@ internal static class PatchDiffChecks
             {
                 ("a\nb\na\nc\n", "a\na\nb\nc\n"), ("a\nb\n", "new\na\nb\nlast\n"),
                 ("one\ntwo\nthree\n", "two\n"), ("", "new\n"), ("old\n", "")
-            }) Assert(ApplyReview(before, PatchDiffBuilder.Create(fixture.Images(before, after)).Diff) == after);
+            })
+                Assert(ApplyReview(before, PatchDiffBuilder.Create(fixture.Images(before, after)).Diff) == after);
             return Task.CompletedTask;
         });
 
@@ -154,7 +155,8 @@ internal static class PatchDiffChecks
             var before = fixture.Snapshot();
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
-            try { PatchDiffBuilder.Create(plan, cancellation.Token); throw new Exception("Expected cancellation."); }
+            try
+            { PatchDiffBuilder.Create(plan, cancellation.Token); throw new Exception("Expected cancellation."); }
             catch (OperationCanceledException) { }
             Assert(before.SequenceEqual(fixture.Snapshot()));
             Assert(PatchDiffBuilder.Create(plan).Files.Length == 1);
@@ -169,7 +171,8 @@ internal static class PatchDiffChecks
         var result = new StringBuilder();
         int cursor = 0, targetLines = 0, oldRows = 0, newRows = 0;
         int? expectedOld = null, expectedNew = null;
-        void Finish() { if (expectedOld is not null) Assert(oldRows == expectedOld && newRows == expectedNew); }
+        void Finish()
+        { if (expectedOld is not null) Assert(oldRows == expectedOld && newRows == expectedNew); }
         foreach (var row in diff.Split('\n'))
         {
             if (row.StartsWith("@@ ", StringComparison.Ordinal))
@@ -180,25 +183,34 @@ internal static class PatchDiffChecks
                 var newRange = fields[2][1..].Split(',').Select(int.Parse).ToArray();
                 var start = oldRange[1] == 0 ? oldRange[0] : oldRange[0] - 1;
                 Assert(start >= cursor && start <= source.Length);
-                while (cursor < start) { result.Append(source[cursor++]); targetLines++; }
+                while (cursor < start)
+                { result.Append(source[cursor++]); targetLines++; }
                 Assert(newRange[0] == (newRange[1] == 0 ? targetLines : targetLines + 1));
-                expectedOld = oldRange[1]; expectedNew = newRange[1]; oldRows = 0; newRows = 0;
+                expectedOld = oldRange[1];
+                expectedNew = newRange[1];
+                oldRows = 0;
+                newRows = 0;
             }
             else if (expectedOld is not null && row.Length > 1 && row[0] is ' ' or '+' or '-')
             {
                 var line = JsonSerializer.Deserialize<string>(row[1..])!;
-                if (row[0] != '+') { Assert(cursor < source.Length && source[cursor++] == line); oldRows++; }
-                if (row[0] != '-') { result.Append(line); newRows++; targetLines++; }
+                if (row[0] != '+')
+                { Assert(cursor < source.Length && source[cursor++] == line); oldRows++; }
+                if (row[0] != '-')
+                { result.Append(line); newRows++; targetLines++; }
             }
         }
         Finish();
-        while (cursor < source.Length) result.Append(source[cursor++]);
+        while (cursor < source.Length)
+            result.Append(source[cursor++]);
         return result.ToString();
     }
 
     private static void Reject(Action action, string message)
     {
-        try { action(); } catch (WorkspaceException error) { Assert(error.Message.Contains(message) && error.Message.Contains("split")); return; }
+        try
+        { action(); }
+        catch (WorkspaceException error) { Assert(error.Message.Contains(message) && error.Message.Contains("split")); return; }
         throw new Exception("Expected complete-preview rejection.");
     }
     private static void Assert(bool condition) { if (!condition) throw new Exception("Patch diff assertion failed."); }

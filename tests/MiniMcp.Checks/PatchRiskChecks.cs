@@ -160,13 +160,15 @@ internal static class PatchRiskChecks
             Assert(actual.Reasons == expected.Reasons && actual.Changes.SequenceEqual(expected.Changes) && !Directory.Exists(fixture.Root), "No filesystem reads or writes");
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
-            try { PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), fixture.SettingsPath, new(), cancelled.Token); throw new Exception("Expected cancellation"); }
+            try
+            { PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), fixture.SettingsPath, new(), cancelled.Token); throw new Exception("Expected cancellation"); }
             catch (OperationCanceledException) { }
 
             Directory.CreateDirectory(fixture.Root);
             foreach (var path in new[] { "../outside.cs", ".git/config.cs", ".env.cs", ".codex/policy.md", "private.key" })
             {
-                try { await fixture.Prepare($"*** Add File: {path}\n+new"); throw new Exception("Expected base rejection: " + path); }
+                try
+                { await fixture.Prepare($"*** Add File: {path}\n+new"); throw new Exception("Expected base rejection: " + path); }
                 catch (WorkspaceException) { }
             }
         });

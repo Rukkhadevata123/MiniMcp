@@ -60,7 +60,8 @@ public sealed class ConfigurationValidator
                 if (new FileInfo(path).Length == 0)
                     throw new InvalidOperationException("The tunnel token file must not be empty.");
                 using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-                if (file.Length == 0) throw new InvalidOperationException("The tunnel token file must not be empty.");
+                if (file.Length == 0)
+                    throw new InvalidOperationException("The tunnel token file must not be empty.");
                 return path;
             });
             settings = settings with { Tunnel = settings.Tunnel with { ExecutablePath = cloudflared } };
@@ -114,11 +115,13 @@ public sealed class ConfigurationValidator
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(policy);
-        if (settings.Tunnel is null) throw new ConfigurationValidationException("tunnel", "Must not be null.");
+        if (settings.Tunnel is null)
+            throw new ConfigurationValidationException("tunnel", "Must not be null.");
 
         var source = Field("settingsFile", () =>
         {
-            if (!Path.IsPathFullyQualified(settingsFile)) throw new ArgumentException("Use an absolute configuration file path.");
+            if (!Path.IsPathFullyQualified(settingsFile))
+                throw new ArgumentException("Use an absolute configuration file path.");
             var path = Path.GetFullPath(settingsFile);
             CheckStoragePath(path, directory: false);
             return path;
@@ -163,7 +166,8 @@ public sealed class ConfigurationValidator
 
     private static string CheckProgram(string? path, string name)
     {
-        if (path is null) throw new InvalidOperationException($"Could not locate {name}; install it or configure its executable path.");
+        if (path is null)
+            throw new InvalidOperationException($"Could not locate {name}; install it or configure its executable path.");
         if (!Path.IsPathFullyQualified(path) || (File.GetAttributes(path) & FileAttributes.Directory) != 0)
             throw new InvalidOperationException($"The {name} path must name an existing program file using an absolute path.");
         if (OperatingSystem.IsLinux())
@@ -178,11 +182,13 @@ public sealed class ConfigurationValidator
     private static bool IsHttpsOrigin(string? value)
     {
         if (value is null || !IsSingleValue(value) || !value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-            || value.Contains('\\') || value.Contains('@')) return false;
+            || value.Contains('\\') || value.Contains('@'))
+            return false;
         var authority = value.AsSpan("https://".Length);
         var delimiter = authority.IndexOfAny('/', '?', '#');
         // Inspect the original suffix as Uri otherwise normalizes paths such as /mcp/.. to /.
-        if (delimiter >= 0 && !authority[delimiter..].SequenceEqual("/".AsSpan())) return false;
+        if (delimiter >= 0 && !authority[delimiter..].SequenceEqual("/".AsSpan()))
+            return false;
         return Uri.TryCreate(value, UriKind.Absolute, out var origin)
             && origin.Scheme == Uri.UriSchemeHttps && origin.Port is >= 1 and <= 65535
             && origin.HostNameType is UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6
@@ -199,7 +205,8 @@ public sealed class ConfigurationValidator
 
     private static void Require(bool condition, string field, string message)
     {
-        if (!condition) throw new ConfigurationValidationException(field, message);
+        if (!condition)
+            throw new ConfigurationValidationException(field, message);
     }
 
     private static bool Contains(string directory, string path)
@@ -229,7 +236,8 @@ public sealed class ConfigurationValidator
 
     private static T Field<T>(string field, Func<T> action)
     {
-        try { return action(); }
+        try
+        { return action(); }
         catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException
             or InvalidOperationException or NotSupportedException or WorkspaceException)
         {

@@ -31,18 +31,28 @@ internal sealed class CheckRunner
         for (var index = 0; index < args.Length; index++)
         {
             var option = args[index];
-            if (option == "--list" && !_list) { _list = true; continue; }
+            if (option == "--list" && !_list)
+            { _list = true; continue; }
             if (option is not ("--filter" or "--group" or "--id" or "--tier") || index + 1 >= args.Length ||
                 string.IsNullOrWhiteSpace(args[index + 1]))
                 throw new ArgumentException($"Unknown or incomplete checks argument: {option}. Expected --list, --group NAME, --id ID, --filter TEXT or --tier fast|integration|slow|ui.");
             var value = args[++index];
             switch (option)
             {
-                case "--filter" when _filter is null: _filter = value; break;
-                case "--group" when _group is null: _group = value; break;
-                case "--id" when _id is null: _id = value; break;
-                case "--tier" when _tier is null && value is ("fast" or "integration" or "slow" or "ui"): _tier = value; break;
-                default: throw new ArgumentException($"Duplicate checks argument: {option}");
+                case "--filter" when _filter is null:
+                    _filter = value;
+                    break;
+                case "--group" when _group is null:
+                    _group = value;
+                    break;
+                case "--id" when _id is null:
+                    _id = value;
+                    break;
+                case "--tier" when _tier is null && value is ("fast" or "integration" or "slow" or "ui"):
+                    _tier = value;
+                    break;
+                default:
+                    throw new ArgumentException($"Duplicate checks argument: {option}");
             }
         }
     }
@@ -64,7 +74,8 @@ internal sealed class CheckRunner
             return;
 
         Selected++;
-        if (_list) { _output.WriteLine($"{id}\t{name}\t{tier}"); return; }
+        if (_list)
+        { _output.WriteLine($"{id}\t{name}\t{tier}"); return; }
         var watch = Stopwatch.StartNew();
         Exception? failure = null;
         CheckSkippedException? skipped = null;
@@ -74,7 +85,8 @@ internal sealed class CheckRunner
         CleanupFailures.Value = cleanup;
         ActiveScenario.Value = null;
         string? failedScenario = null;
-        try { await action(); }
+        try
+        { await action(); }
         catch (CheckSkippedException reason) { skipped = reason; }
         catch (Exception error) { failure = error; failedScenario = ActiveScenario.Value; }
         finally { CleanupFailures.Value = previous; ActiveScenario.Value = previousScenario; }
@@ -82,8 +94,10 @@ internal sealed class CheckRunner
         if (failure is not null || cleanup.Count != 0)
         {
             Failed++;
-            if (failure is not null) _output.WriteLine($"FAIL {id} ({watch.Elapsed.TotalMilliseconds:F0} ms){(failedScenario is null ? "" : " [" + failedScenario + "]")}: {failure}");
-            else _output.WriteLine($"FAIL {id} ({watch.Elapsed.TotalMilliseconds:F0} ms): cleanup failed");
+            if (failure is not null)
+                _output.WriteLine($"FAIL {id} ({watch.Elapsed.TotalMilliseconds:F0} ms){(failedScenario is null ? "" : " [" + failedScenario + "]")}: {failure}");
+            else
+                _output.WriteLine($"FAIL {id} ({watch.Elapsed.TotalMilliseconds:F0} ms): cleanup failed");
             foreach (var (label, error) in cleanup)
                 _output.WriteLine($"FAIL CLEANUP {id} [{label}]: {error}");
         }
@@ -92,17 +106,20 @@ internal sealed class CheckRunner
             Skipped++;
             _output.WriteLine($"SKIP {id} ({watch.Elapsed.TotalMilliseconds:F0} ms): {skipped.Message}");
         }
-        else { Passed++; _output.WriteLine($"PASS {id} ({watch.Elapsed.TotalMilliseconds:F0} ms)"); }
+        else
+        { Passed++; _output.WriteLine($"PASS {id} ({watch.Elapsed.TotalMilliseconds:F0} ms)"); }
     }
 
     // A fixture can finish cleanup without replacing an earlier assertion failure.
     // When outside a check, disposal errors still propagate normally.
     public static void Cleanup(string label, Action cleanup)
     {
-        try { cleanup(); }
+        try
+        { cleanup(); }
         catch (Exception error)
         {
-            if (CleanupFailures.Value is not { } errors) throw;
+            if (CleanupFailures.Value is not { } errors)
+                throw;
             errors.Add((label, error));
         }
     }
@@ -113,8 +130,10 @@ internal sealed class CheckRunner
     {
         for (var attempt = 0; ; attempt++)
         {
-            if (!Directory.Exists(directory)) return;
-            try { Directory.Delete(directory, recursive: true); return; }
+            if (!Directory.Exists(directory))
+                return;
+            try
+            { Directory.Delete(directory, recursive: true); return; }
             catch (IOException error) when (OperatingSystem.IsWindows() &&
                 (error.HResult == unchecked((int)0x80070020) || error.HResult == unchecked((int)0x80070021)) &&
                 attempt < 3)
@@ -131,7 +150,8 @@ internal sealed class CheckRunner
     public int Finish()
     {
         _output.WriteLine($"\n{Passed} passed, {Failed} failed, {Skipped} skipped, {Selected} selected ({_elapsed.Elapsed.TotalSeconds:F2} s).");
-        if (Selected == 0) _error.WriteLine("No checks matched the requested selection.");
+        if (Selected == 0)
+            _error.WriteLine("No checks matched the requested selection.");
         return Failed == 0 && Selected != 0 ? 0 : 1;
     }
 
@@ -143,11 +163,13 @@ internal sealed class CheckRunner
         {
             if (char.IsAsciiLetterOrDigit(character))
             {
-                if (pendingDash && result.Length != 0) result.Append('-');
+                if (pendingDash && result.Length != 0)
+                    result.Append('-');
                 result.Append(char.ToLowerInvariant(character));
                 pendingDash = false;
             }
-            else pendingDash = true;
+            else
+                pendingDash = true;
         }
         return result.ToString();
     }
@@ -157,7 +179,8 @@ internal sealed class CheckRunner
     // All file/HTTP/process/storage checks default to integration.
     private static string TierFor(string suite, string group, string name)
     {
-        if (suite == "protocol") return "fast"; // In-memory SDK transport.
+        if (suite == "protocol")
+            return "fast"; // In-memory SDK transport.
         if (suite == "core" && group is "patch.plan" or "patch.diff" or "patch.risk" or "patch.write-policy"
             or "recovery.draft" or "recovery.json" or "recovery.validation")
             return "fast";

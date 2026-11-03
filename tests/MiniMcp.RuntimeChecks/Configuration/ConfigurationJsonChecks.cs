@@ -7,11 +7,13 @@ internal static class ConfigurationJsonChecks
     {
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Configuration JSON assertion failed.");
+            if (!condition)
+                throw new Exception("Configuration JSON assertion failed.");
         }
         JsonException Reject(Action action)
         {
-            try { action(); }
+            try
+            { action(); }
             catch (JsonException exception) { return exception; }
             throw new Exception("Invalid configuration JSON was accepted.");
         }
@@ -42,7 +44,8 @@ internal static class ConfigurationJsonChecks
                 """{"mode":"FullAccess"}""", """{"policy":{"mode":"FullAccess"}}""",
                 """{"Port":8000}""", """{"recoveryDirectory":"./backup"}""",
                 """{"authentication":{"unknown":true}}""", """{"tunnel":{"mode":"FullAccess"}}"""
-            }) Reject(() => ConfigurationJson.ParseSettings(json));
+            })
+                Reject(() => ConfigurationJson.ParseSettings(json));
             Reject(() => ConfigurationJson.ParsePolicy("""{"projectRoot":"./project"}"""));
             Reject(() => ConfigurationJson.ParsePolicy("""{"Mode":"FullAccess"}"""));
             return Task.CompletedTask;
@@ -56,7 +59,8 @@ internal static class ConfigurationJsonChecks
                 """{"port":8000,"po\u0072t":9000}""",
                 """{"authentication":{"mode":"Local","mode":"CloudflareAccess"}}""",
                 """{"tunnel":{"enabled":false,"enabled":true}}"""
-            }) Reject(() => ConfigurationJson.ParseSettings(json));
+            })
+                Reject(() => ConfigurationJson.ParseSettings(json));
             Reject(() => ConfigurationJson.ParsePolicy("""{"mode":"ReadOnly","mode":"FullAccess"}"""));
             return Task.CompletedTask;
         });
@@ -69,7 +73,8 @@ internal static class ConfigurationJsonChecks
                 """{"projectRoot":null}""", """{"bashPath":null}""", """{"authentication":null}""",
                 """{"tunnel":null}""", """{"tunnel":{"enabled":"false"}}""",
                 """{"tunnel":{"executablePath":null}}""", """{"tunnel":{"tokenFilePath":null}}"""
-            }) Reject(() => ConfigurationJson.ParseSettings(json));
+            })
+                Reject(() => ConfigurationJson.ParseSettings(json));
             Reject(() => ConfigurationJson.ParsePolicy("null"));
             Reject(() => ConfigurationJson.ParsePolicy("""{"recoveryDirectory":null}"""));
             Assert(ConfigurationJson.ParseSettings("""{"authentication":{"team":null,"audience":null,"publicOrigin":null}}""").Authentication.Team is null);

@@ -23,13 +23,15 @@ internal static class QueryText
 
     internal static string ValidatePath(ProjectWorkspace workspace, string path)
     {
-        if (Encoding.UTF8.GetByteCount(path) > 4096) throw new WorkspaceException("Query paths are limited to 4096 UTF-8 bytes.");
+        if (Encoding.UTF8.GetByteCount(path) > 4096)
+            throw new WorkspaceException("Query paths are limited to 4096 UTF-8 bytes.");
         return workspace.Resolve(path);
     }
 
     internal static void Range(int value, int minimum, int maximum, string name)
     {
-        if (value < minimum || value > maximum) throw new WorkspaceException($"{name} must be between {minimum} and {maximum}.");
+        if (value < minimum || value > maximum)
+            throw new WorkspaceException($"{name} must be between {minimum} and {maximum}.");
     }
 }
 
@@ -42,9 +44,11 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
     {
         QueryText.Range(maxDepth, 0, 8, "max_depth");
         QueryText.Range(maxEntries, 1, 2000, "max_entries");
-        if (format is not ("flat" or "tree")) throw new WorkspaceException("format must be flat or tree.");
+        if (format is not ("flat" or "tree"))
+            throw new WorkspaceException("format must be flat or tree.");
         var root = QueryText.ValidatePath(workspace, path);
-        if (!Directory.Exists(root)) throw new WorkspaceException("list_files path must name an existing project directory.");
+        if (!Directory.Exists(root))
+            throw new WorkspaceException("list_files path must name an existing project directory.");
         // Directory enumeration is synchronous; it must not occupy the MCP dispatch thread.
         return Task.Run(() => List(root, maxDepth, maxEntries, includeHidden, format, cancellationToken), cancellationToken);
     }
@@ -63,25 +67,33 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
         var stopped = false;
         void Walk(string directory, int depth)
         {
-            if (depth == maxDepth) { notices.Add("DepthLimit: boundary directories were not expanded. This notice does not indicate a listing failure."); return; }
+            if (depth == maxDepth)
+            { notices.Add("DepthLimit: boundary directories were not expanded. This notice does not indicate a listing failure."); return; }
             try
             {
                 workspace.Resolve(workspace.Relative(directory));
                 foreach (var item in Directory.EnumerateFileSystemEntries(directory))
                 {
                     deadline.Token.ThrowIfCancellationRequested();
-                    if (++work > QueryText.MaxWork) { notices.Add("TraversalLimit"); stopped = true; return; }
+                    if (++work > QueryText.MaxWork)
+                    { notices.Add("TraversalLimit"); stopped = true; return; }
                     var name = Path.GetFileName(item);
-                    if (ProjectWorkspace.IsPrivateName(name)) continue;
+                    if (ProjectWorkspace.IsPrivateName(name))
+                        continue;
                     FileAttributes attributes;
-                    try { attributes = File.GetAttributes(item); }
+                    try
+                    { attributes = File.GetAttributes(item); }
                     catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                     { notices.Add("UnavailableEntries"); continue; }
-                    if ((attributes & FileAttributes.ReparsePoint) != 0) { notices.Add("LinksSkipped"); continue; }
+                    if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    { notices.Add("LinksSkipped"); continue; }
                     var isDirectory = (attributes & FileAttributes.Directory) != 0;
-                    if (!includeHidden && (name.StartsWith('.') || (attributes & FileAttributes.Hidden) != 0)) continue;
-                    if (isDirectory && GeneratedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
-                    if (entries.Count == maxEntries) { notices.Add("EntryLimit"); stopped = true; return; }
+                    if (!includeHidden && (name.StartsWith('.') || (attributes & FileAttributes.Hidden) != 0))
+                        continue;
+                    if (isDirectory && GeneratedDirectories.Contains(name, StringComparer.OrdinalIgnoreCase))
+                        continue;
+                    if (entries.Count == maxEntries)
+                    { notices.Add("EntryLimit"); stopped = true; return; }
                     try
                     {
                         var relative = workspace.Relative(item);
@@ -90,11 +102,14 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
                             isDirectory ? null : new FileInfo(item).Length, isDirectory && depth + 1 < maxDepth);
                         // Reserve space for the tree, metadata and notices, even for heavily escaped names.
                         var cost = JsonSerializer.SerializeToUtf8Bytes(entry).Length * 2 + 64;
-                        if (bytes + cost > QueryText.MaxResultBytes - 8192) { notices.Add("OutputLimit"); stopped = true; return; }
+                        if (bytes + cost > QueryText.MaxResultBytes - 8192)
+                        { notices.Add("OutputLimit"); stopped = true; return; }
                         bytes += cost;
                         entries.Add(entry);
-                        if (isDirectory) Walk(item, depth + 1);
-                        if (stopped) return;
+                        if (isDirectory)
+                            Walk(item, depth + 1);
+                        if (stopped)
+                            return;
                     }
                     catch (Exception error) when (error is IOException or UnauthorizedAccessException or WorkspaceException)
                     { notices.Add("UnstableOrUnavailableEntries"); }
@@ -103,7 +118,8 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or WorkspaceException)
             { notices.Add("UnstableOrUnavailableDirectories"); }
         }
-        try { Walk(root, 0); }
+        try
+        { Walk(root, 0); }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) { notices.Add("Timeout"); }
         cancellationToken.ThrowIfCancellationRequested();
         var tree = format == "tree" ? QueryText.Display(scope) + "/\n" + string.Concat(entries.Select(entry =>

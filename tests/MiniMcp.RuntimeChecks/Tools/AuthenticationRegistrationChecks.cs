@@ -41,7 +41,8 @@ internal static class AuthenticationRegistrationChecks
             foreach (var mode in new[] { AuthenticationMode.Local, (AuthenticationMode)999 })
             {
                 var services = new ServiceCollection();
-                try { services.AddCloudflareAccess(settings with { Mode = mode }); }
+                try
+                { services.AddCloudflareAccess(settings with { Mode = mode }); }
                 catch (InvalidOperationException) when (services.Count == 0) { continue; }
                 throw new Exception("Cloudflare registration accepted an unsupported authentication mode.");
             }

@@ -131,7 +131,8 @@ internal static class PatchBatchChecks
             var risk = fixture.Classify(large, limits);
             Assert(risk.Size == new PatchBatchSize(1, 2L * int.MaxValue, 2L * int.MaxValue), "Wide totals");
             Assert(risk.Reasons == (PatchRiskReason.ChangedLineLimitExceeded | PatchRiskReason.ChangedByteLimitExceeded), "No Int32 wraparound");
-            try { fixture.Classify(preview with { Statistics = new(0, 0, long.MaxValue, 1) }, limits); throw new Exception("Expected overflow rejection"); }
+            try
+            { fixture.Classify(preview with { Statistics = new(0, 0, long.MaxValue, 1) }, limits); throw new Exception("Expected overflow rejection"); }
             catch (OverflowException) { }
             Assert(!Directory.EnumerateFiles(fixture.Root).Any(), "No writes");
         });
@@ -168,7 +169,8 @@ internal static class PatchBatchChecks
             Assert(ReferenceEquals(actual.Preview, preview) && !Directory.Exists(fixture.Root), "No reread or directory creation");
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
-            try { PatchRiskClassifier.Classify(preview, fixture.SettingsPath, limits, cancelled.Token); throw new Exception("Expected cancellation"); }
+            try
+            { PatchRiskClassifier.Classify(preview, fixture.SettingsPath, limits, cancelled.Token); throw new Exception("Expected cancellation"); }
             catch (OperationCanceledException) { }
             Assert(!Directory.Exists(fixture.Root), "Cancellation has no effects");
         });
@@ -177,7 +179,9 @@ internal static class PatchBatchChecks
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch batch: " + message); }
     private static async Task RejectAsync<T>(Func<Task> action) where T : Exception
     {
-        try { await action(); } catch (T) { return; }
+        try
+        { await action(); }
+        catch (T) { return; }
         throw new Exception($"Expected {typeof(T).Name}.");
     }
 

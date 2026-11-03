@@ -31,12 +31,14 @@ internal sealed class BashRunner
     {
         if (string.IsNullOrWhiteSpace(command) || command.Contains('\0') || Encoding.UTF8.GetByteCount(command) > 64 * 1024)
             throw new WorkspaceException("command must contain 1..65536 UTF-8 bytes and no NUL characters.");
-        if (timeoutSeconds is < 1 or > 600) throw new WorkspaceException("timeout_seconds must be between 1 and 600.");
+        if (timeoutSeconds is < 1 or > 600)
+            throw new WorkspaceException("timeout_seconds must be between 1 and 600.");
         await _workspace.Mutations.WaitAsync(cancellationToken);
         try
         {
             var directory = _workspace.Resolve(workdir);
-            if (!Directory.Exists(directory)) throw new WorkspaceException("workdir must be an existing project directory.");
+            if (!Directory.Exists(directory))
+                throw new WorkspaceException("workdir must be an existing project directory.");
             var start = new ProcessStartInfo
             {
                 FileName = OperatingSystem.IsLinux() ? "/usr/bin/setsid" : _bashPath,
@@ -50,7 +52,8 @@ internal sealed class BashRunner
                 StandardErrorEncoding = new UTF8Encoding(false),
                 CreateNoWindow = true
             };
-            if (OperatingSystem.IsLinux()) { start.ArgumentList.Add("--"); start.ArgumentList.Add(_bashPath); }
+            if (OperatingSystem.IsLinux())
+            { start.ArgumentList.Add("--"); start.ArgumentList.Add(_bashPath); }
             start.ArgumentList.Add("--noprofile");
             start.ArgumentList.Add("--norc");
             start.ArgumentList.Add("-c");
@@ -59,7 +62,8 @@ internal sealed class BashRunner
             start.ArgumentList.Add("minimcp");
             start.ArgumentList.Add(command);
             foreach (var key in start.Environment.Keys.ToArray())
-                if (!KeepEnvironment(key)) start.Environment.Remove(key);
+                if (!KeepEnvironment(key))
+                    start.Environment.Remove(key);
 
             using var process = new Process { StartInfo = start };
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -75,7 +79,8 @@ internal sealed class BashRunner
             try
             {
                 deadline.Token.ThrowIfCancellationRequested();
-                if (!process.Start()) throw new WorkspaceException("Could not start Bash.");
+                if (!process.Start())
+                    throw new WorkspaceException("Could not start Bash.");
                 started = true;
                 outputTask = stdout.ReadAsync(process.StandardOutput, reading.Token);
                 errorTask = stderr.ReadAsync(process.StandardError, reading.Token);
@@ -97,10 +102,12 @@ internal sealed class BashRunner
                 {
                     lifetime?.Dispose();
                     // Also handles failures before lifetime setup completed.
-                    try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+                    try
+                    { if (!process.HasExited) process.Kill(entireProcessTree: true); }
                     catch (InvalidOperationException) { }
                     catch (Win32Exception) { }
-                    try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                    try
+                    { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
                     catch (TimeoutException) { }
                     reading.CancelAfter(TimeSpan.FromSeconds(5));
                     await Task.WhenAll(outputTask, errorTask);

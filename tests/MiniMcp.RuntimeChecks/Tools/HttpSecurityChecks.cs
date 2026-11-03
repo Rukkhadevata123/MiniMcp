@@ -29,7 +29,8 @@ internal static class HttpSecurityChecks
             var valid = fixture.Token();
             using (var health = await fixture.Client.GetAsync(new Uri(fixture.Runtime.Address!, "healthz")))
                 Assert(health.StatusCode == HttpStatusCode.OK);
-            using (var request = fixture.Request()) await Unauthorized(fixture, request);
+            using (var request = fixture.Request())
+                await Unauthorized(fixture, request);
             using (var request = fixture.Request())
             {
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", valid);
@@ -183,29 +184,30 @@ internal static class HttpSecurityChecks
                 await fixture.Runtime.StartAsync(fixture.Configuration);
                 var token = mode == AuthenticationMode.CloudflareAccess ? fixture.Token() : null;
                 foreach (var chunked in new[] { false, true })
-                foreach (var size in new[] { limit - 1024, limit, limit + 1 })
-                {
-                    using var request = fixture.Request("body", token, method: HttpMethod.Post);
-                    request.Version = HttpVersion.Version11;
-                    request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
-                    request.Content = chunked ? new UnknownLengthContent(new byte[size]) : new ByteArrayContent(new byte[size]);
-                    // Kestrel rejects an oversized Content-Length before consuming the body.
-                    // Wait for that response instead of racing a 2 MiB upload against its close.
-                    if (!chunked && size > limit) request.Headers.ExpectContinue = true;
-                    try
+                    foreach (var size in new[] { limit - 1024, limit, limit + 1 })
                     {
-                        using var response = await fixture.Client.SendAsync(request);
-                        // Kestrel includes chunk prefixes/suffixes in the limit, unlike Content-Length payloads.
-                        var fits = size < limit || (!chunked && size == limit);
-                        var expected = fits ? HttpStatusCode.NoContent : HttpStatusCode.RequestEntityTooLarge;
-                        if (response.StatusCode != expected)
-                            throw new Exception($"{mode}, chunked={chunked}, bytes={size}: expected {(int)expected}, got {(int)response.StatusCode}; {await response.Content.ReadAsStringAsync()}");
+                        using var request = fixture.Request("body", token, method: HttpMethod.Post);
+                        request.Version = HttpVersion.Version11;
+                        request.VersionPolicy = HttpVersionPolicy.RequestVersionExact;
+                        request.Content = chunked ? new UnknownLengthContent(new byte[size]) : new ByteArrayContent(new byte[size]);
+                        // Kestrel rejects an oversized Content-Length before consuming the body.
+                        // Wait for that response instead of racing a 2 MiB upload against its close.
+                        if (!chunked && size > limit)
+                            request.Headers.ExpectContinue = true;
+                        try
+                        {
+                            using var response = await fixture.Client.SendAsync(request);
+                            // Kestrel includes chunk prefixes/suffixes in the limit, unlike Content-Length payloads.
+                            var fits = size < limit || (!chunked && size == limit);
+                            var expected = fits ? HttpStatusCode.NoContent : HttpStatusCode.RequestEntityTooLarge;
+                            if (response.StatusCode != expected)
+                                throw new Exception($"{mode}, chunked={chunked}, bytes={size}: expected {(int)expected}, got {(int)response.StatusCode}; {await response.Content.ReadAsStringAsync()}");
+                        }
+                        catch (HttpRequestException error)
+                        {
+                            throw new HttpRequestException($"{mode}, chunked={chunked}, bytes={size}: HTTP request failed.", error);
+                        }
                     }
-                    catch (HttpRequestException error)
-                    {
-                        throw new HttpRequestException($"{mode}, chunked={chunked}, bytes={size}: HTTP request failed.", error);
-                    }
-                }
             }
         });
 
@@ -231,7 +233,8 @@ internal static class HttpSecurityChecks
             { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
             mcpRequest.Headers.TryAddWithoutValidation("Accept", "application/json, text/event-stream");
             using var mcp = await fixture.Client.SendAsync(mcpRequest);
-            if (mcp.StatusCode != HttpStatusCode.Unauthorized) throw new Exception($"Anonymous MCP request returned {(int)mcp.StatusCode}, expected 401.");
+            if (mcp.StatusCode != HttpStatusCode.Unauthorized)
+                throw new Exception($"Anonymous MCP request returned {(int)mcp.StatusCode}, expected 401.");
         });
     }
 
@@ -244,7 +247,8 @@ internal static class HttpSecurityChecks
 
     private static void Assert(bool condition)
     {
-        if (!condition) throw new Exception("HTTP authentication or request boundary assertion failed.");
+        if (!condition)
+            throw new Exception("HTTP authentication or request boundary assertion failed.");
     }
 
     private sealed class UnknownLengthContent(byte[] bytes) : HttpContent

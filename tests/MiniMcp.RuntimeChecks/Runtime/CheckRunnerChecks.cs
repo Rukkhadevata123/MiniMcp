@@ -21,7 +21,8 @@ internal static class CheckRunnerChecks
             await runner.CheckAsync("logic", "Present case", () => throw new Exception("Must not run"));
             Assert(runner.Finish() == 1 && runner.Selected == 0 &&
                 error.ToString().Contains("No checks matched", StringComparison.Ordinal), "Zero selected is not success");
-            try { _ = new CheckRunner("probe", ["--group"]); }
+            try
+            { _ = new CheckRunner("probe", ["--group"]); }
             catch (ArgumentException) { return; }
             throw new Exception("Incomplete arguments were accepted");
         });
@@ -68,7 +69,8 @@ internal static class CheckRunnerChecks
                 output.ToString().Contains("\tslow", StringComparison.Ordinal) &&
                 !output.ToString().Contains("duplicate", StringComparison.OrdinalIgnoreCase),
                 "Only selected tier appears in list mode");
-            try { _ = new CheckRunner("runtime", ["--tier", "everything"]); }
+            try
+            { _ = new CheckRunner("runtime", ["--tier", "everything"]); }
             catch (ArgumentException) { return; }
             throw new Exception("Unknown tier was accepted");
         });
@@ -76,6 +78,7 @@ internal static class CheckRunnerChecks
 
     private static void Assert(bool condition, string message)
     {
-        if (!condition) throw new Exception(message);
+        if (!condition)
+            throw new Exception(message);
     }
 }

@@ -49,7 +49,8 @@ internal static class RecoveryStorageGuardChecks
             Reject<InvalidDataException>(() => new RecoveryStorageUsage(0, -1).EnsureCanAdd(1));
             using var fixture = new Fixture();
             var guard = new RecoveryStorageGuard(fixture.Configuration());
-            for (var i = 0; i < RecoveryStorageLimits.MaxRecordSlots - 1; i++) Directory.CreateDirectory(Path.Combine(fixture.Storage, $"unknown-{i}"));
+            for (var i = 0; i < RecoveryStorageLimits.MaxRecordSlots - 1; i++)
+                Directory.CreateDirectory(Path.Combine(fixture.Storage, $"unknown-{i}"));
             Assert(guard.Inspect(512).RecordSlots == 999, "Physical exact slot boundary");
             Directory.CreateDirectory(Path.Combine(fixture.Storage, "one-more"));
             Reject<IOException>(() => guard.Inspect(512));
@@ -116,7 +117,8 @@ internal static class RecoveryStorageGuardChecks
         await check("recovery inspection bounds its work and directory depth and observes cancellation", () =>
         {
             var budget = new RecoveryStorageScanBudget();
-            for (var i = 0; i < RecoveryStorageLimits.MaxScanEntries; i++) budget.Visit(CancellationToken.None);
+            for (var i = 0; i < RecoveryStorageLimits.MaxScanEntries; i++)
+                budget.Visit(CancellationToken.None);
             Reject<IOException>(() => budget.Visit(CancellationToken.None));
             RecoveryStorageScanBudget.DirectoryDepth(RecoveryStorageLimits.MaxDirectoryDepth);
             Reject<IOException>(() => RecoveryStorageScanBudget.DirectoryDepth(RecoveryStorageLimits.MaxDirectoryDepth + 1));
@@ -126,7 +128,8 @@ internal static class RecoveryStorageGuardChecks
             using var fixture = new Fixture();
             var guard = new RecoveryStorageGuard(fixture.Configuration());
             var current = fixture.Storage;
-            for (var i = 0; i < RecoveryStorageLimits.MaxDirectoryDepth; i++) current = Directory.CreateDirectory(Path.Combine(current, "d")).FullName;
+            for (var i = 0; i < RecoveryStorageLimits.MaxDirectoryDepth; i++)
+                current = Directory.CreateDirectory(Path.Combine(current, "d")).FullName;
             Assert(guard.Inspect(512) == new RecoveryStorageUsage(0, 1), "Exact directory depth");
             var over = Directory.CreateDirectory(Path.Combine(current, "d")).FullName;
             Reject<IOException>(() => guard.Inspect(512));
@@ -141,29 +144,34 @@ internal static class RecoveryStorageGuardChecks
             var outside = Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "outside")).FullName;
             File.WriteAllText(Path.Combine(outside, "secret"), "unchanged");
             Directory.CreateDirectory(Path.GetDirectoryName(fixture.Storage)!);
-            try { Directory.CreateSymbolicLink(fixture.Storage, outside); }
+            try
+            { Directory.CreateSymbolicLink(fixture.Storage, outside); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
             {
                 CheckRunner.Skip("Windows symbolic link creation requires Developer Mode or permission.");
                 return Task.CompletedTask;
             }
-            try { Reject<InvalidDataException>(() => guard.Inspect(512)); }
+            try
+            { Reject<InvalidDataException>(() => guard.Inspect(512)); }
             finally { Directory.Delete(fixture.Storage); }
             var parent = Path.Combine(fixture.DirectoryPath, "linked-parent");
             var throughParent = new RecoveryStorageGuard(fixture.Configuration(Path.Combine(parent, "missing-recovery")));
             Directory.CreateSymbolicLink(parent, outside);
-            try { Reject<InvalidDataException>(() => throughParent.Inspect(512)); }
+            try
+            { Reject<InvalidDataException>(() => throughParent.Inspect(512)); }
             finally { Directory.Delete(parent); }
             Directory.CreateDirectory(fixture.Storage);
             var directoryLink = Path.Combine(fixture.Storage, "workspace-link");
             Directory.CreateSymbolicLink(directoryLink, fixture.Root);
-            try { Reject<InvalidDataException>(() => guard.Inspect(512)); }
+            try
+            { Reject<InvalidDataException>(() => guard.Inspect(512)); }
             finally { Directory.Delete(directoryLink); }
             foreach (var target in new[] { Path.Combine(outside, "secret"), Path.Combine(outside, "missing") })
             {
                 var link = Path.Combine(fixture.Storage, "file-link");
                 File.CreateSymbolicLink(link, target);
-                try { Reject<InvalidDataException>(() => guard.Inspect(512)); }
+                try
+                { Reject<InvalidDataException>(() => guard.Inspect(512)); }
                 finally { File.Delete(link); }
             }
             Assert(File.ReadAllText(Path.Combine(outside, "secret")) == "unchanged" && Directory.EnumerateFileSystemEntries(outside).Count() == 1, "Link targets unchanged");
@@ -174,7 +182,9 @@ internal static class RecoveryStorageGuardChecks
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery storage guard: " + message); }
     private static void Reject<T>(Action action) where T : Exception
     {
-        try { action(); } catch (T) { return; }
+        try
+        { action(); }
+        catch (T) { return; }
         throw new Exception($"Expected {typeof(T).Name} during recovery preflight.");
     }
 

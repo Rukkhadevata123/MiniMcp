@@ -49,8 +49,10 @@ public sealed class LocalRecoverySession : IAsyncDisposable
     // Call only after the local UI/terminal has displayed preparation.Preview and received confirmation.
     public async Task<RecoveryRestoreResult> RestoreAsync(LocalRecoveryPreparation preparation, CancellationToken token = default)
     {
-        EnsureOpen(); ArgumentNullException.ThrowIfNull(preparation);
-        if (!ReferenceEquals(preparation.Owner, this)) throw new InvalidOperationException("The preparation belongs to another local recovery session.");
+        EnsureOpen();
+        ArgumentNullException.ThrowIfNull(preparation);
+        if (!ReferenceEquals(preparation.Owner, this))
+            throw new InvalidOperationException("The preparation belongs to another local recovery session.");
         var restored = await _execution.CommitRecoveryAsync(preparation.Plan, token).ConfigureAwait(false);
         var commit = restored.Commit;
         var errors = new[] { commit.Outcome.Failure, commit.Outcome.VerificationFailure }

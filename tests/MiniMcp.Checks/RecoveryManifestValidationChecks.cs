@@ -31,8 +31,10 @@ internal static class RecoveryManifestValidationChecks
             Assert(Reject(() => fixture.Validate(manifest with { ChangeId = Guid.NewGuid() }, manifest.ChangeId)).Path == "$.changeId", "Record directory identity");
             foreach (var root in new[] { other.Root, fixture.Root + "-sibling", Path.Combine(fixture.Root, "nested", ".."), fixture.Root + Path.DirectorySeparatorChar })
                 Assert(Reject(() => fixture.Validate(manifest with { ProjectRoot = root })).Path == "$.projectRoot", "Expected canonical root");
-            if (OperatingSystem.IsWindows()) fixture.Validate(manifest with { ProjectRoot = fixture.Root.ToUpperInvariant() });
-            else Reject(() => fixture.Validate(manifest with { ProjectRoot = fixture.Root.ToUpperInvariant() }));
+            if (OperatingSystem.IsWindows())
+                fixture.Validate(manifest with { ProjectRoot = fixture.Root.ToUpperInvariant() });
+            else
+                Reject(() => fixture.Validate(manifest with { ProjectRoot = fixture.Root.ToUpperInvariant() }));
             RejectArgument(() => RecoveryManifestValidator.Validate(manifest, "relative", manifest.ChangeId));
             RejectArgument(() => RecoveryManifestValidator.Validate(manifest, fixture.Root, Guid.Empty));
         });
@@ -49,20 +51,29 @@ internal static class RecoveryManifestValidationChecks
             })
             {
                 var rejected = false;
-                try { fixture.Validate(RenameSingle(manifest, path)); } catch (JsonException) { rejected = true; }
+                try
+                { fixture.Validate(RenameSingle(manifest, path)); }
+                catch (JsonException) { rejected = true; }
                 Assert(rejected, "Invalid project path: " + JsonSerializer.Serialize(path));
             }
             fixture.Validate(RenameSingle(manifest, "资料/示例 👋.md"));
             foreach (var path in new[] { "source.md.", "source.md " })
             {
-                if (OperatingSystem.IsWindows()) Reject(() => fixture.Validate(RenameSingle(manifest, path)));
-                else fixture.Validate(RenameSingle(manifest, path));
+                if (OperatingSystem.IsWindows())
+                    Reject(() => fixture.Validate(RenameSingle(manifest, path)));
+                else
+                    fixture.Validate(RenameSingle(manifest, path));
             }
             var move = await fixture.Manifest("*** Update File: source.md\n*** Move to: renamed.md");
-            var caseMove = move with { Operations = [move.Operations[0] with { MoveTo = "SOURCE.MD" }],
-                Paths = [move.Paths[0], move.Paths[1] with { Path = "SOURCE.MD" }] };
-            if (OperatingSystem.IsWindows()) Reject(() => fixture.Validate(caseMove));
-            else fixture.Validate(caseMove);
+            var caseMove = move with
+            {
+                Operations = [move.Operations[0] with { MoveTo = "SOURCE.MD" }],
+                Paths = [move.Paths[0], move.Paths[1] with { Path = "SOURCE.MD" }]
+            };
+            if (OperatingSystem.IsWindows())
+                Reject(() => fixture.Validate(caseMove));
+            else
+                fixture.Validate(caseMove);
             Reject(() => fixture.Validate(manifest with { Operations = [manifest.Operations[0] with { Path = "SOURCE.MD" }] }));
         });
 
@@ -75,11 +86,17 @@ internal static class RecoveryManifestValidationChecks
             Reject(() => fixture.Validate(manifest with { Operations = [manifest.Operations[0] with { Path = "missing.md" }] }));
             Reject(() => fixture.Validate(manifest with { Paths = manifest.Paths.Add(manifest.Paths[0] with { Path = "unused.md", BackupFile = "before-0001.bin" }) }));
             var adds = await fixture.Manifest("*** Add File: one.md\n+one\n*** Add File: two.md\n+two");
-            var ancestor = adds with { Operations = [adds.Operations[0] with { Path = "parent" }, adds.Operations[1] with { Path = "parent/child.md" }],
-                Paths = [adds.Paths[0] with { Path = "parent" }, adds.Paths[1] with { Path = "parent/child.md" }] };
+            var ancestor = adds with
+            {
+                Operations = [adds.Operations[0] with { Path = "parent" }, adds.Operations[1] with { Path = "parent/child.md" }],
+                Paths = [adds.Paths[0] with { Path = "parent" }, adds.Paths[1] with { Path = "parent/child.md" }]
+            };
             Reject(() => fixture.Validate(ancestor));
-            fixture.Validate(ancestor with { Operations = [ancestor.Operations[0], ancestor.Operations[1] with { Path = "parent-other/child.md" }],
-                Paths = [ancestor.Paths[0], ancestor.Paths[1] with { Path = "parent-other/child.md" }] });
+            fixture.Validate(ancestor with
+            {
+                Operations = [ancestor.Operations[0], ancestor.Operations[1] with { Path = "parent-other/child.md" }],
+                Paths = [ancestor.Paths[0], ancestor.Paths[1] with { Path = "parent-other/child.md" }]
+            });
             var moves = await fixture.Manifest("*** Update File: source.md\n*** Move to: first.md\n*** Update File: move.md\n*** Move to: last.md");
             Reject(() => fixture.Validate(moves with { Operations = [moves.Operations[0], moves.Operations[1] with { Path = "first.md" }] }));
         });
@@ -164,7 +181,8 @@ internal static class RecoveryManifestValidationChecks
             fixture.Validate(manifest);
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
-            try { RecoveryManifestValidator.Validate(manifest, fixture.Root, manifest.ChangeId, cancelled.Token); throw new Exception("Expected cancellation"); }
+            try
+            { RecoveryManifestValidator.Validate(manifest, fixture.Root, manifest.ChangeId, cancelled.Token); throw new Exception("Expected cancellation"); }
             catch (OperationCanceledException) { }
             fixture.Validate(manifest);
             Assert(!Directory.Exists(fixture.Root) && !Directory.EnumerateFileSystemEntries(fixture.DirectoryPath).Any(), "No workspace or storage lookups/creation");
@@ -175,12 +193,16 @@ internal static class RecoveryManifestValidationChecks
     { Operations = [manifest.Operations[0] with { Path = path }], Paths = [manifest.Paths[0] with { Path = path }] };
     private static JsonException Reject(Action action)
     {
-        try { action(); } catch (JsonException error) { return error; }
+        try
+        { action(); }
+        catch (JsonException error) { return error; }
         throw new Exception("Expected inconsistent recovery metadata rejection.");
     }
     private static void RejectArgument(Action action)
     {
-        try { action(); } catch (ArgumentException) { return; }
+        try
+        { action(); }
+        catch (ArgumentException) { return; }
         throw new Exception("Expected invalid validation context rejection.");
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery metadata: " + message); }
@@ -194,7 +216,9 @@ internal static class RecoveryManifestValidationChecks
         public Fixture()
         {
             Root = Directory.CreateDirectory(Path.Combine(DirectoryPath, "project")).FullName;
-            Put("source.md", "old\n"); Put("move.md", "move\n"); Put("delete.md", "gone\n");
+            Put("source.md", "old\n");
+            Put("move.md", "move\n");
+            Put("delete.md", "gone\n");
             _workspace = new ProjectWorkspace(Root);
             _service = new PatchService(_workspace);
         }

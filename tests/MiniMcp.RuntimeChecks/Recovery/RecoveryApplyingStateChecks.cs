@@ -71,9 +71,11 @@ internal static class RecoveryApplyingStateChecks
                     var failure = new IOException("Injected before applying was persisted.");
                     var store = fixture.Store((stage, _) =>
                     {
-                        if (stage != boundary || !failOnce) return Task.CompletedTask;
+                        if (stage != boundary || !failOnce)
+                            return Task.CompletedTask;
                         failOnce = false;
-                        if (cancel) { cancelled.Cancel(); return Task.CompletedTask; }
+                        if (cancel)
+                        { cancelled.Cancel(); return Task.CompletedTask; }
                         return Task.FromException(failure);
                     });
                     var plan = await fixture.Plan();
@@ -81,8 +83,10 @@ internal static class RecoveryApplyingStateChecks
                     var original = record.Manifest;
                     var identities = record.FileIdentities;
                     var before = fixture.Snapshot();
-                    if (cancel) await Reject<OperationCanceledException>(() => store.BeginApplyingAsync(record, plan, cancelled.Token));
-                    else Assert(ReferenceEquals(await Reject<IOException>(() => store.BeginApplyingAsync(record, plan)), failure), "Original error retained");
+                    if (cancel)
+                        await Reject<OperationCanceledException>(() => store.BeginApplyingAsync(record, plan, cancelled.Token));
+                    else
+                        Assert(ReferenceEquals(await Reject<IOException>(() => store.BeginApplyingAsync(record, plan)), failure), "Original error retained");
                     Assert(!record.IsInvalidated && ReferenceEquals(record.Manifest, original) && ReferenceEquals(record.FileIdentities, identities) && before.SequenceEqual(fixture.Snapshot()), "No premature in-memory state update");
                     await store.RevalidatePreparedAsync(record, plan);
                     await store.BeginApplyingAsync(record, plan);
@@ -131,7 +135,8 @@ internal static class RecoveryApplyingStateChecks
             string? temporary = null;
             var store = fixture.Store((stage, path) =>
             {
-                if (stage != RecoveryManifestReplacementStage.BeforeReplace) return Task.CompletedTask;
+                if (stage != RecoveryManifestReplacementStage.BeforeReplace)
+                    return Task.CompletedTask;
                 temporary = path;
                 var bytes = File.ReadAllBytes(path);
                 File.Move(path, Path.Combine(fixture.DirectoryPath, "detached-temporary"));
@@ -157,7 +162,8 @@ internal static class RecoveryApplyingStateChecks
             var calls = 0;
             var store = fixture.Store(async (stage, _) =>
             {
-                if (stage != RecoveryManifestReplacementStage.TemporaryWritten) return;
+                if (stage != RecoveryManifestReplacementStage.TemporaryWritten)
+                    return;
                 calls++;
                 entered.TrySetResult();
                 await release.Task;
@@ -245,7 +251,8 @@ internal static class RecoveryApplyingStateChecks
     { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task RejectInvalid(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected an invalid live recovery record.");
     }
@@ -268,7 +275,8 @@ internal static class RecoveryApplyingStateChecks
             _paths = new ConfigurationPaths(Path.Combine(DirectoryPath, "user"), Path.Combine(DirectoryPath, "state"));
             _bash = Path.Combine(DirectoryPath, "bash-fixture");
             File.WriteAllText(_bash, "Dependency fixture; never execute.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(_bash, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         }
         public RecoveryStore Store(Func<RecoveryManifestReplacementStage, string, Task>? hook = null) => new(Guid.NewGuid(), new ConfigurationValidator(_paths).Validate(
             new AppSettings { ProjectRoot = Root, BashPath = _bash, Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local } },

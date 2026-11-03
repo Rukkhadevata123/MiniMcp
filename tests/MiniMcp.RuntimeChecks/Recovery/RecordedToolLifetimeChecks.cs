@@ -13,7 +13,8 @@ internal static class RecordedToolLifetimeChecks
         {
             using var fixture = new PatchExecutionFixture();
             using var next = new PatchExecutionFixture(ExecutionMode.ReadOnly);
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             await using var runtime = fixture.Runtime(replace: async (stage, path) =>
             {
                 if (stage == RecoveryManifestReplacementStage.TemporaryWritten && RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.Committed)
@@ -60,10 +61,12 @@ internal static class RecordedToolLifetimeChecks
         await check("runtime stop waits for cancelled backup cleanup and cancels a queued actual write before disposing the session", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             await using var runtime = fixture.Runtime(prepare: async (stage, _) =>
             {
-                if (stage == RecoveryPreparationStage.BackupWritten) { entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreparationStage.BackupWritten)
+                { entered.TrySetResult(); await release.Task; }
             });
             await runtime.StartAsync(fixture.Configuration);
             var execution = runtime.Execution!;
@@ -91,11 +94,15 @@ internal static class RecordedToolLifetimeChecks
         {
             using var fixture = new PatchExecutionFixture();
             fixture.Put("sample.md", "\ufeffold\r\n");
-            var installed = Signal(); var failInstall = Signal(); var finalizing = Signal(); var saveFinal = Signal();
+            var installed = Signal();
+            var failInstall = Signal();
+            var finalizing = Signal();
+            var saveFinal = Signal();
             var failure = new IOException("Injected mid-install failure after stop.");
             await using var runtime = fixture.Runtime(async (stage, index) =>
             {
-                if (stage == PatchCommitStage.Installed && index == 0) { installed.TrySetResult(); await failInstall.Task; throw failure; }
+                if (stage == PatchCommitStage.Installed && index == 0)
+                { installed.TrySetResult(); await failInstall.Task; throw failure; }
             }, replace: async (stage, path) =>
             {
                 if (stage == RecoveryManifestReplacementStage.TemporaryWritten && RecoveryManifestJson.Parse(File.ReadAllBytes(path)).State == RecoveryRecordState.RolledBack)

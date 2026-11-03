@@ -37,50 +37,69 @@ public sealed class RecoveryHistory : INotifyPropertyChanged, IAsyncDisposable
     public async Task LoadAsync(LocalRecoverySession session, bool usesRuntime, CancellationToken token)
     {
         await DisposeAsync();
-        _session = session; UsesRuntime = usesRuntime;
+        _session = session;
+        UsesRuntime = usesRuntime;
         var generation = _generation;
-        Records.Clear(); _metadata = _diff = "";
+        Records.Clear();
+        _metadata = _diff = "";
         _context = $"项目：{session.Configuration.Settings.ProjectRoot}\n模式：{session.Configuration.Policy.Mode} · {(usesRuntime ? "运行中服务" : "本地维护")}";
-        _message = "正在加载记录…"; RaiseAll();
+        _message = "正在加载记录…";
+        RaiseAll();
         var rows = await session.ListAsync(token);
-        if (generation != _generation || !ReferenceEquals(session, _session)) return;
-        foreach (var row in rows) Records.Add(new(row));
-        _message = rows.IsEmpty ? "当前项目还没有修改记录。" : $"共 {rows.Length} 条记录。请选择一条查看完整预览。"; RaiseAll();
+        if (generation != _generation || !ReferenceEquals(session, _session))
+            return;
+        foreach (var row in rows)
+            Records.Add(new(row));
+        _message = rows.IsEmpty ? "当前项目还没有修改记录。" : $"共 {rows.Length} 条记录。请选择一条查看完整预览。";
+        RaiseAll();
     }
     public async Task SelectAsync(DesktopRecoveryRow? selected, CancellationToken token)
     {
         var row = selected?.Summary;
         var generation = ++_generation;
-        _preparation = null; _metadata = _diff = ""; _message = ""; RaiseAll();
-        if (row is null) return;
-        if (row.Error is not null) { _message = row.Error; RaiseAll(); return; }
+        _preparation = null;
+        _metadata = _diff = "";
+        _message = "";
+        RaiseAll();
+        if (row is null)
+            return;
+        if (row.Error is not null)
+        { _message = row.Error; RaiseAll(); return; }
         var session = _session ?? throw new InvalidOperationException("请先加载记录。");
         var details = await session.ReadAsync(row.ChangeId, token);
-        if (generation != _generation || !ReferenceEquals(session, _session)) return;
+        if (generation != _generation || !ReferenceEquals(session, _session))
+            return;
         if (details.Preview.Blockers.IsEmpty && details.Preview.Diff is not null)
         {
             var prepared = await session.PrepareAsync(row.ChangeId, token);
-            if (generation != _generation || !ReferenceEquals(session, _session)) return;
-            _preparation = prepared; details = prepared.Record;
+            if (generation != _generation || !ReferenceEquals(session, _session))
+                return;
+            _preparation = prepared;
+            details = prepared.Record;
         }
         _metadata = details.ManifestJson;
         _diff = details.Preview.Diff ?? "当前无法生成完整反向预览。";
         _message = string.Join(Environment.NewLine, details.Preview.Blockers.Select(Blocker)
             .Concat(details.Preview.Conflicts.Select(conflict => $"冲突：{conflict.Path ?? "记录"} · {conflict.Message}")));
-        if (_preparation is not null) _message = "查看完整反向预览后，可确认恢复。恢复会创建新的备份记录。";
+        if (_preparation is not null)
+            _message = "查看完整反向预览后，可确认恢复。恢复会创建新的备份记录。";
         RaiseAll();
     }
     public async Task RestoreAsync(LocalRecoveryPreparation expected, CancellationToken token)
     {
         var session = _session ?? throw new InvalidOperationException("请先加载记录。");
-        if (!ReferenceEquals(expected, _preparation)) throw new InvalidOperationException("预览已改变，请重新选择记录。");
-        _preparation = null; RaiseAll();
+        if (!ReferenceEquals(expected, _preparation))
+            throw new InvalidOperationException("预览已改变，请重新选择记录。");
+        _preparation = null;
+        RaiseAll();
         var result = await session.RestoreAsync(expected, token);
         Records.Insert(0, new(new(result.ChangeId, result.ChangeId.ToString("N"), result.RunId, result.CreatedAtUtc, result.State, result.PathCount, null)));
         _message = $"恢复结果：{result.State} · 新记录：{result.ChangeId:N}" +
             (result.CleanupIncomplete ? "\n临时文件清理未完成，请检查记录和错误信息。" : "") +
             (result.Errors.IsEmpty ? "" : "\n" + string.Join(Environment.NewLine, result.Errors));
-        _diff = ""; _metadata = ""; RaiseAll();
+        _diff = "";
+        _metadata = "";
+        RaiseAll();
     }
     public void Invalidate(string message)
     { _generation++; _preparation = null; _metadata = _diff = ""; _message = message; RaiseAll(); }
@@ -96,8 +115,11 @@ public sealed class RecoveryHistory : INotifyPropertyChanged, IAsyncDisposable
     private void Raise([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new(name));
     public async ValueTask DisposeAsync()
     {
-        _generation++; _preparation = null; var session = _session;
-        if (session is not null) await session.DisposeAsync();
+        _generation++;
+        _preparation = null;
+        var session = _session;
+        if (session is not null)
+            await session.DisposeAsync();
         _session = null;
         RaiseAll();
     }

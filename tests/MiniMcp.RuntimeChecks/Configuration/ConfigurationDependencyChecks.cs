@@ -10,7 +10,8 @@ internal static class ConfigurationDependencyChecks
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user"), Path.Combine(temporary, "state"));
         var local = new AppSettings
         {
-            ProjectRoot = "project", Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
+            ProjectRoot = "project",
+            Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
         };
         var cloud = local with
         {
@@ -26,7 +27,8 @@ internal static class ConfigurationDependencyChecks
             var path = Path.GetFullPath(Path.Combine(temporary, relative));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, text);
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             return path;
         }
         var bash = Put("tools/bash");
@@ -38,11 +40,13 @@ internal static class ConfigurationDependencyChecks
                 findCloudflared ?? ((path, file) => ExternalProgramLocator.FindCloudflared(path, file, [], null)));
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Configuration dependency assertion failed.");
+            if (!condition)
+                throw new Exception("Configuration dependency assertion failed.");
         }
         void Reject(string field, Action action)
         {
-            try { action(); }
+            try
+            { action(); }
             catch (ConfigurationValidationException exception)
             {
                 Assert(exception.Field == field && !exception.ToString().Contains("private-fixture-token", StringComparison.Ordinal));
@@ -133,12 +137,15 @@ internal static class ConfigurationDependencyChecks
             {
                 await check("Linux dependency checks reject missing execute permission bits", () =>
                 {
-                    if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException();
+                    if (!OperatingSystem.IsLinux())
+                        throw new PlatformNotSupportedException();
                     File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                    try { Reject("bashPath", () => Validator().Validate(local with { BashPath = bash }, source, edit)); }
+                    try
+                    { Reject("bashPath", () => Validator().Validate(local with { BashPath = bash }, source, edit)); }
                     finally { File.SetUnixFileMode(bash, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
                     File.SetUnixFileMode(cloudflared, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                    try { Reject("tunnel.executablePath", () => Validator().Validate(cloud, source, readOnly)); }
+                    try
+                    { Reject("tunnel.executablePath", () => Validator().Validate(cloud, source, readOnly)); }
                     finally { File.SetUnixFileMode(cloudflared, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
                     return Task.CompletedTask;
                 });
@@ -164,7 +171,8 @@ internal static class ConfigurationDependencyChecks
                 }
                 finally
                 {
-                    for (var index = 0; index < variables.Length; index++) Environment.SetEnvironmentVariable(variables[index], previous[index]);
+                    for (var index = 0; index < variables.Length; index++)
+                        Environment.SetEnvironmentVariable(variables[index], previous[index]);
                 }
             });
 
@@ -178,12 +186,14 @@ internal static class ConfigurationDependencyChecks
                 })
                 {
                     await File.WriteAllTextAsync(source, json);
-                    try { await loader.LoadAsync(source, temporary); throw new Exception("Invalid file configuration was accepted."); }
+                    try
+                    { await loader.LoadAsync(source, temporary); throw new Exception("Invalid file configuration was accepted."); }
                     catch (ConfigurationValidationException exception) { Assert(exception.Field == field); }
                 }
                 using var cancelled = new CancellationTokenSource();
                 cancelled.Cancel();
-                try { await loader.LoadAsync(source, temporary, cancellationToken: cancelled.Token); throw new Exception("Cancellation was ignored."); }
+                try
+                { await loader.LoadAsync(source, temporary, cancellationToken: cancelled.Token); throw new Exception("Cancellation was ignored."); }
                 catch (OperationCanceledException) { }
             });
         }

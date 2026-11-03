@@ -17,11 +17,13 @@ internal static class ExternalProgramLocatorChecks
         }
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Program discovery assertion failed.");
+            if (!condition)
+                throw new Exception("Program discovery assertion failed.");
         }
         void Reject(Action action)
         {
-            try { action(); }
+            try
+            { action(); }
             catch (Exception exception) when (exception is ArgumentException or FileNotFoundException) { return; }
             throw new Exception("An invalid explicit program path was accepted.");
         }

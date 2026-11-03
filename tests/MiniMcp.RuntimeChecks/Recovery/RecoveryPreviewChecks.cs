@@ -20,7 +20,8 @@ internal static class RecoveryPreviewChecks
             Directory.CreateDirectory(fixture.PathOf("gone"));
             fixture.Put("gone/bom.md", "\ufeffgone\r\n");
             fixture.Put("move.md", "\ufeffmove\r\n");
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(fixture.PathOf("gone/bom.md"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.UserExecute);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(fixture.PathOf("gone/bom.md"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.UserExecute);
             await using var execution = fixture.Execution();
             var committed = await execution.ApplyPatchAsync(Patch("*** Add File: nested/new.md\n+added\n*** Add File: empty-add.md\n" +
                 "*** Update File: sample.md\n@@\n-old\n+new\n*** Delete File: empty-delete.md\n*** Delete File: gone/bom.md\n" +
@@ -39,7 +40,8 @@ internal static class RecoveryPreviewChecks
             Assert(result.Diff!.Contains("+\"old\\r\\n\"") && result.Diff.Contains("-\"moved\\r\\n\"") && result.Diff.Contains("+\"move\\r\\n\"") &&
                 result.Diff.Contains("utf8-bom=yes; eol=mixed; eof-newline=no") && result.Diff.Contains("# before: absent") &&
                 !result.Diff.Contains("creation request"), "Full inverse content and exact restoration metadata, not a default creation mode request");
-            if (!OperatingSystem.IsWindows()) Assert(result.Diff.Contains("mode=0740"), "Deleted file's actual original mode is the restoration target");
+            if (!OperatingSystem.IsWindows())
+                Assert(result.Diff.Contains("mode=0740"), "Deleted file's actual original mode is the restoration target");
             Assert(result.Statistics == new PatchStatistics(committed.Statistics.RemovedLines, committed.Statistics.AddedLines,
                 committed.Statistics.RemovedBytes, committed.Statistics.AddedBytes), "Inverse statistics count real original bytes including BOM");
             Assert(project.SequenceEqual(fixture.ProjectSnapshot()) && journal.SequenceEqual(StoreSnapshot(fixture)) && !Directory.Exists(fixture.PathOf("gone")), "No restore directories, staging, backups, state changes or new records");
@@ -49,7 +51,8 @@ internal static class RecoveryPreviewChecks
         {
             using var fixture = new PatchExecutionFixture();
             PatchApplyResult committed;
-            await using (var writer = fixture.Execution()) committed = await writer.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
+            await using (var writer = fixture.Execution())
+                committed = await writer.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var currentRun = Guid.NewGuid();
             await using var reader = new ToolExecutionService(currentRun, fixture.ConfigurationFor(ExecutionMode.ReadOnly));
             var before = StoreSnapshot(fixture);
@@ -73,7 +76,8 @@ internal static class RecoveryPreviewChecks
                         var plan = await new PatchService(workspace).PrepareAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
                         var store = new RecoveryStore(fixture.RunId, fixture.Configuration);
                         var prepared = await store.PrepareAsync(plan);
-                        if (state == RecoveryRecordState.Applying) await store.BeginApplyingAsync(prepared, plan);
+                        if (state == RecoveryRecordState.Applying)
+                            await store.BeginApplyingAsync(prepared, plan);
                         id = prepared.Manifest.ChangeId;
                     }
                     finally { workspace.Mutations.Dispose(); }
@@ -82,8 +86,10 @@ internal static class RecoveryPreviewChecks
                 {
                     await using var writer = fixture.Execution((stage, _) =>
                     {
-                        if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
-                        if (state == RecoveryRecordState.Incomplete) { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
+                        if (stage != PatchCommitStage.Installed)
+                            return Task.CompletedTask;
+                        if (state == RecoveryRecordState.Incomplete)
+                        { File.Delete(fixture.PathOf("sample.md")); Directory.CreateDirectory(fixture.PathOf("sample.md")); }
                         return Task.FromException(new IOException("Injected installation failure."));
                     });
                     var failure = await Reject<RecordedPatchExecutionException>(() => writer.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new")));
@@ -107,34 +113,66 @@ internal static class RecoveryPreviewChecks
                 var body = "*** Update File: sample.md\n@@\n-old\n+new";
                 if (scenario is "parent" or "absent-parent")
                 {
-                    Directory.CreateDirectory(fixture.PathOf("nested")); fixture.Put("nested/item.md", "old\n"); target = "nested/item.md";
+                    Directory.CreateDirectory(fixture.PathOf("nested"));
+                    fixture.Put("nested/item.md", "old\n");
+                    target = "nested/item.md";
                     body = scenario == "parent" ? "*** Update File: nested/item.md\n@@\n-old\n+new" : "*** Delete File: nested/item.md";
                 }
-                else if (scenario == "deleted-occupied") body = "*** Delete File: sample.md";
-                else if (scenario == "move-source-occupied") body = "*** Update File: sample.md\n*** Move to: nested/moved.md";
+                else if (scenario == "deleted-occupied")
+                    body = "*** Delete File: sample.md";
+                else if (scenario == "move-source-occupied")
+                    body = "*** Update File: sample.md\n*** Move to: nested/moved.md";
                 await using var execution = fixture.Execution();
                 var committed = await execution.ApplyPatchAsync(Patch(body));
                 var reason = scenario switch
                 {
-                    "same-length" or "bom" or "ending" => "ContentChanged", "missing" => "FileMissing", "directory" => "NotRegularFile",
-                    "parent" or "absent-parent" => "ParentNotDirectory", "deleted-occupied" or "move-source-occupied" => "PathOccupied",
+                    "same-length" or "bom" or "ending" => "ContentChanged",
+                    "missing" => "FileMissing",
+                    "directory" => "NotRegularFile",
+                    "parent" or "absent-parent" => "ParentNotDirectory",
+                    "deleted-occupied" or "move-source-occupied" => "PathOccupied",
                     _ => "UnsafeOrUnsupportedFile"
                 };
                 switch (scenario)
                 {
-                    case "same-length": fixture.Put(target, "xxx\n"); break;
-                    case "bom": fixture.Put(target, "\ufeffnew\n"); break;
-                    case "ending": fixture.Put(target, "new\r\n"); break;
-                    case "missing": File.Delete(fixture.PathOf(target)); break;
-                    case "directory": File.Delete(fixture.PathOf(target)); Directory.CreateDirectory(fixture.PathOf(target)); break;
-                    case "nul": File.WriteAllBytes(fixture.PathOf(target), [(byte)'n', 0, (byte)'w', 10]); break;
-                    case "invalid-utf8": File.WriteAllBytes(fixture.PathOf(target), [0xff, 0xfe]); break;
-                    case "oversized": fixture.Put(target, new string('x', ProjectWorkspace.MaxFileBytes + 1)); break;
-                    case "parent": File.Delete(fixture.PathOf(target)); goto case "absent-parent";
-                    case "absent-parent": Directory.Delete(fixture.PathOf("nested")); fixture.Put("nested", "foreign parent\n"); break;
-                    default: fixture.Put(target, "foreign occupant\n"); break;
+                    case "same-length":
+                        fixture.Put(target, "xxx\n");
+                        break;
+                    case "bom":
+                        fixture.Put(target, "\ufeffnew\n");
+                        break;
+                    case "ending":
+                        fixture.Put(target, "new\r\n");
+                        break;
+                    case "missing":
+                        File.Delete(fixture.PathOf(target));
+                        break;
+                    case "directory":
+                        File.Delete(fixture.PathOf(target));
+                        Directory.CreateDirectory(fixture.PathOf(target));
+                        break;
+                    case "nul":
+                        File.WriteAllBytes(fixture.PathOf(target), [(byte)'n', 0, (byte)'w', 10]);
+                        break;
+                    case "invalid-utf8":
+                        File.WriteAllBytes(fixture.PathOf(target), [0xff, 0xfe]);
+                        break;
+                    case "oversized":
+                        fixture.Put(target, new string('x', ProjectWorkspace.MaxFileBytes + 1));
+                        break;
+                    case "parent":
+                        File.Delete(fixture.PathOf(target));
+                        goto case "absent-parent";
+                    case "absent-parent":
+                        Directory.Delete(fixture.PathOf("nested"));
+                        fixture.Put("nested", "foreign parent\n");
+                        break;
+                    default:
+                        fixture.Put(target, "foreign occupant\n");
+                        break;
                 }
-                var before = fixture.ProjectSnapshot(); var journal = StoreSnapshot(fixture);
+                var before = fixture.ProjectSnapshot();
+                var journal = StoreSnapshot(fixture);
                 var result = await execution.PreviewRecoveryAsync(committed.Commit!.ChangeId);
                 Assert(result.HasConflicts && result.Blockers.Contains("Conflicts") && result.Conflicts.Any(conflict => conflict.Path == target && conflict.Reason == reason) &&
                     result.Diff is null && result.Changes.IsEmpty && result.Statistics is null, "Specific current-state conflict blocks the entire reverse diff: " + scenario);
@@ -160,10 +198,14 @@ internal static class RecoveryPreviewChecks
                 await using var execution = fixture.Execution();
                 var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
                 var outside = Path.Combine(fixture.DirectoryPath, "outside.md");
-                File.WriteAllText(outside, "new\n"); File.Delete(fixture.PathOf("sample.md"));
-                if (kind == "symlink") File.CreateSymbolicLink(fixture.PathOf("sample.md"), outside);
-                else if (kind == "fifo") Assert(MakeFifo(fixture.PathOf("sample.md"), 0x180) == 0, "FIFO fixture creation");
-                else Assert(OperatingSystem.IsWindows() ? CreateHardLinkWindows(fixture.PathOf("sample.md"), outside, IntPtr.Zero) :
+                File.WriteAllText(outside, "new\n");
+                File.Delete(fixture.PathOf("sample.md"));
+                if (kind == "symlink")
+                    File.CreateSymbolicLink(fixture.PathOf("sample.md"), outside);
+                else if (kind == "fifo")
+                    Assert(MakeFifo(fixture.PathOf("sample.md"), 0x180) == 0, "FIFO fixture creation");
+                else
+                    Assert(OperatingSystem.IsWindows() ? CreateHardLinkWindows(fixture.PathOf("sample.md"), outside, IntPtr.Zero) :
                     Link(outside, fixture.PathOf("sample.md")) == 0, "Hard-link fixture creation");
                 try
                 {
@@ -181,7 +223,8 @@ internal static class RecoveryPreviewChecks
             using var fixture = new PatchExecutionFixture();
             await using var execution = fixture.Execution();
             var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-            File.Delete(fixture.PathOf("sample.md")); Directory.Delete(fixture.Root);
+            File.Delete(fixture.PathOf("sample.md"));
+            Directory.Delete(fixture.Root);
             var result = await execution.PreviewRecoveryAsync(committed.Commit!.ChangeId);
             Assert(result.Conflicts.Any(conflict => conflict.Reason == "ProjectMissing") && result.Diff is null && !Directory.Exists(fixture.Root), "Missing project is observed, never recreated by preview");
         });
@@ -198,14 +241,27 @@ internal static class RecoveryPreviewChecks
                 var manifest = fixture.ReadManifest();
                 switch (damage)
                 {
-                    case "missing-backup": File.Delete(Path.Combine(directory, "before-0000.bin")); break;
-                    case "bad-backup": File.WriteAllText(Path.Combine(directory, "before-0000.bin"), "bad\n"); break;
-                    case "unknown-field": File.WriteAllText(manifestPath, Encoding.UTF8.GetString(RecoveryManifestJson.Serialize(manifest)).Replace("\"schemaVersion\": 1", "\"approved\": true, \"schemaVersion\": 1")); break;
-                    case "bad-path": File.WriteAllBytes(manifestPath, RecoveryManifestJson.Serialize(manifest with { Paths = [manifest.Paths[0] with { Path = "../outside.md" }] })); break;
-                    case "foreign-root": File.WriteAllBytes(manifestPath, RecoveryManifestJson.Serialize(manifest with { ProjectRoot = fixture.DirectoryPath })); break;
-                    default: File.WriteAllText(Path.Combine(directory, "foreign.bin"), "keep"); break;
+                    case "missing-backup":
+                        File.Delete(Path.Combine(directory, "before-0000.bin"));
+                        break;
+                    case "bad-backup":
+                        File.WriteAllText(Path.Combine(directory, "before-0000.bin"), "bad\n");
+                        break;
+                    case "unknown-field":
+                        File.WriteAllText(manifestPath, Encoding.UTF8.GetString(RecoveryManifestJson.Serialize(manifest)).Replace("\"schemaVersion\": 1", "\"approved\": true, \"schemaVersion\": 1"));
+                        break;
+                    case "bad-path":
+                        File.WriteAllBytes(manifestPath, RecoveryManifestJson.Serialize(manifest with { Paths = [manifest.Paths[0] with { Path = "../outside.md" }] }));
+                        break;
+                    case "foreign-root":
+                        File.WriteAllBytes(manifestPath, RecoveryManifestJson.Serialize(manifest with { ProjectRoot = fixture.DirectoryPath }));
+                        break;
+                    default:
+                        File.WriteAllText(Path.Combine(directory, "foreign.bin"), "keep");
+                        break;
                 }
-                var before = fixture.ProjectSnapshot(); var journal = StoreSnapshot(fixture);
+                var before = fixture.ProjectSnapshot();
+                var journal = StoreSnapshot(fixture);
                 await RejectRecordRead(() => execution.PreviewRecoveryAsync(committed.Commit.ChangeId));
                 Assert(before.SequenceEqual(fixture.ProjectSnapshot()) && journal.SequenceEqual(StoreSnapshot(fixture)) && execution.ActiveCalls == 0, "Malformed source data is not trusted, repaired or removed: " + damage);
             }
@@ -213,12 +269,15 @@ internal static class RecoveryPreviewChecks
 
         await check("recovery preview rechecks previously observed paths after all diff computation and collects multiple conflicts", async () =>
         {
-            using var fixture = new PatchExecutionFixture(); fixture.Put("second.md", "old\n");
+            using var fixture = new PatchExecutionFixture();
+            fixture.Put("second.md", "old\n");
             var changed = false;
             await using var execution = fixture.Execution(preview: (stage, path) =>
             {
-                if (!changed && stage == RecoveryPreviewStage.PathRead && path == "sample.md") { changed = true; fixture.Put("sample.md", "late\n"); }
-                if (stage == RecoveryPreviewStage.BeforeReturn) fixture.Put("second.md", "external\n");
+                if (!changed && stage == RecoveryPreviewStage.PathRead && path == "sample.md")
+                { changed = true; fixture.Put("sample.md", "late\n"); }
+                if (stage == RecoveryPreviewStage.BeforeReturn)
+                    fixture.Put("second.md", "external\n");
                 return Task.CompletedTask;
             });
             var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new\n*** Update File: second.md\n@@\n-old\n+new"));
@@ -235,8 +294,10 @@ internal static class RecoveryPreviewChecks
                 using var fixture = new PatchExecutionFixture();
                 await using var execution = fixture.Execution(preview: (stage, _) =>
                 {
-                    if (stage != RecoveryPreviewStage.BeforeReturn) return Task.CompletedTask;
-                    if (corruptBackup) File.WriteAllText(Path.Combine(fixture.RecoveryDirectory, fixture.RecordIds().Single().ToString("N"), "before-0000.bin"), "bad\n");
+                    if (stage != RecoveryPreviewStage.BeforeReturn)
+                        return Task.CompletedTask;
+                    if (corruptBackup)
+                        File.WriteAllText(Path.Combine(fixture.RecoveryDirectory, fixture.RecordIds().Single().ToString("N"), "before-0000.bin"), "bad\n");
                     else
                     {
                         var manifest = fixture.ReadManifest() with { RunId = Guid.NewGuid() };
@@ -245,7 +306,8 @@ internal static class RecoveryPreviewChecks
                     return Task.CompletedTask;
                 });
                 var committed = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
-                if (corruptBackup) await RejectRecordRead(() => execution.PreviewRecoveryAsync(committed.Commit!.ChangeId));
+                if (corruptBackup)
+                    await RejectRecordRead(() => execution.PreviewRecoveryAsync(committed.Commit!.ChangeId));
                 else
                 {
                     var result = await execution.PreviewRecoveryAsync(committed.Commit!.ChangeId);
@@ -311,7 +373,8 @@ internal static class RecoveryPreviewChecks
         await check("recovery preview covers the full 64-move and 128-path record boundary without omitted files", async () =>
         {
             using var fixture = new PatchExecutionFixture();
-            for (var index = 0; index < 64; index++) fixture.Put($"source{index}.md", "");
+            for (var index = 0; index < 64; index++)
+                fixture.Put($"source{index}.md", "");
             await using var execution = fixture.Execution();
             var body = string.Join('\n', Enumerable.Range(0, 64).Select(index => $"*** Update File: source{index}.md\n*** Move to: moved/file{index}.md"));
             var committed = await execution.ApplyPatchAsync(Patch(body));
@@ -329,7 +392,8 @@ internal static class RecoveryPreviewChecks
             var files = Directory.EnumerateFiles(fixture.RecoveryDirectory, "*", SearchOption.AllDirectories).ToArray();
             try
             {
-                foreach (var file in files) File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
+                foreach (var file in files)
+                    File.SetAttributes(file, File.GetAttributes(file) | FileAttributes.ReadOnly);
                 using var shared = new FileStream(fixture.PathOf("sample.md"), FileMode.Open, FileAccess.Read, FileShare.Read);
                 var preview = await execution.PreviewRecoveryAsync(committed.Commit!.ChangeId);
                 Assert(!preview.HasConflicts && preview.Diff is not null && files.All(file => (File.GetAttributes(file) & FileAttributes.ReadOnly) != 0), "Preview never upgrades record access or excludes another read handle");
@@ -344,18 +408,21 @@ internal static class RecoveryPreviewChecks
             var before = fixture.ProjectSnapshot();
             await Reject<ArgumentException>(() => execution.PreviewRecoveryAsync(Guid.Empty));
             await RejectRecordRead(() => execution.PreviewRecoveryAsync(Guid.NewGuid()));
-            using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+            using var cancelled = new CancellationTokenSource();
+            cancelled.Cancel();
             await Reject<OperationCanceledException>(() => execution.PreviewRecoveryAsync(Guid.NewGuid(), cancelled.Token));
             Assert(!Directory.Exists(fixture.RecoveryDirectory) && before.SequenceEqual(fixture.ProjectSnapshot()) && execution.ActiveCalls == 0, "Read failure and cancellation do not manufacture a recovery root, lock marker or record");
         });
 
         await check("preview rejects a store attached to another project before loading any metadata", () =>
         {
-            using var first = new PatchExecutionFixture(); using var second = new PatchExecutionFixture();
+            using var first = new PatchExecutionFixture();
+            using var second = new PatchExecutionFixture();
             var workspace = new ProjectWorkspace(first.Root);
             try
             {
-                try { _ = new RecoveryPreviewService(workspace, new RecoveryStore(second.RunId, second.Configuration)); }
+                try
+                { _ = new RecoveryPreviewService(workspace, new RecoveryStore(second.RunId, second.Configuration)); }
                 catch (ArgumentException) { Assert(!Directory.Exists(first.RecoveryDirectory) && !Directory.Exists(second.RecoveryDirectory), "Mismatched construction performs no storage IO"); return Task.CompletedTask; }
                 throw new Exception("Expected project/store mismatch rejection.");
             }
@@ -368,7 +435,8 @@ internal static class RecoveryPreviewChecks
             .Select(path => Path.GetRelativePath(fixture.RecoveryDirectory, path) + ":" + (Directory.Exists(path) ? "directory" : Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray() : [];
     private static async Task RejectRecordRead(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or WorkspaceException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected record read/validation failure without a preview.");
     }

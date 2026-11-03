@@ -96,12 +96,16 @@ internal static class PatchDiffBuilder
         var lf = lines.Any(line => line.Ending == "\n");
         var crlf = lines.Any(line => line.Ending == "\r\n");
         var endings = "none";
-        if (lf && crlf) endings = "mixed";
-        else if (crlf) endings = "CRLF";
-        else if (lf) endings = "LF";
+        if (lf && crlf)
+            endings = "mixed";
+        else if (crlf)
+            endings = "CRLF";
+        else if (lf)
+            endings = "LF";
         var permission = mode is { } value ? Convert.ToString((int)value, 8).PadLeft(4, '0') : "not-tracked";
         output.Append($"utf8-bom={(bom ? "yes" : "no")}; eol={endings}; eof-newline={(lines.Count > 0 && lines[^1].Ending.Length != 0 ? "yes" : "no")}; mode={permission}");
-        if (creation && mode is not null) output.Append(" (creation request; umask applies)");
+        if (creation && mode is not null)
+            output.Append(" (creation request; umask applies)");
         output.Append("\n");
     }
 
@@ -111,10 +115,12 @@ internal static class PatchDiffBuilder
     {
         var comparer = new LineComparer(budget);
         var prefix = 0;
-        while (prefix < before.Count && prefix < after.Count && comparer.Equals(before[prefix], after[prefix])) prefix++;
+        while (prefix < before.Count && prefix < after.Count && comparer.Equals(before[prefix], after[prefix]))
+            prefix++;
         var suffix = 0;
         while (suffix < before.Count - prefix && suffix < after.Count - prefix &&
-            comparer.Equals(before[before.Count - suffix - 1], after[after.Count - suffix - 1])) suffix++;
+            comparer.Equals(before[before.Count - suffix - 1], after[after.Count - suffix - 1]))
+            suffix++;
         var oldCount = before.Count - prefix - suffix;
         var newCount = after.Count - prefix - suffix;
         var edits = new List<Edit>();
@@ -173,7 +179,8 @@ internal static class PatchDiffBuilder
                 else if (oldIndex < oldCount && (newIndex == newCount ||
                     lengths[(oldIndex + 1) * stride + newIndex] >= lengths[oldIndex * stride + newIndex + 1]))
                     edits.Add(new('-', before[prefix + oldIndex++]));
-                else edits.Add(new('+', after[prefix + newIndex++]));
+                else
+                    edits.Add(new('+', after[prefix + newIndex++]));
             }
         }
         for (var i = before.Count - suffix; i < before.Count; i++)
@@ -190,7 +197,8 @@ internal static class PatchDiffBuilder
         for (var i = 0; i < edits.Count; i++)
         {
             budget.Spend(1);
-            if (edits[i].Kind != ' ') changes.Add(i);
+            if (edits[i].Kind != ' ')
+                changes.Add(i);
         }
         if (changes.Count == 0)
         {
@@ -200,13 +208,16 @@ internal static class PatchDiffBuilder
         int cursor = 0, oldLine = 1, newLine = 1;
         void Advance(Edit edit)
         {
-            if (edit.Kind != '+') oldLine++;
-            if (edit.Kind != '-') newLine++;
+            if (edit.Kind != '+')
+                oldLine++;
+            if (edit.Kind != '-')
+                newLine++;
         }
         for (var change = 0; change < changes.Count; change++)
         {
             var start = Math.Max(0, changes[change] - ContextLines);
-            while (change + 1 < changes.Count && changes[change + 1] - changes[change] - 1 <= 2 * ContextLines) change++;
+            while (change + 1 < changes.Count && changes[change + 1] - changes[change] - 1 <= 2 * ContextLines)
+                change++;
             var end = Math.Min(edits.Count, changes[change] + ContextLines + 1);
             while (cursor < start)
             {
@@ -217,8 +228,10 @@ internal static class PatchDiffBuilder
             for (var i = start; i < end; i++)
             {
                 budget.Spend(1);
-                if (edits[i].Kind != '+') oldCount++;
-                if (edits[i].Kind != '-') newCount++;
+                if (edits[i].Kind != '+')
+                    oldCount++;
+                if (edits[i].Kind != '-')
+                    newCount++;
             }
             output.Append(FormattableString.Invariant($"@@ -{(oldCount == 0 ? oldLine - 1 : oldLine)},{oldCount} +{(newCount == 0 ? newLine - 1 : newLine)},{newCount} @@\n"));
             while (cursor < end)
@@ -254,13 +267,15 @@ internal static class PatchDiffBuilder
         public void Spend(long amount)
         {
             CheckCancellation();
-            if (amount > _work) throw TooComplex();
+            if (amount > _work)
+                throw TooComplex();
             _work -= amount;
         }
         public int Matrix(int rows, int columns)
         {
             var size = (long)rows * columns;
-            if (size > _cells) throw TooComplex();
+            if (size > _cells)
+                throw TooComplex();
             Spend(size);
             _cells -= size;
             return (int)size;
@@ -293,19 +308,26 @@ internal static class PatchDiffBuilder
             {
                 var character = text[i];
                 var category = CharUnicodeInfo.GetUnicodeCategory(text, i);
-                if (character == '\\') Append("\\\\");
-                else if (character == '"') Append("\\\"");
-                else if (character == '\n') Append("\\n");
-                else if (character == '\r') Append("\\r");
-                else if (character == '\t') Append("\\t");
+                if (character == '\\')
+                    Append("\\\\");
+                else if (character == '"')
+                    Append("\\\"");
+                else if (character == '\n')
+                    Append("\\n");
+                else if (character == '\r')
+                    Append("\\r");
+                else if (character == '\t')
+                    Append("\\t");
                 else if (char.IsControl(character) || category is UnicodeCategory.Format or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator)
                 {
                     Append("\\u" + ((int)character).ToString("x4", CultureInfo.InvariantCulture));
                     if (char.IsHighSurrogate(character) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
                         Append("\\u" + ((int)text[++i]).ToString("x4", CultureInfo.InvariantCulture));
                 }
-                else if (char.IsHighSurrogate(character) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1])) Append(text.Substring(i++, 2));
-                else Append(character.ToString());
+                else if (char.IsHighSurrogate(character) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                    Append(text.Substring(i++, 2));
+                else
+                    Append(character.ToString());
             }
             Append("\"");
         }

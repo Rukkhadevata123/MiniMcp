@@ -66,7 +66,8 @@ internal static class PatchCommitOutcomeChecks
             using var cancelled = new CancellationTokenSource();
             var service = fixture.Service((stage, index) =>
             {
-                if (stage != PatchCommitStage.Installed || index != 1) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed || index != 1)
+                    return Task.CompletedTask;
                 Assert(fixture.Get("sample.md") == "new\r\n" && fixture.Get("nested/new.md") == "new\n", "Some target changes really installed");
                 cancelled.Cancel();
                 return Task.FromException(failure);
@@ -85,7 +86,8 @@ internal static class PatchCommitOutcomeChecks
             var failure = new IOException("Injected installation failure.");
             var service = fixture.Service((stage, index) =>
             {
-                if (stage != PatchCommitStage.Installed || index != 0) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed || index != 0)
+                    return Task.CompletedTask;
                 File.Delete(fixture.Path("sample.md"));
                 Directory.CreateDirectory(fixture.Path("sample.md")); // Occupancy makes the real rollback delete fail.
                 return Task.FromException(failure);
@@ -104,7 +106,8 @@ internal static class PatchCommitOutcomeChecks
             var failure = new IOException("Injected staging failure.");
             var service = fixture.Service((stage, _) =>
             {
-                if (stage != PatchCommitStage.Staged) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Staged)
+                    return Task.CompletedTask;
                 var temporary = fixture.Artifacts().Single();
                 File.Move(temporary, System.IO.Path.Combine(fixture.DirectoryPath, "detached-stage"));
                 Directory.CreateDirectory(temporary); // Both File.Delete and parent-directory cleanup must fail.
@@ -123,7 +126,8 @@ internal static class PatchCommitOutcomeChecks
             var saved = System.IO.Path.Combine(fixture.DirectoryPath, "saved-original");
             var service = fixture.Service((stage, _) =>
             {
-                if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed)
+                    return Task.CompletedTask;
                 var backup = fixture.Artifacts().Single(path => path.EndsWith(".bak", StringComparison.Ordinal));
                 File.Move(backup, saved);
                 Directory.CreateDirectory(backup);
@@ -167,7 +171,8 @@ internal static class PatchCommitOutcomeChecks
             using var cancelled = new CancellationTokenSource();
             var service = fixture.Service((stage, _) =>
             {
-                if (stage == PatchCommitStage.Staged) cancelled.Cancel();
+                if (stage == PatchCommitStage.Staged)
+                    cancelled.Cancel();
                 return Task.CompletedTask;
             });
             var original = fixture.Snapshot();
@@ -205,7 +210,8 @@ internal static class PatchCommitOutcomeChecks
             using var fixture = new Fixture();
             var service = fixture.Service((stage, _) =>
             {
-                if (stage != PatchCommitStage.Installed) return Task.CompletedTask;
+                if (stage != PatchCommitStage.Installed)
+                    return Task.CompletedTask;
                 File.Delete(fixture.Path("sample.md"));
                 Directory.CreateDirectory(fixture.Path("sample.md"));
                 return Task.FromException(new IOException("Injected rollback trigger."));
@@ -223,7 +229,8 @@ internal static class PatchCommitOutcomeChecks
             using var fixture = new Fixture();
             var service = fixture.Service((stage, _) =>
             {
-                if (stage == PatchCommitStage.BeforeVerification) fixture.Put("sample.md", "external\n");
+                if (stage == PatchCommitStage.BeforeVerification)
+                    fixture.Put("sample.md", "external\n");
                 return Task.CompletedTask;
             });
             var plan = await fixture.Plan(service);
@@ -238,7 +245,8 @@ internal static class PatchCommitOutcomeChecks
             using var cancelled = new CancellationTokenSource();
             var service = fixture.Service((stage, _) =>
             {
-                if (stage == PatchCommitStage.BeforeInstall) cancelled.Cancel();
+                if (stage == PatchCommitStage.BeforeInstall)
+                    cancelled.Cancel();
                 return Task.CompletedTask;
             });
             var result = await service.CommitAsync(await fixture.Plan(service), cancelled.Token);
@@ -261,7 +269,8 @@ internal static class PatchCommitOutcomeChecks
             Root = Directory.CreateDirectory(System.IO.Path.Combine(DirectoryPath, "project")).FullName;
             Put("sample.md", "old\n");
             Workspace = new ProjectWorkspace(Root);
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Path("sample.md"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(Path("sample.md"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
         public PatchService Service(Func<PatchCommitStage, int, Task>? checkpoint = null) => new(Workspace, checkpoint);
         public string Path(string relative) => System.IO.Path.Combine(Root, relative);

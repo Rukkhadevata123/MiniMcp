@@ -35,7 +35,8 @@ internal static class McpHttpChecks
             Error(await Call(client, "apply_patch", new() { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
             Error(await Call(client, "apply_patch", new()
             {
-                ["patch"] = Patch("*** Add File: oversized.txt\n+" + new string('\u001b', 50_000)), ["dry_run"] = true
+                ["patch"] = Patch("*** Add File: oversized.txt\n+" + new string('\u001b', 50_000)),
+                ["dry_run"] = true
             }), "display limit");
             var complex = Patch("*** Update File: complex.txt\n@@\n" + string.Join('\n', Enumerable.Range(0, 1000).Select(i => $"-old{i}")) + "\n" +
                 string.Join('\n', Enumerable.Range(0, 1000).Select(i => $"+new{i}")));
@@ -93,7 +94,8 @@ internal static class McpHttpChecks
             }
             await using var client = await ConnectAsync(fixture.Runtime.Address!, fixture.Client, headers: new()
             {
-                ["Cf-Access-Jwt-Assertion"] = fixture.Token(), ["Authorization"] = "Bearer opaque-client-token",
+                ["Cf-Access-Jwt-Assertion"] = fixture.Token(),
+                ["Authorization"] = "Bearer opaque-client-token",
                 ["X-Execution-Mode"] = "FullAccess"
             });
             Assert((await client.ListToolsAsync()).Count == 8, "Authorized discovery");
@@ -154,7 +156,9 @@ internal static class McpHttpChecks
                 await RuntimeCallChecks.AssertStoppedAsync(child);
                 Assert(execution.IsDisposed && execution.ActiveCalls == 0 && !Directory.Exists(Path.Combine(fixture.Root, "pending")), "Stop drains before disposal");
                 var listener = new TcpListener(IPAddress.Loopback, port);
-                try { listener.Start(); } finally { listener.Stop(); }
+                try
+                { listener.Start(); }
+                finally { listener.Stop(); }
             }
             finally { RuntimeCallChecks.KillIfRunning(child); }
         });
@@ -235,7 +239,7 @@ internal static class McpHttpChecks
             .SequenceEqual(new[] { "dry_run", "patch" }), "HTTP registration exposes the real patch arguments");
 
         var read = Structured(await Call(client, "read_file", new()
-            { ["path"] = "sample.txt", ["start_line"] = 1, ["end_line"] = 1 }));
+        { ["path"] = "sample.txt", ["start_line"] = 1, ["end_line"] = 1 }));
         Assert(read.GetProperty("content").GetString() == "read-only fixture\n", "HTTP range result");
         Error(await Call(client, "read_file", new() { ["path"] = ".env" }), "private");
 
@@ -248,23 +252,26 @@ internal static class McpHttpChecks
 
         if (mode == ExecutionMode.ReadOnly)
             Error(await Call(client, "apply_patch", new()
-                { ["patch"] = add, ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
+            { ["patch"] = add, ["approved"] = true, ["mode"] = "FullAccess" }), "ReadOnly");
         else if (mode == ExecutionMode.ProjectEdit)
             Error(await Call(client, "apply_patch", new()
-                { ["patch"] = Patch("*** Update File: sample.txt\n*** Move to: moved/new.txt"),
-                  ["approved"] = true, ["mode"] = "FullAccess" }), "ProjectEdit restrictions");
+            {
+                ["patch"] = Patch("*** Update File: sample.txt\n*** Move to: moved/new.txt"),
+                ["approved"] = true,
+                ["mode"] = "FullAccess"
+            }), "ProjectEdit restrictions");
 
         if (mode == ExecutionMode.FullAccess)
         {
             var result = Structured(await Call(client, "bash", new()
-                { ["command"] = "printf hello; printf diagnostic >&2; exit 7" }));
+            { ["command"] = "printf hello; printf diagnostic >&2; exit 7" }));
             Assert(result.GetProperty("exitCode").GetInt32() == 7 &&
                 result.GetProperty("stdout").GetString() == "hello" &&
                 result.GetProperty("stderr").GetString() == "diagnostic", "HTTP Bash result mapping");
         }
         else
             Error(await Call(client, "bash", new()
-                { ["command"] = "printf unexpected > denied.txt", ["approved"] = true }),
+            { ["command"] = "printf unexpected > denied.txt", ["approved"] = true }),
                 mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
 
         Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.txt")) == "read-only fixture\n" &&
@@ -299,8 +306,13 @@ internal static class McpHttpChecks
             var patch = Patch(body);
             var preview = FullPreview(await Call(client, "apply_patch", new()
             {
-                ["patch"] = patch, ["dry_run"] = true, ["mode"] = "FullAccess", ["approved"] = true, ["recoveryReady"] = true,
-                ["decision"] = new { canCommit = true }, ["projectEditLimits"] = new { maxPaths = int.MaxValue }
+                ["patch"] = patch,
+                ["dry_run"] = true,
+                ["mode"] = "FullAccess",
+                ["approved"] = true,
+                ["recoveryReady"] = true,
+                ["decision"] = new { canCommit = true },
+                ["projectEditLimits"] = new { maxPaths = int.MaxValue }
             }));
             CheckReview(preview, mode, reasons);
             var actualLimits = preview.GetProperty("risk").GetProperty("limits").Deserialize<ProjectEditLimits>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -327,8 +339,11 @@ internal static class McpHttpChecks
     internal static Task<McpClient> ConnectAsync(Uri address, HttpClient httpClient, CancellationToken cancellationToken = default,
         Dictionary<string, string>? headers = null, string? protocolVersion = null) => McpClient.CreateAsync(new HttpClientTransport(new HttpClientTransportOptions
         {
-            Endpoint = new Uri(address, "mcp"), TransportMode = HttpTransportMode.StreamableHttp,
-            EnableStandaloneGetStream = false, ConnectionTimeout = TimeSpan.FromSeconds(3), AdditionalHeaders = headers
+            Endpoint = new Uri(address, "mcp"),
+            TransportMode = HttpTransportMode.StreamableHttp,
+            EnableStandaloneGetStream = false,
+            ConnectionTimeout = TimeSpan.FromSeconds(3),
+            AdditionalHeaders = headers
         }, httpClient, loggerFactory: null, ownsHttpClient: false), new McpClientOptions { ProtocolVersion = protocolVersion }, cancellationToken: cancellationToken);
 
     internal static JsonElement Structured(CallToolResult result)
@@ -403,19 +418,23 @@ internal static class McpHttpChecks
 
     private static async Task Until(Func<bool> condition)
     {
-        for (var i = 0; i < 500; i++) { if (condition()) return; await Task.Delay(10); }
+        for (var i = 0; i < 500; i++)
+        { if (condition()) return; await Task.Delay(10); }
         throw new Exception("Timed out waiting for HTTP call lifecycle state.");
     }
 
     private static async Task Interrupted(Task<CallToolResult> call)
     {
-        try { Assert((await call.WaitAsync(TimeSpan.FromSeconds(10))).IsError == true, "Stopped call cannot succeed"); }
+        try
+        { Assert((await call.WaitAsync(TimeSpan.FromSeconds(10))).IsError == true, "Stopped call cannot succeed"); }
         catch (Exception error) when (error is OperationCanceledException or McpException or HttpRequestException or IOException) { }
     }
 
     private static async Task Reject<TException>(Func<Task> action) where TException : Exception
     {
-        try { await action(); } catch (TException) { return; }
+        try
+        { await action(); }
+        catch (TException) { return; }
         throw new Exception($"Expected {typeof(TException).Name}.");
     }
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
@@ -427,7 +446,8 @@ internal static class McpHttpChecks
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var response = await base.SendAsync(request, cancellationToken);
-            if (request.Headers.Contains("Mcp-Session-Id") || response.Headers.Contains("Mcp-Session-Id")) Interlocked.Exchange(ref _sawSessionHeader, 1);
+            if (request.Headers.Contains("Mcp-Session-Id") || response.Headers.Contains("Mcp-Session-Id"))
+                Interlocked.Exchange(ref _sawSessionHeader, 1);
             return response;
         }
     }

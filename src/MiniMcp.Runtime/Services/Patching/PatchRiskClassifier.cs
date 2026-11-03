@@ -95,16 +95,20 @@ internal static class PatchRiskClassifier
         // Use exactly the complete preview's changed-content statistics, never file sizes or display length.
         var size = new PatchBatchSize(paths.Count, checked((long)preview.Statistics.AddedLines + preview.Statistics.RemovedLines),
             checked(preview.Statistics.AddedBytes + preview.Statistics.RemovedBytes));
-        if (size.Paths > limits.MaxPaths) total |= PatchRiskReason.PathLimitExceeded;
-        if (size.ChangedLines > limits.MaxChangedLines) total |= PatchRiskReason.ChangedLineLimitExceeded;
-        if (size.ChangedBytes > limits.MaxChangedBytes) total |= PatchRiskReason.ChangedByteLimitExceeded;
+        if (size.Paths > limits.MaxPaths)
+            total |= PatchRiskReason.PathLimitExceeded;
+        if (size.ChangedLines > limits.MaxChangedLines)
+            total |= PatchRiskReason.ChangedLineLimitExceeded;
+        if (size.ChangedBytes > limits.MaxChangedBytes)
+            total |= PatchRiskReason.ChangedByteLimitExceeded;
         return new(preview, changes.MoveToImmutable(), size, limits, total);
     }
 
     private static PatchChangeRisk ClassifyChange(PlannedPatchChange change, string settingsFilePath)
     {
         var reasons = PathReason(change.Summary.Path);
-        if (change.Summary.MoveTo is { } destination) reasons |= PathReason(destination);
+        if (change.Summary.MoveTo is { } destination)
+            reasons |= PathReason(destination);
         // The selected settings file can have any name, including an ordinary source/document suffix.
         if (string.Equals(change.Source, settingsFilePath, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(change.Destination, settingsFilePath, StringComparison.OrdinalIgnoreCase))
@@ -122,8 +126,10 @@ internal static class PatchRiskClassifier
         };
 
         var kind = PatchFileKind.Ordinary;
-        if ((reasons & PatchRiskReason.CriticalFile) != 0) kind = PatchFileKind.Critical;
-        else if ((reasons & PatchRiskReason.UnknownFileType) != 0) kind = PatchFileKind.Unknown;
+        if ((reasons & PatchRiskReason.CriticalFile) != 0)
+            kind = PatchFileKind.Critical;
+        else if ((reasons & PatchRiskReason.UnknownFileType) != 0)
+            kind = PatchFileKind.Unknown;
         return new(change.Summary, kind, reasons);
     }
 
@@ -135,7 +141,8 @@ internal static class PatchRiskClassifier
         var name = names[^1];
         if (names.Any(CriticalDirectories.Contains) || IsCriticalName(name))
             return PatchRiskReason.CriticalFile;
-        if (!parts.SequenceEqual(names)) return PatchRiskReason.UnknownFileType;
+        if (!parts.SequenceEqual(names))
+            return PatchRiskReason.UnknownFileType;
         return OrdinaryExtensions.Contains(Path.GetExtension(name)) || DocumentNames.Contains(name)
             ? PatchRiskReason.None : PatchRiskReason.UnknownFileType;
     }
@@ -153,7 +160,8 @@ internal static class PatchRiskClassifier
     private static bool HasShebang(ImmutableArray<byte> content)
     {
         var bytes = content.AsSpan();
-        if (bytes.StartsWith<byte>([0xef, 0xbb, 0xbf])) bytes = bytes[3..];
+        if (bytes.StartsWith<byte>([0xef, 0xbb, 0xbf]))
+            bytes = bytes[3..];
         return bytes.StartsWith<byte>([(byte)'#', (byte)'!']);
     }
 }

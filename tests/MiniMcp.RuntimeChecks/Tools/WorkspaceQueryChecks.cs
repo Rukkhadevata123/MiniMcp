@@ -52,11 +52,13 @@ internal static class WorkspaceQueryChecks
         await check("queries: entry/output/work budgets bound list traversal and reject oversized search scope", async () =>
         {
             await using var fixture = new Fixture();
-            for (var i = 0; i < 25; i++) fixture.Put($"many/{i}.txt", "hello\n");
+            for (var i = 0; i < 25; i++)
+                fixture.Put($"many/{i}.txt", "hello\n");
             var limited = await fixture.Execution.ListFilesAsync("many", maxEntries: 3);
             Assert(limited.Entries.Length == 3 && limited.Truncated && limited.Notices.Contains("EntryLimit"), "Entry limit");
             Assert(JsonSerializer.SerializeToUtf8Bytes(limited).Length <= QueryText.MaxResultBytes, "Result bytes");
-            for (var i = 0; i < QueryText.MaxWork + 1; i++) fixture.Put($"wide/{i}", "");
+            for (var i = 0; i < QueryText.MaxWork + 1; i++)
+                fixture.Put($"wide/{i}", "");
             var wide = await fixture.Execution.ListFilesAsync("wide", maxEntries: 2000);
             Assert(wide.Entries.Length <= 2000 && wide.Truncated, "Wide list remains bounded");
             var error = await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("hello", "wide"));
@@ -115,8 +117,10 @@ internal static class WorkspaceQueryChecks
                 Assert(match.Matches.Length == 1, "Values are separate arguments, no option injection: " + JsonSerializer.Serialize(match));
                 Assert((await fixture.Execution.SearchTextAsync("$(touch marker); `attack` \"quoted\"")).Matches.IsEmpty, "No shell expansion");
                 Assert((await fixture.Execution.SearchTextAsync("hello")).Matches.Length == 1, "External config ignored");
-                foreach (var depth in new[] { -1, 33 }) await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("x", maxDepth: depth));
-                foreach (var count in new[] { 0, 1001 }) await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("x", maxResults: count));
+                foreach (var depth in new[] { -1, 33 })
+                    await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("x", maxDepth: depth));
+                foreach (var count in new[] { 0, 1001 })
+                    await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("x", maxResults: count));
                 await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync(new string('a', 4097)));
                 await Reject<WorkspaceException>(() => fixture.Execution.ListFilesAsync(maxDepth: 9));
                 await Reject<WorkspaceException>(() => fixture.Execution.ListFilesAsync(format: "shell"));
@@ -129,7 +133,8 @@ internal static class WorkspaceQueryChecks
             Assert(fixture.Configuration.Settings.RgPath == Path.Combine(fixture.Directory, "missing-rg"), "Normalize optional path");
             Assert((await fixture.Execution.ListFilesAsync()).Entries.Length == 1, "No rg does not disable listing");
             await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("hello"));
-            try { ConfigurationJson.ParsePolicy("""{"patchApprovalLimits":{}}"""); throw new Exception("Legacy alias accepted"); }
+            try
+            { ConfigurationJson.ParsePolicy("""{"patchApprovalLimits":{}}"""); throw new Exception("Legacy alias accepted"); }
             catch (JsonException) { }
             Assert(ConfigurationJson.ParseSettings("""{"rgPath":"rg"}""").RgPath == "rg", "Configuration field");
             await File.WriteAllTextAsync(fixture.Configuration.SettingsFilePath, ConfigurationJson.SerializeSettings(fixture.Configuration.Settings));
@@ -164,7 +169,8 @@ internal static class WorkspaceQueryChecks
             System.IO.Directory.CreateDirectory(outside);
             File.WriteAllText(Path.Combine(outside, "secret.txt"), "outside-secret\n");
             var link = fixture.PathOf("linked");
-            try { System.IO.Directory.CreateSymbolicLink(link, outside); }
+            try
+            { System.IO.Directory.CreateSymbolicLink(link, outside); }
             catch (UnauthorizedAccessException) when (OperatingSystem.IsWindows())
             { CheckRunner.Skip("Windows Developer Mode or symbolic link permission required."); return; }
             try
@@ -173,7 +179,8 @@ internal static class WorkspaceQueryChecks
                 Assert((await fixture.Execution.SearchTextAsync("outside-secret", glob: "**")).Matches.IsEmpty, "No link traversal");
                 await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("outside-secret", "linked"));
                 File.CreateSymbolicLink(fixture.PathOf(".rgignore"), Path.Combine(outside, "secret.txt"));
-                try { await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("hello")); }
+                try
+                { await Reject<WorkspaceException>(() => fixture.Execution.SearchTextAsync("hello")); }
                 finally { File.Delete(fixture.PathOf(".rgignore")); }
             }
             finally { System.IO.Directory.Delete(link); }
@@ -196,7 +203,8 @@ internal static class WorkspaceQueryChecks
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var tasks = Enumerable.Range(0, 10).Select(_ => runner.ExecuteAsync(async token =>
             {
-                if (Interlocked.Increment(ref entered) == 2) active.TrySetResult();
+                if (Interlocked.Increment(ref entered) == 2)
+                    active.TrySetResult();
                 await release.Task.WaitAsync(token);
                 return 0;
             }, cancel.Token)).ToArray();
@@ -204,7 +212,8 @@ internal static class WorkspaceQueryChecks
             Assert(entered == 2, "Only two queries active");
             await Reject<WorkspaceException>(() => runner.ExecuteAsync(_ => Task.FromResult(0), CancellationToken.None));
             cancel.Cancel();
-            foreach (var task in tasks) await Reject<OperationCanceledException>(() => task);
+            foreach (var task in tasks)
+                await Reject<OperationCanceledException>(() => task);
             Assert(await runner.ExecuteAsync(_ => Task.FromResult(7), CancellationToken.None) == 7, "All slots reclaimed");
         });
         await check("queries: three modes expose identical real MCP catalogs and readonly results cause no project/record writes", async () =>
@@ -249,8 +258,10 @@ internal static class WorkspaceQueryChecks
                 using var child = await RuntimeCallChecks.ObserveChildAsync(fixture.PathOf("query-child.pid"), query);
                 try
                 {
-                    if (sessionStop) await fixture.Execution.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-                    else cancel.Cancel();
+                    if (sessionStop)
+                        await fixture.Execution.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    else
+                        cancel.Cancel();
                     await Reject<OperationCanceledException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
                     await RuntimeCallChecks.AssertStoppedAsync(child);
                     Assert(fixture.Execution.ActiveCalls == 0, "Tracking released only after child cleanup");
@@ -283,8 +294,10 @@ internal static class WorkspaceQueryChecks
                 using var child = await RuntimeCallChecks.ObserveChildAsync(fixture.PathOf("query-child.pid"), query);
                 try
                 {
-                    if (mode == "flood") Assert((await query.WaitAsync(TimeSpan.FromSeconds(5))).Truncated, "Protocol output cap");
-                    else await Reject<WorkspaceException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
+                    if (mode == "flood")
+                        Assert((await query.WaitAsync(TimeSpan.FromSeconds(5))).Truncated, "Protocol output cap");
+                    else
+                        await Reject<WorkspaceException>(() => query).WaitAsync(TimeSpan.FromSeconds(5));
                     await RuntimeCallChecks.AssertStoppedAsync(child);
                     Assert(fixture.Execution.ActiveCalls == 0, "Fault/limit releases only after cleanup");
                 }
@@ -297,16 +310,20 @@ internal static class WorkspaceQueryChecks
     internal static async Task<int> ChildAsync(string[] arguments)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
-        if (arguments.Contains("--files")) { Console.Write("./sample.txt\0"); return 0; }
+        if (arguments.Contains("--files"))
+        { Console.Write("./sample.txt\0"); return 0; }
         var marker = Path.Combine(Environment.CurrentDirectory, "query-child.pid");
         var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("--execution-child");
         start.ArgumentList.Add(marker);
         using var child = Process.Start(start)!;
-        while (!File.Exists(marker)) await Task.Delay(10);
+        while (!File.Exists(marker))
+            await Task.Delay(10);
         var mode = await File.ReadAllTextAsync(Path.Combine(Environment.CurrentDirectory, ".query-control"));
-        if (mode == "malformed") { Console.WriteLine("invalid-json"); await Console.Out.FlushAsync(); }
-        if (mode == "partial") { Console.Write("{\"type\":\"match\",\"data\":"); await Console.Out.FlushAsync(); }
+        if (mode == "malformed")
+        { Console.WriteLine("invalid-json"); await Console.Out.FlushAsync(); }
+        if (mode == "partial")
+        { Console.Write("{\"type\":\"match\",\"data\":"); await Console.Out.FlushAsync(); }
         if (mode == "flood")
         {
             while (true)
@@ -321,7 +338,8 @@ internal static class WorkspaceQueryChecks
 
     private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (T error) { return error; }
         throw new Exception("Expected " + typeof(T).Name);
     }
@@ -365,7 +383,8 @@ internal static class WorkspaceQueryChecks
             await Execution.DisposeAsync();
             var resolved = Path.GetFullPath(Directory);
             if (Path.GetDirectoryName(resolved) != Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())) ||
-                !Path.GetFileName(resolved).StartsWith("minimcp-query-", StringComparison.Ordinal)) throw new Exception("Unexpected fixture root");
+                !Path.GetFileName(resolved).StartsWith("minimcp-query-", StringComparison.Ordinal))
+                throw new Exception("Unexpected fixture root");
             System.IO.Directory.Delete(resolved, true);
         }
     }

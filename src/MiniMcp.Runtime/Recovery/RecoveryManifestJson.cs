@@ -34,7 +34,8 @@ internal static class RecoveryManifestJson
     {
         Require(bytes.Length <= MaxManifestBytes, "$", "Recovery manifests must not exceed 256 KiB.");
         string json;
-        try { json = Utf8.GetString(bytes); }
+        try
+        { json = Utf8.GetString(bytes); }
         catch (DecoderFallbackException error) { throw new JsonException("Recovery manifests must use valid UTF-8.", error); }
         var manifest = JsonSerializer.Deserialize<RecoveryManifest>(json, Options)
             ?? throw new JsonException("A recovery manifest must be a JSON object.", "$", null, null);
@@ -70,7 +71,8 @@ internal static class RecoveryManifestJson
 
     private static void Image(RecoveryFileImage? image, string path)
     {
-        if (image is null) return;
+        if (image is null)
+            return;
         Require(image.ByteLength is >= 0 and <= ProjectWorkspace.MaxFileBytes, path + ".byteLength", "Use a byte length between 0 and 256 KiB.");
         Require(image.Sha256 is { Length: 64 } && image.Sha256.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F'),
             path + ".sha256", "Use a 64-character uppercase SHA-256 hexadecimal value.");
@@ -82,6 +84,7 @@ internal static class RecoveryManifestJson
 
     private static void Require(bool condition, string path, string message)
     {
-        if (!condition) throw new JsonException(message, path, null, null);
+        if (!condition)
+            throw new JsonException(message, path, null, null);
     }
 }

@@ -75,7 +75,8 @@ internal static class ProcessOutputReaderChecks
             var entries = diagnostics.GetLogs().Entries;
             Assert(entries[^1].Sequence == 8000 && stdout.EndReached && stderr.EndReached, "Both streams completely drained");
             var pending = new List<RuntimeLogEntry>();
-            while (slow.Reader.TryRead(out var entry)) pending.Add(entry);
+            while (slow.Reader.TryRead(out var entry))
+                pending.Add(entry);
             Assert(pending.Count == RuntimeDiagnostics.LogSubscriptionCapacity, "Observer stays bounded");
             Assert(pending.All(entry => entry.Category == "stdout" ? entry.Level == LogLevel.Information : entry.Level == LogLevel.Warning), "Independent source and level identity");
         });
@@ -110,12 +111,14 @@ internal static class ProcessOutputReaderChecks
 
     private static void Assert(bool condition, string reason)
     {
-        if (!condition) throw new Exception(reason);
+        if (!condition)
+            throw new Exception(reason);
     }
 
     private static async Task Reject<T>(Task task) where T : Exception
     {
-        try { await task.WaitAsync(TimeSpan.FromSeconds(5)); }
+        try
+        { await task.WaitAsync(TimeSpan.FromSeconds(5)); }
         catch (T) { return; }
         throw new Exception("Expected " + typeof(T).Name);
     }
@@ -150,7 +153,8 @@ internal static class ProcessOutputReaderChecks
             cancellationToken.ThrowIfCancellationRequested();
             MaxRequested = Math.Max(MaxRequested, buffer.Length);
             var length = Math.Min(buffer.Length, _remaining);
-            if (length != 0) { buffer.Span[..length].Fill('s'); _remaining -= length; }
+            if (length != 0)
+            { buffer.Span[..length].Fill('s'); _remaining -= length; }
             else
             {
                 length = Math.Min(buffer.Length, tail.Length - _tailPosition);

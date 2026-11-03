@@ -16,7 +16,8 @@ internal sealed partial class RecoveryStore
     public async Task<RecoveryRecordSnapshot> LoadAsync(Guid changeId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (changeId == Guid.Empty) throw new ArgumentException("A nonempty record ID is required.", nameof(changeId));
+        if (changeId == Guid.Empty)
+            throw new ArgumentException("A nonempty record ID is required.", nameof(changeId));
         await Writes.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
@@ -93,7 +94,8 @@ internal sealed partial class RecoveryStore
             while (count < buffer.Length)
             {
                 var read = await stream.ReadAsync(buffer.AsMemory(count), cancellationToken).ConfigureAwait(false);
-                if (read == 0) break;
+                if (read == 0)
+                    break;
                 count += read;
             }
             if (count != length || stream.Length != length || RecoveryFileSystem.FileIdentity(stream) != fileIdentity)
@@ -114,9 +116,11 @@ internal sealed partial class RecoveryStore
         try
         {
             RecoveryFileSystem.Lock(stream);
-            if (stream.Length != 0) throw new InvalidDataException("Recovery lock marker must have zero length.");
+            if (stream.Length != 0)
+                throw new InvalidDataException("Recovery lock marker must have zero length.");
             _guard.CheckLocation(cancellationToken);
-            if (RecoveryFileSystem.DirectoryIdentity(storage) != identity) throw new IOException("Recovery storage was replaced while locking.");
+            if (RecoveryFileSystem.DirectoryIdentity(storage) != identity)
+                throw new IOException("Recovery storage was replaced while locking.");
             return new(stream, identity);
         }
         catch { stream.Dispose(); throw; }
@@ -133,13 +137,16 @@ internal sealed partial class RecoveryStore
             if (++count > maximum || !remaining.Remove(Path.GetFileName(entry)))
                 throw new InvalidDataException("The recovery record contains unexpected or noncanonical entries.");
         }
-        if (remaining.Count != 0) throw new InvalidDataException("The recovery record is missing required files.");
+        if (remaining.Count != 0)
+            throw new InvalidDataException("The recovery record is missing required files.");
     }
 
     private static void ValidateBackupText(ReadOnlySpan<byte> bytes)
     {
-        if (bytes.Contains((byte)0)) throw new InvalidDataException("Recovery backups must be UTF-8 text without NUL bytes.");
-        try { _ = ProjectWorkspace.Utf8.GetCharCount(bytes); }
+        if (bytes.Contains((byte)0))
+            throw new InvalidDataException("Recovery backups must be UTF-8 text without NUL bytes.");
+        try
+        { _ = ProjectWorkspace.Utf8.GetCharCount(bytes); }
         catch (DecoderFallbackException error) { throw new InvalidDataException("Recovery backups must be valid UTF-8 text.", error); }
     }
 

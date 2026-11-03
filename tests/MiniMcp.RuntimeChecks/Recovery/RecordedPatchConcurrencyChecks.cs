@@ -15,10 +15,12 @@ internal static class RecordedPatchConcurrencyChecks
             var peerPlan = await peerService.PrepareAsync("*** Begin Patch\n*** Add File: peer.md\n+peer\n*** End Patch");
             var peerPreparations = 0;
             var peerStore = fixture.Store(prepare: (_, _) => { peerPreparations++; return Task.CompletedTask; });
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             var store = fixture.Store(prepare: async (stage, _) =>
             {
-                if (stage == RecoveryPreparationStage.BackupWritten) { entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreparationStage.BackupWritten)
+                { entered.TrySetResult(); await release.Task; }
             });
             var original = fixture.ProjectSnapshot();
             var committing = fixture.Service.CommitWithRecoveryAsync(await fixture.Plan(), store);
@@ -44,7 +46,8 @@ internal static class RecordedPatchConcurrencyChecks
         {
             using var fixture = new Fixture();
             var plan = await fixture.Plan();
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             var store = fixture.Store(replacement: async (stage, _) =>
             {
                 if (stage == RecoveryManifestReplacementStage.BeforeTemporaryFile && fixture.ReadManifest().State == RecoveryRecordState.Applying)
@@ -75,7 +78,8 @@ internal static class RecordedPatchConcurrencyChecks
             var firstPlan = await fixture.Plan();
             var peerService = new PatchService(fixture.Workspace);
             var peerPlan = await peerService.PrepareAsync("*** Begin Patch\n*** Add File: peer.md\n+peer\n*** End Patch");
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             var firstStore = fixture.Store(replacement: async (stage, _) =>
             {
                 if (stage == RecoveryManifestReplacementStage.BeforeTemporaryFile && fixture.ReadManifest().State == RecoveryRecordState.Applying)
@@ -123,10 +127,12 @@ internal static class RecordedPatchConcurrencyChecks
 
         await check("independent workspaces can complete recorded commits while another workspace engine remains paused", async () =>
         {
-            var entered = Signal(); var release = Signal();
+            var entered = Signal();
+            var release = Signal();
             using var firstFixture = new Fixture(async (stage, _) =>
             {
-                if (stage == PatchCommitStage.Staged) { entered.TrySetResult(); await release.Task; }
+                if (stage == PatchCommitStage.Staged)
+                { entered.TrySetResult(); await release.Task; }
             });
             using var secondFixture = new Fixture();
             var firstStore = firstFixture.Store();
@@ -152,10 +158,13 @@ internal static class RecordedPatchConcurrencyChecks
             using var cancelled = new CancellationTokenSource();
             using var blocker = new Fixture();
             var blockerPlan = await blocker.Plan();
-            var entered = Signal(); var release = Signal(); var verifying = Signal();
+            var entered = Signal();
+            var release = Signal();
+            var verifying = Signal();
             var blockerStore = blocker.Store(prepare: async (stage, _) =>
             {
-                if (stage == RecoveryPreparationStage.BeforeDirectory) { entered.TrySetResult(); await release.Task; }
+                if (stage == RecoveryPreparationStage.BeforeDirectory)
+                { entered.TrySetResult(); await release.Task; }
             });
             Task<RecoveryStore.PreparedRecord>? blocking = null;
             var gateStarted = false;
@@ -167,8 +176,10 @@ internal static class RecordedPatchConcurrencyChecks
                     blocking = blockerStore.PrepareAsync(blockerPlan);
                     await entered.Task;
                 }
-                if (stage == PatchCommitStage.Installed) cancelled.Cancel();
-                if (stage == PatchCommitStage.BeforeVerification) verifying.TrySetResult();
+                if (stage == PatchCommitStage.Installed)
+                    cancelled.Cancel();
+                if (stage == PatchCommitStage.BeforeVerification)
+                    verifying.TrySetResult();
             });
             var plan = await fixture.Plan();
             var peerPlan = await fixture.Plan("*** Add File: peer.md\n+peer");
@@ -193,9 +204,11 @@ internal static class RecordedPatchConcurrencyChecks
             finally
             {
                 release.TrySetResult();
-                if (blocking is not null) await Drain(blocking);
+                if (blocking is not null)
+                    await Drain(blocking);
                 await Drain(committing);
-                if (peer is not null) await Drain(peer);
+                if (peer is not null)
+                    await Drain(peer);
             }
         });
     }

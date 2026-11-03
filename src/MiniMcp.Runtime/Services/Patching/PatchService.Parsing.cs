@@ -9,7 +9,8 @@ internal sealed partial class PatchService
     private sealed record Operation(string Action, string Path, string? MoveTo, string? Content, List<Chunk> Chunks);
     private static List<Operation> Parse(string patch)
     {
-        if (string.IsNullOrEmpty(patch)) throw new WorkspaceException("patch is required.");
+        if (string.IsNullOrEmpty(patch))
+            throw new WorkspaceException("patch is required.");
         try
         {
             if (ProjectWorkspace.Utf8.GetByteCount(patch) > 1024 * 1024)
@@ -18,7 +19,8 @@ internal sealed partial class PatchService
         catch (EncoderFallbackException) { throw new WorkspaceException("Patch is not valid UTF-8 text."); }
         var lines = patch.Replace("\r\n", "\n").Split('\n');
         var length = lines.Length;
-        if (lines[^1] == "") length--;
+        if (lines[^1] == "")
+            length--;
         if (length < 3 || lines[0] != "*** Begin Patch" || lines[length - 1] != "*** End Patch")
             throw new WorkspaceException("Expected *** Begin Patch and *** End Patch around file operations.");
         var result = new List<Operation>();
@@ -26,7 +28,8 @@ internal sealed partial class PatchService
         while (i < length - 1)
         {
             result.Add(ParseOperation(lines, length, ref i));
-            if (result.Count > 64) throw new WorkspaceException("A patch may contain at most 64 file operations.");
+            if (result.Count > 64)
+                throw new WorkspaceException("A patch may contain at most 64 file operations.");
         }
         return result;
     }
@@ -59,20 +62,26 @@ internal sealed partial class PatchService
                 if (edits.Count == 0 || edits.All(line => line[0] == ' '))
                     throw new WorkspaceException("Each @@ chunk must contain a change; blank context lines need a space prefix.");
                 var eof = lines[cursor] == "*** End of File";
-                if (eof) cursor++;
+                if (eof)
+                    cursor++;
                 chunks.Add(new Chunk(anchor, edits.ToArray(), eof));
-                if (eof) break;
+                if (eof)
+                    break;
             }
-            if (chunks.Count == 0 && move is null) throw new WorkspaceException("Update File requires a chunk or Move to header.");
+            if (chunks.Count == 0 && move is null)
+                throw new WorkspaceException("Update File requires a chunk or Move to header.");
         }
         return new Operation(action, path, move, content, chunks);
     }
 
     private static string ParseAction(string header)
     {
-        if (header.StartsWith("*** Add File: ", StringComparison.Ordinal)) return "add";
-        if (header.StartsWith("*** Delete File: ", StringComparison.Ordinal)) return "delete";
-        if (header.StartsWith("*** Update File: ", StringComparison.Ordinal)) return "update";
+        if (header.StartsWith("*** Add File: ", StringComparison.Ordinal))
+            return "add";
+        if (header.StartsWith("*** Delete File: ", StringComparison.Ordinal))
+            return "delete";
+        if (header.StartsWith("*** Update File: ", StringComparison.Ordinal))
+            return "update";
         throw new WorkspaceException("Expected an Add File, Delete File or Update File header.");
     }
 
@@ -94,9 +103,12 @@ internal sealed partial class PatchService
             var consumed = index;
             foreach (var edit in chunk.Lines)
             {
-                if (edit[0] == ' ') output.Add(original[consumed++]);
-                else if (edit[0] == '-') consumed++;
-                else output.Add(new TextLine(edit[1..], ending));
+                if (edit[0] == ' ')
+                    output.Add(original[consumed++]);
+                else if (edit[0] == '-')
+                    consumed++;
+                else
+                    output.Add(new TextLine(edit[1..], ending));
             }
             cursor = consumed;
         }
@@ -106,7 +118,8 @@ internal sealed partial class PatchService
         {
             var line = output[i];
             result.Append(line.Text);
-            if (i == output.Count - 1 && !finalNewline) continue;
+            if (i == output.Count - 1 && !finalNewline)
+                continue;
             result.Append(line.Ending.Length == 0 ? ending : line.Ending);
         }
         return result.ToString();
@@ -117,28 +130,36 @@ internal sealed partial class PatchService
         if (endOfFile)
         {
             var index = lines.Count - expected.Length;
-            if (index >= start && lines.Skip(index).Select(line => line.Text).SequenceEqual(expected)) return index;
+            if (index >= start && lines.Skip(index).Select(line => line.Text).SequenceEqual(expected))
+                return index;
             throw new WorkspaceException("Patch context did not match exactly at the end of the file.");
         }
         // Prefix matching keeps repeated lines linear in the file/context size.
         var prefix = new int[expected.Length];
         for (int i = 1, length = 0; i < expected.Length; i++)
         {
-            while (length > 0 && expected[i] != expected[length]) length = prefix[length - 1];
-            if (expected[i] == expected[length]) length++;
+            while (length > 0 && expected[i] != expected[length])
+                length = prefix[length - 1];
+            if (expected[i] == expected[length])
+                length++;
             prefix[i] = length;
         }
         var match = -1;
         for (int i = start, length = 0; i < lines.Count; i++)
         {
-            while (length > 0 && lines[i].Text != expected[length]) length = prefix[length - 1];
-            if (lines[i].Text == expected[length]) length++;
-            if (length != expected.Length) continue;
-            if (match >= 0) throw new WorkspaceException("Patch context is ambiguous; include more context or an exact @@ anchor.");
+            while (length > 0 && lines[i].Text != expected[length])
+                length = prefix[length - 1];
+            if (lines[i].Text == expected[length])
+                length++;
+            if (length != expected.Length)
+                continue;
+            if (match >= 0)
+                throw new WorkspaceException("Patch context is ambiguous; include more context or an exact @@ anchor.");
             match = i - expected.Length + 1;
             length = prefix[length - 1];
         }
-        if (match < 0) throw new WorkspaceException("Patch context did not match exactly; read the file again.");
+        if (match < 0)
+            throw new WorkspaceException("Patch context did not match exactly; read the file again.");
         return match;
     }
 

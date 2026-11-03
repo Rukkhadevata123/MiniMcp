@@ -27,7 +27,8 @@ internal sealed partial class RecoveryStore
         Func<RecoveryLoadingStage, Task>? loadCheckpoint = null,
         Func<RecoveryManifestReplacementStage, string, Task>? replacementCheckpoint = null)
     {
-        if (runId == Guid.Empty) throw new ArgumentException("A run ID is required.", nameof(runId));
+        if (runId == Guid.Empty)
+            throw new ArgumentException("A run ID is required.", nameof(runId));
         ArgumentNullException.ThrowIfNull(configuration);
         _runId = runId;
         _configuration = configuration;
@@ -43,7 +44,8 @@ internal sealed partial class RecoveryStore
         ArgumentNullException.ThrowIfNull(plan);
         if (_configuration.Policy.Mode == ExecutionMode.ReadOnly)
             throw new WorkspaceException("ReadOnly mode does not allow recovery preparation for patch writes.");
-        if (!Enum.IsDefined(_configuration.Policy.Mode)) throw new WorkspaceException("Unknown execution mode; recovery preparation is denied.");
+        if (!Enum.IsDefined(_configuration.Policy.Mode))
+            throw new WorkspaceException("Unknown execution mode; recovery preparation is denied.");
         await Writes.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         try
         {
@@ -56,7 +58,8 @@ internal sealed partial class RecoveryStore
             _guard.CheckLocation(cancellationToken);
             using var storeLock = RecoveryFileSystem.OpenFile(Path.Combine(_configuration.Policy.RecoveryDirectory, RecoveryStorageLimits.LockFileName), FileMode.OpenOrCreate);
             RecoveryFileSystem.Lock(storeLock);
-            if (storeLock.Length != 0) throw new InvalidDataException("Recovery lock marker must have zero length.");
+            if (storeLock.Length != 0)
+                throw new InvalidDataException("Recovery lock marker must have zero length.");
             var before = _guard.Inspect(recordBytes, cancellationToken);
             return await WriteRecordAsync(draft, manifest, recordBytes, before, cancellationToken).ConfigureAwait(false);
         }
@@ -87,7 +90,8 @@ internal sealed partial class RecoveryStore
             await Checkpoint(RecoveryPreparationStage.BeforeDirectory, draft).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             _guard.CheckLocation(cancellationToken);
-            if (!RecoveryFileSystem.CreateDirectory(directory)) throw new IOException("A recovery record directory already exists; existing data was preserved.");
+            if (!RecoveryFileSystem.CreateDirectory(directory))
+                throw new IOException("A recovery record directory already exists; existing data was preserved.");
             directoryIdentity = RecoveryFileSystem.DirectoryIdentity(directory);
             foreach (var backup in draft.Backups)
             {
@@ -125,7 +129,8 @@ internal sealed partial class RecoveryStore
         }
         catch (Exception failure)
         {
-            if (directoryIdentity is null) throw;
+            if (directoryIdentity is null)
+                throw;
             var errors = new List<Exception> { failure };
             CleanupPreparedRecord(directory, directoryIdentity.Value, files, errors);
             if (errors.Count > 1)
@@ -188,7 +193,8 @@ internal sealed partial class RecoveryStore
     private void CheckDirectory(string directory, RecoveryFileIdentity identity, CancellationToken cancellationToken)
     {
         _guard.CheckLocation(cancellationToken);
-        if (RecoveryFileSystem.DirectoryIdentity(directory) != identity) throw new IOException("The recovery record directory was replaced.");
+        if (RecoveryFileSystem.DirectoryIdentity(directory) != identity)
+            throw new IOException("The recovery record directory was replaced.");
     }
 
     private static async Task WriteFileAsync(string path, ReadOnlyMemory<byte> bytes,
@@ -213,14 +219,16 @@ internal sealed partial class RecoveryStore
 
     private static async Task VerifyAsync(FileStream stream, ReadOnlyMemory<byte> expected, CancellationToken cancellationToken)
     {
-        if (stream.Length != expected.Length) throw new IOException("A recovery file has an unexpected length.");
+        if (stream.Length != expected.Length)
+            throw new IOException("A recovery file has an unexpected length.");
         var buffer = new byte[expected.Length + 1];
         stream.Position = 0;
         var count = 0;
         while (count < buffer.Length)
         {
             var read = await stream.ReadAsync(buffer.AsMemory(count), cancellationToken).ConfigureAwait(false);
-            if (read == 0) break;
+            if (read == 0)
+                break;
             count += read;
         }
         if (count != expected.Length || !buffer.AsSpan(0, count).SequenceEqual(expected.Span) ||

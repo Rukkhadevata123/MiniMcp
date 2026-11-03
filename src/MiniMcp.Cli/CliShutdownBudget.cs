@@ -11,7 +11,8 @@ internal sealed class CliShutdownBudget
 
     internal void Begin()
     {
-        if (Interlocked.CompareExchange(ref _began, Stopwatch.GetTimestamp(), 0) == 0) Started.TrySetResult();
+        if (Interlocked.CompareExchange(ref _began, Stopwatch.GetTimestamp(), 0) == 0)
+            Started.TrySetResult();
     }
 
     internal TimeSpan Remaining

@@ -67,25 +67,25 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         // The SDK contract is transport- and policy-independent: check all fields once.
         // Every mode still discovers the exact same public tool catalog above.
         if (mode == ExecutionMode.FullAccess)
-        foreach (var tool in tools)
-        {
-            var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order().ToArray();
-            string[] expected = tool.Name switch
+            foreach (var tool in tools)
             {
-                "read_file" => ["end_line", "path", "start_line"],
-                "apply_patch" => ["dry_run", "patch"],
-                "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
-                "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
-                "git_status" => ["max_entries", "path"],
-                "git_diff" => ["max_files", "max_lines", "path", "staged"],
-                "git_log" => ["max_count", "path"],
-                _ => ["command", "timeout_seconds", "workdir"]
-            };
-            Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);
-            if (tool.Name == "apply_patch")
-                Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
-                    .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
-        }
+                var properties = tool.JsonSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Order().ToArray();
+                string[] expected = tool.Name switch
+                {
+                    "read_file" => ["end_line", "path", "start_line"],
+                    "apply_patch" => ["dry_run", "patch"],
+                    "list_files" => ["format", "include_hidden", "max_depth", "max_entries", "path"],
+                    "search_text" => ["case_sensitive", "glob", "max_depth", "max_results", "path", "pattern", "regex"],
+                    "git_status" => ["max_entries", "path"],
+                    "git_diff" => ["max_files", "max_lines", "path", "staged"],
+                    "git_log" => ["max_count", "path"],
+                    _ => ["command", "timeout_seconds", "workdir"]
+                };
+                Assert(properties.SequenceEqual(expected), "Schema for " + tool.Name);
+                if (tool.Name == "apply_patch")
+                    Assert(tool.ProtocolTool.OutputSchema is { } outputSchema && outputSchema.GetProperty("properties").EnumerateObject()
+                        .Select(property => property.Name).Order().SequenceEqual(new[] { "changes", "commit", "decision", "diff", "dryRun", "risk", "statistics" }), "Public preview output schema");
+            }
         Console.WriteLine($"STEP {mode}: MCP initialize, exact tool list and parameter schemas");
 
         async Task<JsonElement> Call(string name, Dictionary<string, object?> arguments, bool error = false, string? message = null)
@@ -117,7 +117,8 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         await Call("apply_patch", new() { ["patch"] = "malformed", ["dry_run"] = true }, error: true);
         await Call("apply_patch", new()
         {
-            ["patch"] = "*** Begin Patch\n*** Delete File: .env\n*** End Patch", ["dry_run"] = true
+            ["patch"] = "*** Begin Patch\n*** Delete File: .env\n*** End Patch",
+            ["dry_run"] = true
         }, error: true, message: "private");
 
         string[] patches =
@@ -158,7 +159,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         else if (mode == ExecutionMode.ReadOnly)
             await Call("apply_patch", new()
             {
-                ["patch"] = patches[2], ["approved"] = true, ["mode"] = "FullAccess"
+                ["patch"] = patches[2],
+                ["approved"] = true,
+                ["mode"] = "FullAccess"
             }, error: true);
         Console.WriteLine($"STEP {mode}: read boundaries, patch previews and locally denied writes");
 
@@ -176,7 +179,11 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             var patch = "*** Begin Patch\n" + body + "\n*** End Patch";
             var preview = await Call("apply_patch", new()
             {
-                ["patch"] = patch, ["dry_run"] = true, ["approved"] = true, ["mode"] = "FullAccess", ["recoveryReady"] = true,
+                ["patch"] = patch,
+                ["dry_run"] = true,
+                ["approved"] = true,
+                ["mode"] = "FullAccess",
+                ["recoveryReady"] = true,
                 ["projectEditLimits"] = new { maxPaths = int.MaxValue, maxChangedLines = int.MaxValue, maxChangedBytes = int.MaxValue }
             });
             CheckReview(preview, mode, reasons);
@@ -201,11 +208,13 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
 
             await Call("apply_patch", new()
             {
-                ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["dry_run"] = true
+                ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch",
+                ["dry_run"] = true
             }, error: true, message: "display limit");
             await Call("apply_patch", new()
             {
-                ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch", ["approved"] = true
+                ["patch"] = "*** Begin Patch\n*** Add File: oversized.txt\n+" + new string('\u001b', 50_000) + "\n*** End Patch",
+                ["approved"] = true
             }, error: true, message: "display limit");
             var complex = "*** Begin Patch\n*** Update File: complex.txt\n@@\n" +
                 string.Concat(Enumerable.Range(0, 1000).Select(i => $"-old{i}\n")) + string.Concat(Enumerable.Range(0, 1000).Select(i => $"+new{i}\n")) + "*** End Patch";
@@ -220,7 +229,9 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
                 message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
             await Call("bash", new()
             {
-                ["command"] = deniedCommand["command"], ["approved"] = true, ["mode"] = "FullAccess"
+                ["command"] = deniedCommand["command"],
+                ["approved"] = true,
+                ["mode"] = "FullAccess"
             }, error: true);
         }
         else
@@ -248,12 +259,20 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
         for (var i = 0; i < writes.Length; i++)
         {
             var patch = "*** Begin Patch\n" + writes[i] + "\n*** End Patch";
-            var arguments = new Dictionary<string, object?> { ["patch"] = patch, ["approved"] = true, ["mode"] = "FullAccess",
-                ["requiresRecoveryRecord"] = false, ["recoveryReady"] = false, ["disableRecovery"] = true };
+            var arguments = new Dictionary<string, object?>
+            {
+                ["patch"] = patch,
+                ["approved"] = true,
+                ["mode"] = "FullAccess",
+                ["requiresRecoveryRecord"] = false,
+                ["recoveryReady"] = false,
+                ["disableRecovery"] = true
+            };
             if (mode == ExecutionMode.ReadOnly || (mode == ExecutionMode.ProjectEdit && i >= 2))
             {
                 // ReadOnly has no written.md, so use a valid fresh add for each denial.
-                if (mode == ExecutionMode.ReadOnly) arguments["patch"] = patches[0];
+                if (mode == ExecutionMode.ReadOnly)
+                    arguments["patch"] = patches[0];
                 await Call("apply_patch", arguments, error: true, message: mode == ExecutionMode.ReadOnly ? "ReadOnly" : "ProjectEdit restrictions");
                 break;
             }
@@ -265,18 +284,22 @@ static async Task CheckModeAsync(string temporary, ExecutionMode mode)
             var record = await new RecoveryStore(execution.RunId, configuration).LoadAsync(id);
             Assert(record.Manifest.State == RecoveryRecordState.Committed && record.Manifest.RunId == execution.RunId &&
                 record.Manifest.Operations.Single().Action == (i == 0 ? "add" : i == 1 ? "update" : i == 2 ? "move" : "delete"), "Actual durable record exists despite forged recovery parameters");
-            if (i > 0) Assert(System.Text.Encoding.UTF8.GetString(record.Backups.Single().Bytes.AsSpan()) == (i == 1 ? "first\n" : "second\n"), "Original content precedes each actual write");
+            if (i > 0)
+                Assert(System.Text.Encoding.UTF8.GetString(record.Backups.Single().Bytes.AsSpan()) == (i == 1 ? "first\n" : "second\n"), "Original content precedes each actual write");
         }
         Assert(ids.Count == (mode == ExecutionMode.ReadOnly ? 0 : mode == ExecutionMode.ProjectEdit ? 2 : 4), "Only locally allowed writes get records");
         Assert(mode == ExecutionMode.ReadOnly ? !Directory.Exists(configuration.Policy.RecoveryDirectory) :
             Directory.EnumerateDirectories(configuration.Policy.RecoveryDirectory).Count() == ids.Count, "No unrecorded fallback or extra records");
-        if (mode == ExecutionMode.ProjectEdit) Assert(File.ReadAllText(Path.Combine(root, "written.md")) == "second\n", "Approval denial preserves existing local output");
+        if (mode == ExecutionMode.ProjectEdit)
+            Assert(File.ReadAllText(Path.Combine(root, "written.md")) == "second\n", "Approval denial preserves existing local output");
         Console.WriteLine($"STEP {mode}: real recorded writes, original backups and unforgeable local policy");
     }
     finally
     {
         await timeout.CancelAsync();
-        try { await running; } catch (OperationCanceledException) { }
+        try
+        { await running; }
+        catch (OperationCanceledException) { }
     }
 }
 
@@ -304,5 +327,6 @@ static void CheckReview(JsonElement preview, ExecutionMode mode, params string[]
 
 static void Assert(bool condition, string message)
 {
-    if (!condition) throw new Exception(message);
+    if (!condition)
+        throw new Exception(message);
 }

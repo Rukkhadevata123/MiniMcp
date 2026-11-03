@@ -25,13 +25,15 @@ internal sealed class RuntimeDiagnostics
 
     public RuntimeLogSnapshot GetLogs()
     {
-        lock (_gate) return new(_logs.ToImmutableArray(), _characters);
+        lock (_gate)
+            return new(_logs.ToImmutableArray(), _characters);
     }
 
     public long ClearLogs()
     {
         // Existing subscriptions/snapshots retain their bounded immutable views. Sequences never reset.
-        lock (_gate) { _logs.Clear(); _characters = 0; return _sequence; }
+        lock (_gate)
+        { _logs.Clear(); _characters = 0; return _sequence; }
     }
 
     public RuntimeSubscription<RuntimeLogEntry> SubscribeLogs(CancellationToken cancellationToken)
@@ -41,7 +43,8 @@ internal sealed class RuntimeDiagnostics
             var subscription = new RuntimeSubscription<RuntimeLogEntry>(_logs.ToImmutableArray(), LogSubscriptionCapacity,
                 value => { lock (_gate) _logSubscriptions.Remove(value); });
             _logSubscriptions.Add(subscription);
-            if (_completed) subscription.Complete();
+            if (_completed)
+                subscription.Complete();
             subscription.AttachCancellation(cancellationToken);
             return subscription;
         }
@@ -54,7 +57,8 @@ internal sealed class RuntimeDiagnostics
             var subscription = new RuntimeSubscription<RuntimeSnapshot>([Snapshot], 1,
                 value => { lock (_gate) _stateSubscriptions.Remove(value); });
             _stateSubscriptions.Add(subscription);
-            if (_completed) subscription.Complete();
+            if (_completed)
+                subscription.Complete();
             subscription.AttachCancellation(cancellationToken);
             return subscription;
         }
@@ -74,14 +78,17 @@ internal sealed class RuntimeDiagnostics
     {
         lock (_gate)
         {
-            if (_completed || snapshot.RunId != Snapshot.RunId) return false;
+            if (_completed || snapshot.RunId != Snapshot.RunId)
+                return false;
             var current = Snapshot;
             var faults = current.FaultCount;
             if ((snapshot.State == RuntimeState.Faulted &&
                 (current.State != RuntimeState.Faulted || current.Error != snapshot.Error)) ||
                 (snapshot.State == RuntimeState.Running && snapshot.Tunnel.State == TunnelState.Faulted &&
-                (current.Tunnel.State != TunnelState.Faulted || current.Tunnel.Error != snapshot.Tunnel.Error))) faults++;
-            if (snapshot.FaultCount != faults) snapshot = snapshot with { FaultCount = faults };
+                (current.Tunnel.State != TunnelState.Faulted || current.Tunnel.Error != snapshot.Tunnel.Error)))
+                faults++;
+            if (snapshot.FaultCount != faults)
+                snapshot = snapshot with { FaultCount = faults };
             PublishCore(snapshot);
             return true;
         }
@@ -96,7 +103,8 @@ internal sealed class RuntimeDiagnostics
             var current = Snapshot;
             if (_completed || current.RunId != runId || current.State != RuntimeState.Running ||
                 current.Tunnel.InstanceId != instanceId ||
-                current.Tunnel.State is not (TunnelState.Running or TunnelState.Faulted)) return false;
+                current.Tunnel.State is not (TunnelState.Running or TunnelState.Faulted))
+                return false;
             PublishCore(current with
             {
                 FaultCount = current.FaultCount + (current.Tunnel.State != TunnelState.Faulted || current.Tunnel.Error != error ? 1 : 0),
@@ -109,17 +117,21 @@ internal sealed class RuntimeDiagnostics
     private void PublishCore(RuntimeSnapshot snapshot)
     {
         Volatile.Write(ref _snapshot, snapshot);
-        foreach (var subscription in _stateSubscriptions) subscription.Write(snapshot);
+        foreach (var subscription in _stateSubscriptions)
+            subscription.Write(snapshot);
     }
 
     public void EndRun(Guid? runId)
     {
-        lock (_gate) if (_acceptingRun == runId) _acceptingRun = null;
+        lock (_gate)
+            if (_acceptingRun == runId)
+                _acceptingRun = null;
     }
 
     public bool IsAccepting(Guid runId)
     {
-        lock (_gate) return !_completed && _acceptingRun == runId;
+        lock (_gate)
+            return !_completed && _acceptingRun == runId;
     }
 
     // Strings must already be sanitized before reaching the buffer or any subscriber.
@@ -127,7 +139,8 @@ internal sealed class RuntimeDiagnostics
     {
         lock (_gate)
         {
-            if (_completed || _acceptingRun != runId) return;
+            if (_completed || _acceptingRun != runId)
+                return;
             var entry = new RuntimeLogEntry(++_sequence, DateTimeOffset.UtcNow, runId, level, category, eventId, message, truncated);
             var size = category.Length + message.Length;
             while (_logs.Count > 0 && (_logs.Count >= MaxEntries || _characters + size > MaxCharacters))
@@ -137,7 +150,8 @@ internal sealed class RuntimeDiagnostics
             }
             _logs.Enqueue(entry);
             _characters += size;
-            foreach (var subscription in _logSubscriptions) subscription.Write(entry);
+            foreach (var subscription in _logSubscriptions)
+                subscription.Write(entry);
         }
     }
 
@@ -147,8 +161,10 @@ internal sealed class RuntimeDiagnostics
         {
             _completed = true;
             _acceptingRun = null;
-            foreach (var subscription in _logSubscriptions.ToArray()) subscription.Complete();
-            foreach (var subscription in _stateSubscriptions.ToArray()) subscription.Complete();
+            foreach (var subscription in _logSubscriptions.ToArray())
+                subscription.Complete();
+            foreach (var subscription in _stateSubscriptions.ToArray())
+                subscription.Complete();
         }
     }
 

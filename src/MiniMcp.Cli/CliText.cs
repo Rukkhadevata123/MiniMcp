@@ -10,8 +10,10 @@ internal static class CliText
         value = RuntimeDiagnosticText.Sanitize(value);
         var result = new StringBuilder(value.Length);
         foreach (var character in value)
-            if (char.IsControl(character)) result.Append($"\\u{(int)character:x4}");
-            else result.Append(character);
+            if (char.IsControl(character))
+                result.Append($"\\u{(int)character:x4}");
+            else
+                result.Append(character);
         return result.ToString();
     }
 }

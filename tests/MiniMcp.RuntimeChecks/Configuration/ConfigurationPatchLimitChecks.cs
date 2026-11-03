@@ -36,7 +36,8 @@ internal static class ConfigurationPatchLimitChecks
                 """{"projectEditLimits":{"unknown":1}}""", """{"projectEditLimits":{"MaxPaths":1}}""",
                 """{"ProjectEditLimits":{}}""", """{"projectEditLimits":{"maxPaths":1,"maxPaths":2}}""",
                 """{"projectEditLimits":{"maxPaths":1,"max\u0050aths":2}}""", """{"projectEditLimits":{},"projectEditLimits":{}}"""
-            }) Reject<JsonException>(() => ConfigurationJson.ParsePolicy(json));
+            })
+                Reject<JsonException>(() => ConfigurationJson.ParsePolicy(json));
             Reject<JsonException>(() => ConfigurationJson.ParseSettings("""{"projectEditLimits":{"maxPaths":100}}"""));
             return Task.CompletedTask;
         });
@@ -107,7 +108,8 @@ internal static class ConfigurationPatchLimitChecks
             var settings = await fixture.Store.ReadSettingsAsync(fixture.Source, fixture.DirectoryPath);
             foreach (var exists in new[] { false, true })
             {
-                if (exists) fixture.WritePolicy(new ExecutionPolicy());
+                if (exists)
+                    fixture.WritePolicy(new ExecutionPolicy());
                 var original = await fixture.Store.ReadPolicyAsync();
                 var before = fixture.Snapshot();
                 foreach (var (field, limits) in InvalidLimits())
@@ -172,12 +174,16 @@ internal static class ConfigurationPatchLimitChecks
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("ProjectEdit limits configuration: " + message); }
     private static T Reject<T>(Action action) where T : Exception
     {
-        try { action(); } catch (T exception) { return exception; }
+        try
+        { action(); }
+        catch (T exception) { return exception; }
         throw new Exception($"Expected {typeof(T).Name}.");
     }
     private static async Task<T> RejectAsync<T>(Func<Task> action) where T : Exception
     {
-        try { await action(); } catch (T exception) { return exception; }
+        try
+        { await action(); }
+        catch (T exception) { return exception; }
         throw new Exception($"Expected {typeof(T).Name}.");
     }
 

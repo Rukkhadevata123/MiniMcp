@@ -39,11 +39,13 @@ public sealed partial class ConfigurationStore
         }
         cancellationToken.ThrowIfCancellationRequested();
         string? rgPath = null, rgError = null;
-        try { rgPath = ExternalProgramLocator.FindRipgrep(configuration.Settings.RgPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
+        try
+        { rgPath = ExternalProgramLocator.FindRipgrep(configuration.Settings.RgPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
         catch (Exception failure) when (failure is IOException or ArgumentException or UnauthorizedAccessException)
         { rgError = failure.Message; }
         string? gitPath = null, gitError = null;
-        try { gitPath = ExternalProgramLocator.FindGit(configuration.Settings.GitPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
+        try
+        { gitPath = ExternalProgramLocator.FindGit(configuration.Settings.GitPath, configuration.SettingsFilePath, configuration.Settings.ProjectRoot); }
         catch (Exception failure) when (failure is IOException or ArgumentException or UnauthorizedAccessException)
         { gitError = failure.Message; }
         return new(configuration, status, error, rgPath, rgError, gitPath, gitError);

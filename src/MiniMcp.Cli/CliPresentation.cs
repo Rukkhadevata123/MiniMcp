@@ -16,7 +16,8 @@ internal sealed class CliPresentation
     private readonly RuntimeSubscription<RuntimeSnapshot> _states;
     private readonly Channel<Notice> _notices = Channel.CreateBounded<Notice>(new BoundedChannelOptions(32)
     {
-        FullMode = BoundedChannelFullMode.DropOldest, AllowSynchronousContinuations = false
+        FullMode = BoundedChannelFullMode.DropOldest,
+        AllowSynchronousContinuations = false
     });
     private readonly object _stateGate = new();
     private readonly Task _statePump, _writer;
@@ -28,7 +29,10 @@ internal sealed class CliPresentation
 
     internal CliPresentation(McpRuntime runtime, TextWriter output, TextWriter error, CliShutdownBudget budget)
     {
-        _runtime = runtime; _output = output; _error = error; _budget = budget;
+        _runtime = runtime;
+        _output = output;
+        _error = error;
+        _budget = budget;
         _logs = runtime.SubscribeLogs();
         _states = runtime.SubscribeState();
         _statePump = Task.Run(PumpStatesAsync);
@@ -43,12 +47,16 @@ internal sealed class CliPresentation
     {
         lock (_stateGate)
         {
-            if (Volatile.Read(ref _finishing) != 0) return;
-            if (snapshot.RunId != _runtime.Snapshot.RunId) return;
+            if (Volatile.Read(ref _finishing) != 0)
+                return;
+            if (snapshot.RunId != _runtime.Snapshot.RunId)
+                return;
             var fault = snapshot.FaultCount != 0 || snapshot.State == RuntimeState.Faulted ||
                 (snapshot.State == RuntimeState.Running && snapshot.Tunnel.State == TunnelState.Faulted);
-            if (fault) Volatile.Write(ref _hadFault, 1);
-            if (snapshot.State is RuntimeState.Stopping or RuntimeState.Faulted) _budget.Begin();
+            if (fault)
+                Volatile.Write(ref _hadFault, 1);
+            if (snapshot.State is RuntimeState.Stopping or RuntimeState.Faulted)
+                _budget.Begin();
             if (Volatile.Read(ref _ready) != 0 && snapshot.State is RuntimeState.Stopped or RuntimeState.Disposed &&
                 !_budget.Started.Task.IsCompleted)
             {
@@ -58,11 +66,14 @@ internal sealed class CliPresentation
             var previous = _lastState;
             _lastState = snapshot;
             if (snapshot.RunId is null || (previous is not null && previous.State == snapshot.State &&
-                previous.Tunnel == snapshot.Tunnel && previous.Error == snapshot.Error)) return;
+                previous.Tunnel == snapshot.Tunnel && previous.Error == snapshot.Error))
+                return;
             var text = $"状态：MCP={snapshot.State}；隧道={snapshot.Tunnel.State}";
-            if (snapshot.Tunnel.ProcessId is { } pid) text += $"；进程={pid}";
+            if (snapshot.Tunnel.ProcessId is { } pid)
+                text += $"；进程={pid}";
             var detail = snapshot.Tunnel.Error ?? snapshot.Error;
-            if (detail is not null) text += "；" + detail;
+            if (detail is not null)
+                text += "；" + detail;
             Add(text, fault);
         }
     }
@@ -89,8 +100,10 @@ internal sealed class CliPresentation
     {
         try
         {
-            foreach (var initial in _states.Initial) Capture(initial);
-            await foreach (var state in _states.Reader.ReadAllAsync().ConfigureAwait(false)) Capture(state);
+            foreach (var initial in _states.Initial)
+                Capture(initial);
+            await foreach (var state in _states.Reader.ReadAllAsync().ConfigureAwait(false))
+                Capture(state);
         }
         catch (Exception exception) { Failure.TrySetResult(exception); _budget.Begin(); }
     }
@@ -113,16 +126,21 @@ internal sealed class CliPresentation
             var logsClosed = false;
             while (Volatile.Read(ref _abandoned) == 0)
             {
-                if (_notices.Reader.TryRead(out var notice)) { Write(notice); continue; }
+                if (_notices.Reader.TryRead(out var notice))
+                { Write(notice); continue; }
                 RuntimeLogEntry? entry = null;
-                if (initialIndex < _logs.Initial.Length) entry = _logs.Initial[initialIndex++];
-                else if (Volatile.Read(ref _finishing) == 0 || tail < 128) _logs.Reader.TryRead(out entry);
+                if (initialIndex < _logs.Initial.Length)
+                    entry = _logs.Initial[initialIndex++];
+                else if (Volatile.Read(ref _finishing) == 0 || tail < 128)
+                    _logs.Reader.TryRead(out entry);
                 if (entry is not null)
                 {
-                    if (Volatile.Read(ref _finishing) != 0) tail++;
+                    if (Volatile.Read(ref _finishing) != 0)
+                        tail++;
                     var previous = _lastSequence;
                     _lastSequence = entry.Sequence;
-                    if (entry.RunId != _runtime.Snapshot.RunId) continue;
+                    if (entry.RunId != _runtime.Snapshot.RunId)
+                        continue;
                     if (entry.Sequence > previous + 1)
                         Write(new($"日志已省略 {entry.Sequence - previous - 1} 条（显示队列已满）。"));
                     Write(new(CliText.Visible($"{entry.Timestamp:HH:mm:ss.fff}Z [{entry.Level}] {entry.Category}: {entry.Message}" +
@@ -131,7 +149,8 @@ internal sealed class CliPresentation
                 }
                 if (Volatile.Read(ref _finishing) != 0)
                 {
-                    if (_final is { } final) Write(final);
+                    if (_final is { } final)
+                        Write(final);
                     Volatile.Write(ref _activeWriter, _output);
                     _output.Flush();
                     Volatile.Write(ref _activeWriter, _error);
@@ -139,12 +158,15 @@ internal sealed class CliPresentation
                     Volatile.Write(ref _activeWriter, null);
                     return;
                 }
-                if (!logsClosed) logsReady ??= _logs.Reader.WaitToReadAsync().AsTask();
+                if (!logsClosed)
+                    logsReady ??= _logs.Reader.WaitToReadAsync().AsTask();
                 noticesReady ??= _notices.Reader.WaitToReadAsync().AsTask();
                 // This is a dedicated background thread, not the UI or lifecycle thread.
                 Task.WhenAny((Task?)logsReady ?? Never, noticesReady).GetAwaiter().GetResult();
-                if (logsReady?.IsCompleted == true) { logsClosed = !logsReady.GetAwaiter().GetResult(); logsReady = null; }
-                if (noticesReady.IsCompleted) { noticesReady.GetAwaiter().GetResult(); noticesReady = null; }
+                if (logsReady?.IsCompleted == true)
+                { logsClosed = !logsReady.GetAwaiter().GetResult(); logsReady = null; }
+                if (noticesReady.IsCompleted)
+                { noticesReady.GetAwaiter().GetResult(); noticesReady = null; }
             }
         }
         catch (Exception exception) { Failure.TrySetResult(exception); _budget.Begin(); }
@@ -179,12 +201,14 @@ internal sealed class CliPresentation
         // An emergency report uses the other stream, never the writer that is already stuck.
         var active = Volatile.Read(ref _activeWriter);
         var writer = ReferenceEquals(active, _error) ? _output : _error;
-        if (ReferenceEquals(active, writer)) return;
+        if (ReferenceEquals(active, writer))
+            return;
         var report = Task.Run(() => writer.WriteLine(CliText.Visible(text)));
         _ = report.ContinueWith(task => _ = task.Exception, CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         var limit = _budget.Remaining < TimeSpan.FromMilliseconds(100) ? _budget.Remaining : TimeSpan.FromMilliseconds(100);
-        try { await report.WaitAsync(limit).ConfigureAwait(false); }
+        try
+        { await report.WaitAsync(limit).ConfigureAwait(false); }
         catch (Exception) { } // The failure exit code remains authoritative if neither stream works.
     }
 }

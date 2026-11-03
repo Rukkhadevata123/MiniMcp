@@ -23,17 +23,22 @@ internal static class ConfigurationStoreChecks
                     Directory.CreateDirectory(Path.GetDirectoryName(selected)!);
                     await action();
                 }
-                finally { CheckRunner.Cleanup(temporary, () =>
-                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }); }
+                finally
+                {
+                    CheckRunner.Cleanup(temporary, () =>
+                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); });
+                }
             });
         }
         void Assert(bool condition)
         {
-            if (!condition) throw new Exception("Configuration file loading assertion failed.");
+            if (!condition)
+                throw new Exception("Configuration file loading assertion failed.");
         }
         async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
         {
-            try { await action(); }
+            try
+            { await action(); }
             catch (TException exception) { return exception; }
             throw new Exception($"Expected {typeof(TException).Name} while loading configuration.");
         }
@@ -93,7 +98,8 @@ internal static class ConfigurationStoreChecks
                 }
                 File.Delete(paths.PolicyFile);
                 Directory.CreateDirectory(paths.PolicyFile);
-                try { await Reject<ConfigurationLoadException>(() => loader.ReadPolicyAsync()); }
+                try
+                { await Reject<ConfigurationLoadException>(() => loader.ReadPolicyAsync()); }
                 finally { Directory.Delete(paths.PolicyFile); }
             });
 

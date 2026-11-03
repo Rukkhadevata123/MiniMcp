@@ -16,15 +16,20 @@ internal static class DesktopAcceptanceChecks
         Func<string, FrameworkElement> find, Func<string, Task> navigate, Action<Button> invoke)
     {
         T Find<T>(string id) where T : FrameworkElement => (T)find(id);
-        var size = window.AppWindow.Size; var position = window.AppWindow.Position; var theme = root.RequestedTheme;
-        var monitors = DisplayArea.FindAll(); var scales = new HashSet<uint>();
+        var size = window.AppWindow.Size;
+        var position = window.AppWindow.Position;
+        var theme = root.RequestedTheme;
+        var monitors = DisplayArea.FindAll();
+        var scales = new HashSet<uint>();
         try
         {
             for (var monitorIndex = 0; monitorIndex < monitors.Count; monitorIndex++)
             {
                 var monitor = monitors[monitorIndex];
-                window.AppWindow.Move(new(monitor.WorkArea.X + 16, monitor.WorkArea.Y + 16)); await Task.Delay(120);
-                var dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(window)); scales.Add(dpi);
+                window.AppWindow.Move(new(monitor.WorkArea.X + 16, monitor.WorkArea.Y + 16));
+                await Task.Delay(120);
+                var dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(window));
+                scales.Add(dpi);
                 Assert(Math.Abs(root.XamlRoot.RasterizationScale - dpi / 96d) < 0.02, "XAML and native window agree on monitor DPI");
                 window.AppWindow.Resize(new(Math.Min((int)(1400 * root.XamlRoot.RasterizationScale), monitor.WorkArea.Width - 32),
                     Math.Min((int)(850 * root.XamlRoot.RasterizationScale), monitor.WorkArea.Height - 32)));
@@ -33,7 +38,8 @@ internal static class DesktopAcceptanceChecks
                     root.RequestedTheme = requested;
                     foreach (var id in new[] { "OverviewNavigation", "SettingsNavigation", "LogsNavigation", "RecoveryNavigation" })
                     {
-                        await navigate(id); await Task.Delay(60);
+                        await navigate(id);
+                        await Task.Delay(60);
                         var page = Find<Frame>("WorkspaceFrame").Content as Page ?? throw new Exception("Missing page");
                         Assert(page.ActualTheme == root.ActualTheme && page.ActualWidth is > 100 and <= 1200,
                             "All cached pages retain usable width and theme on the available monitor");
@@ -45,7 +51,8 @@ internal static class DesktopAcceptanceChecks
         }
         finally { root.RequestedTheme = theme; window.AppWindow.Move(position); window.AppWindow.Resize(size); }
         Console.WriteLine($"Display coverage: {monitors.Count} monitor(s), {scales.Count} distinct DPI value(s)");
-        window.AppWindow.Resize(new(Math.Max(size.Width, (int)(1100 * root.XamlRoot.RasterizationScale)), size.Height)); await Task.Delay(160);
+        window.AppWindow.Resize(new(Math.Max(size.Width, (int)(1100 * root.XamlRoot.RasterizationScale)), size.Height));
+        await Task.Delay(160);
 
         await navigate("SettingsNavigation");
         var project = Find<TextBox>("ProjectRootEditor");
@@ -88,19 +95,26 @@ internal static class DesktopAcceptanceChecks
             { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var value in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.Combine(AppContext.BaseDirectory, "PickerAutomation.ps1"),
                 "-OwnerWindow", WinRT.Interop.WindowNative.GetWindowHandle(window).ToInt64().ToString(System.Globalization.CultureInfo.InvariantCulture),
-                "-ValuePath", path, "-FixtureRoot", fixture.DirectoryPath }) start.ArgumentList.Add(value);
+                "-ValuePath", path, "-FixtureRoot", fixture.DirectoryPath })
+                start.ArgumentList.Add(value);
             using var helper = Process.Start(start) ?? throw new Exception("Cannot start native picker automation");
-            var output = helper.StandardOutput.ReadToEndAsync(); var error = helper.StandardError.ReadToEndAsync();
+            var output = helper.StandardOutput.ReadToEndAsync();
+            var error = helper.StandardError.ReadToEndAsync();
             invoke(button);
-            try { await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+            try
+            { await helper.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
             catch { if (!helper.HasExited) helper.Kill(entireProcessTree: true); throw; }
             Assert(helper.ExitCode == 0, "Native picker automation: " + await output + "\n" + await error);
             Console.WriteLine((await output).Trim());
         }
     }
     private static IEnumerable<DependencyObject> Walk(DependencyObject root)
-    { yield return root; for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root); index++)
-        foreach (var item in Walk(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, index))) yield return item; }
+    {
+        yield return root;
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root); index++)
+            foreach (var item in Walk(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, index)))
+                yield return item;
+    }
     private static async Task Until(Func<bool> condition)
     { var deadline = DateTime.UtcNow.AddSeconds(15); while (!condition()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Desktop acceptance timed out"); await Task.Delay(30); } }
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }

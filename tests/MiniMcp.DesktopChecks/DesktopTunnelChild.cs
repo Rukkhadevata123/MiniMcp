@@ -16,7 +16,8 @@ internal static class DesktopTunnelChild
         Console.WriteLine("Desktop tunnel fixture running");
         Console.Error.WriteLine("Authorization: Bearer desktop-tunnel-secret");
         var request = Path.Combine(scenario.Directory, "tunnel-exit.request");
-        while (!File.Exists(request)) await Task.Delay(20);
+        while (!File.Exists(request))
+            await Task.Delay(20);
         File.Delete(request);
         return 23;
     }

@@ -215,18 +215,21 @@ internal static class CliRunChecks
     internal static void AssertReleased(int port)
     {
         using var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork,
-            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { ExclusiveAddressUse = true };
+            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp)
+        { ExclusiveAddressUse = true };
         socket.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port));
     }
 
     internal static void Assert(bool condition, string reason)
     {
-        if (!condition) throw new Exception(reason);
+        if (!condition)
+            throw new Exception(reason);
     }
 
     private static async Task RetryStop(McpRuntime runtime)
     {
-        try { await runtime.StopAsync(); }
+        try
+        { await runtime.StopAsync(); }
         catch (OperationCanceledException) { await runtime.StopAsync(); }
     }
 
@@ -259,12 +262,14 @@ internal static class CliRunChecks
         public override void WriteLine(string? value)
         {
             value ??= "";
-            if (FailWhen?.Invoke(value) == true) throw new IOException("Controlled broken output.");
+            if (FailWhen?.Invoke(value) == true)
+                throw new IOException("Controlled broken output.");
             lock (_gate)
             {
                 MaxLineLength = Math.Max(MaxLineLength, value.Length);
                 _text.AppendLine(value);
-                if (_text.Length > 512 * 1024) _text.Remove(0, _text.Length - 512 * 1024);
+                if (_text.Length > 512 * 1024)
+                    _text.Remove(0, _text.Length - 512 * 1024);
             }
             var index = value.IndexOf("http://127.0.0.1:", StringComparison.Ordinal);
             if (index >= 0 && Uri.TryCreate(value[index..], UriKind.Absolute, out var uri) && uri.AbsolutePath == "/healthz")

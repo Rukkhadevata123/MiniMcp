@@ -78,8 +78,10 @@ internal sealed class TunnelFixture : IAsyncDisposable
     internal async Task HealthyAsync()
     {
         using var response = await Http.GetAsync(new Uri(Runtime.Address!, "healthz"));
-        if (response.StatusCode != HttpStatusCode.OK) throw new Exception("MCP health endpoint is unavailable.");
-        if ((await Runtime.Execution!.ReadFileAsync("sample.txt")).Content != "tunnel fixture") throw new Exception("The MCP session is unusable.");
+        if (response.StatusCode != HttpStatusCode.OK)
+            throw new Exception("MCP health endpoint is unavailable.");
+        if ((await Runtime.Execution!.ReadFileAsync("sample.txt")).Content != "tunnel fixture")
+            throw new Exception("The MCP session is unusable.");
     }
 
     internal RuntimeConfiguration WithExecutable(string executable)
@@ -105,19 +107,22 @@ internal sealed class TunnelFixture : IAsyncDisposable
         foreach (var name in new[] { "exit", "report.json", "flood.done", "descendant.pid" })
         {
             var path = Path.Combine(DirectoryPath, name);
-            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists(path))
+                File.Delete(path);
         }
         File.WriteAllText(TokenFile, JsonSerializer.Serialize(new TunnelScenario(DirectoryPath, behavior)));
     }
 
     public async ValueTask DisposeAsync()
     {
-        try { await Runtime.DisposeAsync(); }
+        try
+        { await Runtime.DisposeAsync(); }
         finally
         {
             foreach (var process in _observed)
             {
-                try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+                try
+                { if (!process.HasExited) process.Kill(entireProcessTree: true); }
                 catch (InvalidOperationException) { }
                 process.Dispose();
             }
@@ -132,7 +137,8 @@ internal sealed class TunnelFixture : IAsyncDisposable
             var cleanup = Stopwatch.StartNew();
             while (true)
             {
-                try { Directory.Delete(target, recursive: true); break; }
+                try
+                { Directory.Delete(target, recursive: true); break; }
                 catch (IOException) when (cleanup.Elapsed < TimeSpan.FromSeconds(5)) { await Task.Delay(50); }
                 catch (UnauthorizedAccessException) when (cleanup.Elapsed < TimeSpan.FromSeconds(5)) { await Task.Delay(50); }
             }

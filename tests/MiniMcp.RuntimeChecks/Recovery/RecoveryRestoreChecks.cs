@@ -22,7 +22,8 @@ internal static class RecoveryRestoreChecks
                 Seed(fixture);
                 var original = Files(fixture);
                 PatchApplyResult source;
-                await using (var writer = fixture.Execution()) source = await writer.ApplyPatchAsync(Patch(MixedBody));
+                await using (var writer = fixture.Execution())
+                    source = await writer.ApplyPatchAsync(Patch(MixedBody));
                 Directory.Delete(fixture.PathOf("gone"));
                 var afterSource = Files(fixture);
                 var originalRecord = RecordFiles(fixture, source.Commit!.ChangeId);
@@ -57,7 +58,8 @@ internal static class RecoveryRestoreChecks
             var source = await writer.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var preparation = await writer.PrepareRecoveryAsync(source.Commit!.ChangeId);
             await using var readOnly = new ToolExecutionService(Guid.NewGuid(), fixture.ConfigurationFor(ExecutionMode.ReadOnly));
-            var before = Files(fixture); var journal = RecordFiles(fixture, source.Commit.ChangeId);
+            var before = Files(fixture);
+            var journal = RecordFiles(fixture, source.Commit.ChangeId);
             await Reject<WorkspaceException>(() => readOnly.PrepareRecoveryAsync(source.Commit.ChangeId));
             await Reject<WorkspaceException>(() => readOnly.CommitRecoveryAsync(preparation));
             await Reject<ArgumentException>(() => writer.PrepareRecoveryAsync(Guid.Empty));
@@ -89,7 +91,8 @@ internal static class RecoveryRestoreChecks
             await Reject<InvalidOperationException>(() => peer.CommitAsync(plan));
             await Reject<InvalidOperationException>(() => service.CommitAsync(fake));
             Assert(JsonSerializer.Serialize(plan) == "{}", "No private preparation state is serialized as approval or a commit ticket");
-            try { _ = JsonSerializer.Deserialize<RecoveryRestorePlan>("{}"); throw new Exception("Expected non-public constructor rejection."); }
+            try
+            { _ = JsonSerializer.Deserialize<RecoveryRestorePlan>("{}"); throw new Exception("Expected non-public constructor rejection."); }
             catch (NotSupportedException) { }
             Assert(before.SequenceEqual(fixture.ProjectSnapshot()), "Invalid plans perform zero workspace writes");
             var committed = await service.CommitAsync(plan);
@@ -120,9 +123,12 @@ internal static class RecoveryRestoreChecks
                 await using var execution = fixture.Execution();
                 var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                if (backup) File.WriteAllText(Path.Combine(RecordDirectory(fixture, source.Commit.ChangeId), "before-0000.bin"), "bad\n");
-                else RewriteRun(fixture, source.Commit.ChangeId);
-                var record = RecordFiles(fixture, source.Commit.ChangeId); var current = Files(fixture);
+                if (backup)
+                    File.WriteAllText(Path.Combine(RecordDirectory(fixture, source.Commit.ChangeId), "before-0000.bin"), "bad\n");
+                else
+                    RewriteRun(fixture, source.Commit.ChangeId);
+                var record = RecordFiles(fixture, source.Commit.ChangeId);
+                var current = Files(fixture);
                 await RejectValidation(() => execution.CommitRecoveryAsync(plan));
                 Assert(current.SequenceEqual(Files(fixture)) && record.SequenceEqual(RecordFiles(fixture, source.Commit.ChangeId)) && fixture.RecordIds().Length == 1,
                     "The bound full source record and bytes cannot be replaced by a caller-supplied ID or a rewritten snapshot");
@@ -133,13 +139,17 @@ internal static class RecoveryRestoreChecks
         {
             foreach (var parent in new[] { false, true })
             {
-                using var fixture = new PatchExecutionFixture(); Directory.CreateDirectory(fixture.PathOf("gone")); fixture.Put("gone/old.md", "old\n");
+                using var fixture = new PatchExecutionFixture();
+                Directory.CreateDirectory(fixture.PathOf("gone"));
+                fixture.Put("gone/old.md", "old\n");
                 await using var execution = fixture.Execution();
                 var source = await execution.ApplyPatchAsync(Patch("*** Delete File: gone/old.md\n*** Add File: added.md\n+added"));
                 Directory.Delete(fixture.PathOf("gone"));
                 var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-                if (parent) fixture.Put("gone", "foreign parent\n");
-                else { Directory.CreateDirectory(fixture.PathOf("gone")); fixture.Put("gone/old.md", "foreign destination\n"); }
+                if (parent)
+                    fixture.Put("gone", "foreign parent\n");
+                else
+                { Directory.CreateDirectory(fixture.PathOf("gone")); fixture.Put("gone/old.md", "foreign destination\n"); }
                 var current = Files(fixture);
                 await Reject<WorkspaceException>(() => execution.CommitRecoveryAsync(plan));
                 Assert(current.SequenceEqual(Files(fixture)) && fixture.Get("added.md") == "added\n" && fixture.RecordIds().Length == 1, "No ordinary subset or early recovery backup survives a stale target");
@@ -152,7 +162,8 @@ internal static class RecoveryRestoreChecks
             await using var execution = fixture.Execution();
             var source = await execution.ApplyPatchAsync(Patch("*** Update File: sample.md\n@@\n-old\n+new"));
             var plan = await execution.PrepareRecoveryAsync(source.Commit!.ChangeId);
-            using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+            using var cancelled = new CancellationTokenSource();
+            cancelled.Cancel();
             await Reject<OperationCanceledException>(() => execution.PrepareRecoveryAsync(source.Commit.ChangeId, cancelled.Token));
             await Reject<OperationCanceledException>(() => execution.CommitRecoveryAsync(plan, cancelled.Token));
             Assert(fixture.Get("sample.md") == "new\n" && fixture.RecordIds().Length == 1 && execution.ActiveCalls == 0, "Pre-cancelled operations never reach preparation or installation");
@@ -162,9 +173,13 @@ internal static class RecoveryRestoreChecks
 
     internal static void Seed(PatchExecutionFixture fixture)
     {
-        fixture.Put("sample.md", "\ufeffold\r\nlocal\nlast"); fixture.Put("empty-deleted.md", ""); fixture.Put("move.md", "\ufeffbefore\r\n");
-        Directory.CreateDirectory(fixture.PathOf("gone")); fixture.Put("gone/script.cs", "\ufefforiginal\r\n");
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(fixture.PathOf("gone/script.cs"), (UnixFileMode)0x1ed);
+        fixture.Put("sample.md", "\ufeffold\r\nlocal\nlast");
+        fixture.Put("empty-deleted.md", "");
+        fixture.Put("move.md", "\ufeffbefore\r\n");
+        Directory.CreateDirectory(fixture.PathOf("gone"));
+        fixture.Put("gone/script.cs", "\ufefforiginal\r\n");
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(fixture.PathOf("gone/script.cs"), (UnixFileMode)0x1ed);
     }
     internal static string[] Files(PatchExecutionFixture fixture)
     {
@@ -172,9 +187,12 @@ internal static class RecoveryRestoreChecks
         // file; retry only a bounded full listing when the platform reports a stale renamed name.
         for (var attempt = 0; ; attempt++)
         {
-            try { return Directory.EnumerateFiles(fixture.Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
+            try
+            {
+                return Directory.EnumerateFiles(fixture.Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
                 .Select(path => Path.GetRelativePath(fixture.Root, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path)) + ":" +
-                    (OperatingSystem.IsWindows() ? "" : ((int)File.GetUnixFileMode(path)).ToString(System.Globalization.CultureInfo.InvariantCulture))).ToArray(); }
+                    (OperatingSystem.IsWindows() ? "" : ((int)File.GetUnixFileMode(path)).ToString(System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+            }
             catch (FileNotFoundException) when (attempt < 2) { }
             catch (DirectoryNotFoundException) when (attempt < 2) { }
         }
@@ -197,7 +215,8 @@ internal static class RecoveryRestoreChecks
     }
     internal static async Task RejectValidation(Func<Task> action)
     {
-        try { await action(); }
+        try
+        { await action(); }
         catch (Exception error) when (error is WorkspaceException or IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected record/workspace validation failure.");
     }

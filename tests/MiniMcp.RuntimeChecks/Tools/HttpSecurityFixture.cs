@@ -41,7 +41,10 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
             BashPath = bash,
             Authentication = new AuthenticationSettings
             {
-                Mode = mode, PublicOrigin = "https://mcp.example.com", Team = "fixture-team", Audience = Audience
+                Mode = mode,
+                PublicOrigin = "https://mcp.example.com",
+                Team = "fixture-team",
+                Audience = Audience
             }
         }, settingsRelativePath is null ? Path.Combine(_directory, "settings.json") : Path.Combine(Root, settingsRelativePath),
             new ExecutionPolicy { Mode = executionMode, ProjectEditLimits = patchLimits ?? new() });
@@ -72,8 +75,10 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         var now = DateTime.UtcNow;
         return new JsonWebTokenHandler { SetDefaultTimesOnTokenCreation = false }.CreateToken(new SecurityTokenDescriptor
         {
-            Issuer = issuer ?? Issuer, Audience = audience ?? Audience,
-            NotBefore = notBefore ?? now.AddMinutes(-10), Expires = noExpiration ? null : expires ?? now.AddMinutes(10),
+            Issuer = issuer ?? Issuer,
+            Audience = audience ?? Audience,
+            NotBefore = notBefore ?? now.AddMinutes(-10),
+            Expires = noExpiration ? null : expires ?? now.AddMinutes(10),
             Claims = new Dictionary<string, object> { ["email"] = "tester@example.com", ["mode"] = "FullAccess", ["approved"] = true },
             SigningCredentials = unsigned ? null : new SigningCredentials(
                 new RsaSecurityKey(signingKey ?? _rsa) { KeyId = keyId ?? KeyId }, algorithm)
@@ -83,8 +88,10 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
     public HttpRequestMessage Request(string path = "protected", string? token = null, string? host = null, HttpMethod? method = null)
     {
         var request = new HttpRequestMessage(method ?? HttpMethod.Get, new Uri(Runtime.Address!, path));
-        if (token is not null) request.Headers.TryAddWithoutValidation("Cf-Access-Jwt-Assertion", token);
-        if (host is not null) request.Headers.Host = host;
+        if (token is not null)
+            request.Headers.TryAddWithoutValidation("Cf-Access-Jwt-Assertion", token);
+        if (host is not null)
+            request.Headers.Host = host;
         return request;
     }
 
@@ -105,7 +112,9 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         var identity = routes.MapGet("/protected", (HttpContext context) => Results.Json(new
         {
             authenticated = context.User.Identity?.IsAuthenticated == true,
-            name = context.User.Identity?.Name, host = context.Request.Host.Value, scheme = context.Request.Scheme
+            name = context.User.Identity?.Name,
+            host = context.Request.Host.Value,
+            scheme = context.Request.Scheme
         }));
         var read = routes.MapGet("/read", async (ToolExecutionService execution, CancellationToken token) =>
             Results.Json(await execution.ReadFileAsync("sample.txt", cancellationToken: token)));
@@ -120,7 +129,8 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         });
         var bash = routes.MapPost("/bash", async (ToolExecutionService execution, CancellationToken token) =>
         {
-            try { await new WorkspaceTools(execution).Bash("printf unexpected > forbidden.txt", token); return Results.NoContent(); }
+            try
+            { await new WorkspaceTools(execution).Bash("printf unexpected > forbidden.txt", token); return Results.NoContent(); }
             catch (McpException error) { return Results.Json(new { error = error.Message }, statusCode: 403); }
         });
         var body = routes.MapPost("/body", async (HttpContext context) =>
@@ -130,8 +140,11 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         });
         if (mode == AuthenticationMode.CloudflareAccess)
         {
-            identity.RequireAuthorization(); read.RequireAuthorization(); patch.RequireAuthorization();
-            bash.RequireAuthorization(); body.RequireAuthorization();
+            identity.RequireAuthorization();
+            read.RequireAuthorization();
+            patch.RequireAuthorization();
+            bash.RequireAuthorization();
+            body.RequireAuthorization();
         }
     }
 
@@ -152,7 +165,8 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _calls);
-            if (address != Issuer + "/cdn-cgi/access/certs") throw new Exception("Unexpected signing-key address.");
+            if (address != Issuer + "/cdn-cgi/access/certs")
+                throw new Exception("Unexpected signing-key address.");
             return Fail ? Task.FromException<string>(new IOException("Fixture signing keys unavailable.")) : Task.FromResult(jwks);
         }
     }

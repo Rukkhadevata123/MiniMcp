@@ -25,7 +25,8 @@ internal static class CliCheckCommandChecks
                     !result.Output.Contains("补丁写入关闭"), "Help without configuration");
                 if (args.FirstOrDefault() == "check")
                     Assert(result.Output.Contains("minimcp check") && !result.Output.Contains("--mode"), "Check has no session override");
-                else Assert(result.Output.Contains("ProjectEdit 允许普通补丁") && result.Output.Contains("cloudflared"), "Actual run capabilities");
+                else
+                    Assert(result.Output.Contains("ProjectEdit 允许普通补丁") && result.Output.Contains("cloudflared"), "Actual run capabilities");
             }
             Assert(!Directory.Exists(Path.GetDirectoryName(fixture.Paths.SettingsFile)) && !Directory.Exists(Path.GetDirectoryName(fixture.Paths.RecoveryDirectory)), "Help creates no configuration/state");
         });
@@ -99,7 +100,8 @@ internal static class CliCheckCommandChecks
                 var before = fixture.Snapshot();
                 var result = await fixture.Invoke(["check"]);
                 Assert(result.Code == (mode == ExecutionMode.FullAccess ? 2 : 0), "Saved dependency requirement");
-                if (mode == ExecutionMode.FullAccess) Assert(result.Error.Contains("bashPath"), "Dependency diagnostic");
+                if (mode == ExecutionMode.FullAccess)
+                    Assert(result.Error.Contains("bashPath"), "Dependency diagnostic");
                 Assert(before.SequenceEqual(fixture.Snapshot()), "Failure does not write configuration");
             }
         });
@@ -130,7 +132,8 @@ internal static class CliCheckCommandChecks
             using var fixture = new Fixture();
             fixture.WriteSettings(fixture.Settings with
             {
-                Authentication = Cloudflare(), BashPath = "missing-bash",
+                Authentication = Cloudflare(),
+                BashPath = "missing-bash",
                 Tunnel = new TunnelSettings { Enabled = false, ExecutablePath = "missing-cloudflared", TokenFilePath = "missing-token" }
             });
             var before = fixture.Snapshot();
@@ -312,12 +315,16 @@ internal static class CliCheckCommandChecks
 
     private static AuthenticationSettings Cloudflare() => new()
     {
-        Mode = AuthenticationMode.CloudflareAccess, Team = "fixture", Audience = "fixture-aud", PublicOrigin = "https://fixture.invalid"
+        Mode = AuthenticationMode.CloudflareAccess,
+        Team = "fixture",
+        Audience = "fixture-aud",
+        PublicOrigin = "https://fixture.invalid"
     };
 
     private static void Assert(bool condition, string reason)
     {
-        if (!condition) throw new Exception(reason);
+        if (!condition)
+            throw new Exception(reason);
     }
 
     private sealed class BrokenWriter : TextWriter
@@ -345,7 +352,8 @@ internal static class CliCheckCommandChecks
             listener.Start();
             Settings = new AppSettings
             {
-                ProjectRoot = Root, Port = ((IPEndPoint)listener.LocalEndpoint).Port,
+                ProjectRoot = Root,
+                Port = ((IPEndPoint)listener.LocalEndpoint).Port,
                 Authentication = new AuthenticationSettings { Mode = AuthenticationMode.Local }
             };
         }
@@ -367,7 +375,8 @@ internal static class CliCheckCommandChecks
         {
             path ??= Path.Combine(DirectoryPath, "not-an-executable");
             File.WriteAllText(path, "Not an executable image. Checks must never execute this file.");
-            if (OperatingSystem.IsLinux()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsLinux())
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             return path;
         }
 

@@ -10,7 +10,8 @@ internal static class RecoveryManifestBudget
     public static int MaximumFinalBytes(RecoveryManifest applying)
     {
         ArgumentNullException.ThrowIfNull(applying);
-        if (applying.State != RecoveryRecordState.Applying) throw new InvalidOperationException("An Applying manifest is required for final-state sizing.");
+        if (applying.State != RecoveryRecordState.Applying)
+            throw new InvalidOperationException("An Applying manifest is required for final-state sizing.");
         RecoveryManifestJson.ValidateFields(applying);
         var worst = applying with
         {

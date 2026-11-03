@@ -77,7 +77,8 @@ internal static class RecoveryDraftChecks
             var addPlan = await fixture.Prepare("*** Add File: new.md\n+new");
             var added = PathState(RecoveryDraftBuilder.Create(Guid.NewGuid(), addPlan), "new.md").After!;
             Assert(added.UnixMode == addPlan.NewFileCreateMode && added.UnixModeIsCreateRequest == (addPlan.NewFileCreateMode is not null), "Creation mode is a request subject to umask");
-            if (OperatingSystem.IsWindows()) Assert(added.UnixMode is null, "Windows mode is not tracked");
+            if (OperatingSystem.IsWindows())
+                Assert(added.UnixMode is null, "Windows mode is not tracked");
         });
 
         await check("recovery drafts use prepared snapshots after external edits and even when the workspace has disappeared", async () =>
@@ -145,7 +146,9 @@ internal static class RecoveryDraftChecks
     private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery draft: " + message); }
     private static void Reject<T>(Action action) where T : Exception
     {
-        try { action(); } catch (T) { return; }
+        try
+        { action(); }
+        catch (T) { return; }
         throw new Exception($"Expected {typeof(T).Name}.");
     }
 
