@@ -20,7 +20,7 @@
                     <Button Content="使用默认路径" Click="OnDefaultPath" HorizontalAlignment="Left" AutomationProperties.AutomationId="DefaultSettings" />
                 </StackPanel>
                 <TextBlock Text="可填写新文件路径，保存时创建文件。相对路径以配置文件所在目录为基准。"
-                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                           Style="{StaticResource WorkspaceHintTextStyle}" />
                 <TextBlock Text="{Binding SettingsPath}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             </StackPanel>
             </ContentControl>
@@ -56,7 +56,7 @@
                              Text="{Binding CloudflaredPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="CloudflaredEditor" />
                     <TextBox Header="隧道 token 文件路径" Text="{Binding TokenFilePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="TokenFileEditor" />
                     <TextBlock Text="配置检查会确认 cloudflared 程序文件存在、token 文件可读且非空。"
-                               TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                               Style="{StaticResource WorkspaceHintTextStyle}" />
                 </StackPanel>
                 </ContentControl>
                 <TextBox Header="Bash 路径（仅 FullAccess 必需，留空自动查找）"
@@ -66,11 +66,11 @@
                 <TextBox Header="Git 路径（Git 查询的可选依赖，留空自动查找）"
                          Text="{Binding GitPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="GitPathEditor" />
                 <TextBlock Text="缺少 rg 或 Git 时，仅对应的查询工具受影响。各模式提供相同的 8 个工具，按各自权限执行。"
-                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                           Style="{StaticResource WorkspaceHintTextStyle}" />
                 <Button Content="保存运行配置" Click="OnSaveSettings" IsEnabled="{Binding CanSaveSettings}"
                         Style="{ThemeResource AccentButtonStyle}" HorizontalAlignment="Left" AutomationProperties.AutomationId="SaveSettings" />
                 <TextBlock Text="保存配置时按本机策略文件校验。"
-                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                           Style="{StaticResource WorkspaceHintTextStyle}" />
             </StackPanel>
             </ContentControl>
             </Border>
@@ -79,8 +79,7 @@
             <StackPanel Spacing="16">
                 <TextBlock Text="本机权限策略" Style="{StaticResource WorkspaceSectionTitleStyle}" />
                 <TextBlock Text="{Binding PolicyPath}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="PolicyPath" />
-                <TextBlock Text="所有运行配置共用本机用户目录中的策略文件。" TextWrapping="Wrap"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="所有运行配置共用本机用户目录中的策略文件。" Style="{StaticResource WorkspaceHintTextStyle}" />
                 <ComboBox Header="默认执行模式（下次启动生效）" SelectedIndex="{Binding ModeIndex, Mode=TwoWay}"
                           HorizontalAlignment="Stretch" AutomationProperties.AutomationId="ModeEditor">
                     <ComboBoxItem Content="ReadOnly" />
@@ -94,7 +93,7 @@
                          Text="{Binding RecoveryDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="RecoveryPathEditor" />
                 <TextBlock Text="{Binding DefaultRecoveryPath}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock Text="应用补丁前会生成完整预览并保存备份，失败时尝试回滚。恢复目录须在项目外，备份包含未提交到 Git 的原始内容。"
-                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                           Style="{StaticResource WorkspaceHintTextStyle}" />
                 <Expander Header="ProjectEdit 普通补丁上限" HorizontalAlignment="Stretch">
                     <StackPanel Spacing="12">
                         <TextBox Header="不同路径数" Text="{Binding MaxPathsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" InputScope="Number" />
@@ -107,7 +106,7 @@
                 <Button Content="保存本机策略" Click="OnSavePolicy" IsEnabled="{Binding CanSavePolicy}"
                         HorizontalAlignment="Left" AutomationProperties.AutomationId="SavePolicy" />
                 <TextBlock Text="策略按已保存的运行配置校验。首次使用时，请先保存运行配置。"
-                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                           Style="{StaticResource WorkspaceHintTextStyle}" />
             </StackPanel>
             </ContentControl>
             </Border>

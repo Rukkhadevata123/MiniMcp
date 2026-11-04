@@ -20,7 +20,7 @@ public sealed partial class RecoveryView : Page
     { if (RecordList.SelectedItem is not null) ActionRequested?.Invoke(this, "select"); }
     private void OnBodySizeChanged(object sender, SizeChangedEventArgs args)
     {
-        var wide = args.NewSize.Width >= 860;
+        var wide = args.NewSize.Width >= LayoutBreakpoints.RecoveryTwoColumns;
         Body.ColumnSpacing = wide ? 16 : 0;
         Body.RowSpacing = wide ? 0 : 16;
         Body.ColumnDefinitions[0].Width = wide ? new GridLength(300) : new GridLength(1, GridUnitType.Star);

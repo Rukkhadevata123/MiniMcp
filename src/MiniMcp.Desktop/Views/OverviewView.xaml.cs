@@ -10,8 +10,8 @@ public sealed partial class OverviewView : Page
         InitializeComponent();
         SizeChanged += (_, args) =>
         {
-            ServiceActions.Orientation = args.NewSize.Width >= 640 ? Orientation.Horizontal : Orientation.Vertical;
-            TunnelActions.Orientation = args.NewSize.Width >= 480 ? Orientation.Horizontal : Orientation.Vertical;
+            ServiceActions.Orientation = args.NewSize.Width >= LayoutBreakpoints.ServiceActionsInline ? Orientation.Horizontal : Orientation.Vertical;
+            TunnelActions.Orientation = args.NewSize.Width >= LayoutBreakpoints.TunnelActionsInline ? Orientation.Horizontal : Orientation.Vertical;
         };
     }
     public event EventHandler<string>? ActionRequested;

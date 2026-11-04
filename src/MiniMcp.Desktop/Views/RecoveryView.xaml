@@ -27,7 +27,7 @@
                             <DataTemplate x:DataType="models:DesktopRecoveryRow">
                                 <StackPanel Margin="0,4" Spacing="4">
                                     <TextBlock Text="{x:Bind CreatedText}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{x:Bind Name}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
+                                    <TextBlock Text="{x:Bind Name}" TextWrapping="Wrap" Style="{StaticResource WorkspaceMonospaceTextStyle}" />
                                     <TextBlock Text="{x:Bind State}" /><TextBlock Text="{x:Bind Error}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </DataTemplate>
@@ -38,10 +38,11 @@
                     <Grid RowSpacing="12">
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                         <Expander Header="记录详情" HorizontalAlignment="Stretch">
-                            <TextBox Text="{Binding Metadata}" IsReadOnly="True" AcceptsReturn="True" MaxHeight="200" FontFamily="Consolas"
+                            <TextBox Text="{Binding Metadata}" IsReadOnly="True" AcceptsReturn="True" MaxHeight="200" Style="{StaticResource WorkspaceMonospaceTextBoxStyle}"
                                 TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.AutomationId="RecoveryMetadata" />
                         </Expander>
-                        <TextBox x:Name="DiffText" Grid.Row="1" Header="完整反向预览" Text="{Binding Diff}" IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="12"
+                        <TextBox x:Name="DiffText" Grid.Row="1" Header="完整反向预览" Text="{Binding Diff}" IsReadOnly="True" AcceptsReturn="True"
+                            Style="{StaticResource WorkspaceMonospaceTextBoxStyle}" FontSize="12"
                             TextWrapping="NoWrap" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
                             AutomationProperties.AutomationId="RecoveryDiff" />
                     </Grid>

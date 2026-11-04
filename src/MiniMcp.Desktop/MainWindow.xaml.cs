@@ -58,8 +58,8 @@ public sealed partial class MainWindow : Window
         var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
         var area = display.WorkArea;
         var margin = (int)Math.Round(16 * scale);
-        var width = Math.Min((int)Math.Round(1040 * scale), Math.Max(1, area.Width - 2 * margin));
-        var height = Math.Min((int)Math.Round(780 * scale), Math.Max(1, area.Height - 2 * margin));
+        var width = Math.Min((int)Math.Round(LayoutBreakpoints.InitialWindowWidth * scale), Math.Max(1, area.Width - 2 * margin));
+        var height = Math.Min((int)Math.Round(LayoutBreakpoints.InitialWindowHeight * scale), Math.Max(1, area.Height - 2 * margin));
         AppWindow.MoveAndResize(new RectInt32(area.X + (area.Width - width) / 2,
             area.Y + (area.Height - height) / 2, width, height), display);
         _operation = _editor.LoadAsync(_editor.DefaultSettingsPath);
@@ -120,7 +120,7 @@ public sealed partial class MainWindow : Window
     }
     private void OnWorkspaceSizeChanged(object sender, SizeChangedEventArgs args)
     {
-        var gutter = args.NewSize.Width >= 1000 ? 32 : args.NewSize.Width >= 720 ? 24 : 16;
+        var gutter = args.NewSize.Width >= LayoutBreakpoints.WideWorkspace ? 32 : args.NewSize.Width >= LayoutBreakpoints.FiltersInline ? 24 : 16;
         WorkspaceColumn.Margin = new Thickness(gutter, 20, gutter, 24);
     }
 

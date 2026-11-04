@@ -8,7 +8,7 @@ public sealed partial class SettingsView : Page
     public SettingsView()
     {
         InitializeComponent();
-        SizeChanged += (_, args) => SourceActions.Orientation = args.NewSize.Width >= 560 ? Orientation.Horizontal : Orientation.Vertical;
+        SizeChanged += (_, args) => SourceActions.Orientation = args.NewSize.Width >= LayoutBreakpoints.SourceActionsInline ? Orientation.Horizontal : Orientation.Vertical;
     }
     public event EventHandler<string>? ActionRequested;
     private void Request(string action) => ActionRequested?.Invoke(this, action);

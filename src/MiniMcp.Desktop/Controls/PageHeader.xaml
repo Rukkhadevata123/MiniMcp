@@ -5,7 +5,6 @@
     <StackPanel Spacing="6" Margin="0,0,0,4">
         <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{ThemeResource TitleTextBlockStyle}"
                    TextWrapping="Wrap" AutomationProperties.AutomationId="PageTitle" />
-        <TextBlock Text="{x:Bind Description, Mode=OneWay}" TextWrapping="Wrap"
-                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="PageDescription" />
+        <TextBlock Text="{x:Bind Description, Mode=OneWay}" Style="{StaticResource WorkspaceHintTextStyle}" AutomationProperties.AutomationId="PageDescription" />
     </StackPanel>
 </UserControl>

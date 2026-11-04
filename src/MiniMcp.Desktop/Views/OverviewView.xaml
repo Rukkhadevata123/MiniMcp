@@ -42,8 +42,7 @@
                             <Button x:Name="StartTunnelButton" Content="启动隧道" Click="OnStartTunnel" HorizontalAlignment="Left" IsEnabled="False" AutomationProperties.AutomationId="StartTunnel" />
                             <Button x:Name="StopTunnelButton" Content="停止隧道" Click="OnStopTunnel" HorizontalAlignment="Left" IsEnabled="False" AutomationProperties.AutomationId="StopTunnel" />
                         </StackPanel>
-                        <TextBlock Text="隧道可单独启停，MCP 服务保持运行。公网连接与登录状态请通过客户端验证。" TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="隧道可单独启停，MCP 服务保持运行。公网连接与登录状态请通过客户端验证。" Style="{StaticResource WorkspaceHintTextStyle}" />
                     </StackPanel>
                 </Border>
                 <Border Style="{StaticResource WorkspaceCardStyle}">
@@ -53,7 +52,7 @@
                         <TextBlock Text="{Binding DraftStatus}" TextWrapping="Wrap" />
                         <TextBlock Text="{Binding ActiveDependencies}" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="QueryDependencies" />
                         <TextBlock Text="服务使用已保存的配置。保存后点击“重启并应用配置”即可生效。"
-                                   TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                   Style="{StaticResource WorkspaceHintTextStyle}" />
                     </StackPanel>
                 </Border>
             </StackPanel>

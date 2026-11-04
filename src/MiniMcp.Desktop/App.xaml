@@ -20,6 +20,19 @@
             <Style x:Key="WorkspaceSectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
+            <!-- Explanatory text under a control or section. -->
+            <Style x:Key="WorkspaceHintTextStyle" TargetType="TextBlock">
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+            <!-- Record names, log lines and diffs share one monospace face. -->
+            <Style x:Key="WorkspaceMonospaceTextStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Consolas" />
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+            <Style x:Key="WorkspaceMonospaceTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource DefaultTextBoxStyle}">
+                <Setter Property="FontFamily" Value="Consolas" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

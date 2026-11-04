@@ -13,7 +13,7 @@ public sealed partial class LogsView : Page
         Loaded += (_, _) => RefreshTail();
         SizeChanged += (_, args) =>
         {
-            var wide = args.NewSize.Width >= 720;
+            var wide = args.NewSize.Width >= LayoutBreakpoints.FiltersInline;
             Grid.SetColumnSpan(SearchField, wide ? 1 : 2);
             SearchField.Margin = new Thickness(0, 0, wide ? 12 : 0, 0);
             Grid.SetColumn(LevelField, wide ? 1 : 0);
