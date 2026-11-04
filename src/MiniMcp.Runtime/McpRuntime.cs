@@ -91,16 +91,10 @@ public sealed class McpRuntime : IAsyncDisposable
     public async Task StartAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        // Host construction can do synchronous work; do not perform it on the caller's UI context.
-        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _lifecycle.Release();
-        }
+
+        // Host construction can do synchronous work; EnterAsync keeps it off the caller's UI context.
+        using var lease = await _lifecycle.EnterAsync(cancellationToken);
+        await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>The caller supplies a freshly loaded/validated saved configuration.</summary>
@@ -109,77 +103,64 @@ public sealed class McpRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(configuration);
         if (configuration.ForRecoveryOnly)
             throw new InvalidOperationException("Load a complete runtime configuration before restarting the MCP host.");
-        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
-            await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _lifecycle.Release();
-        }
+
+        using var lease = await _lifecycle.EnterAsync(cancellationToken);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+        await StartCoreAsync(configuration, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StartTunnelAsync(CancellationToken cancellationToken = default)
     {
-        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+        using var lease = await _lifecycle.EnterAsync(cancellationToken);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (Snapshot.State != RuntimeState.Running)
+            throw new InvalidOperationException("The MCP host must be running before starting its tunnel.");
+        if (Snapshot.Configuration?.Settings.Tunnel.Enabled != true)
+            throw new InvalidOperationException("The saved session configuration disables the managed tunnel.");
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        deadline.CancelAfter(ShutdownTimeout);
+        if (_tunnel is not null)
+        {
+            if (!_tunnel.HasExited)
+                throw new InvalidOperationException("The runtime already owns a running tunnel.");
+            await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
+        }
+
         try
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (Snapshot.State != RuntimeState.Running)
-                throw new InvalidOperationException("The MCP host must be running before starting its tunnel.");
-            if (Snapshot.Configuration?.Settings.Tunnel.Enabled != true)
-                throw new InvalidOperationException("The saved session configuration disables the managed tunnel.");
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(ShutdownTimeout);
-            if (_tunnel is not null)
-            {
-                if (!_tunnel.HasExited)
-                    throw new InvalidOperationException("The runtime already owns a running tunnel.");
-                await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
-            }
+            await StartTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
+            ObserveTunnel();
+        }
+        catch (Exception startupError)
+        {
             try
             {
-                await StartTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
-                ObserveTunnel();
+                using var cleanup = new CancellationTokenSource(ShutdownTimeout);
+                await StopTunnelCoreAsync(cleanup.Token).ConfigureAwait(false);
             }
-            catch (Exception startupError)
+            catch (Exception cleanupError)
             {
-                try
-                {
-                    using var cleanup = new CancellationTokenSource(ShutdownTimeout);
-                    await StopTunnelCoreAsync(cleanup.Token).ConfigureAwait(false);
-                }
-                catch (Exception cleanupError)
-                {
-                    throw new AggregateException("Tunnel startup failed and cleanup did not complete.", startupError, cleanupError);
-                }
-                Publish(Snapshot with { Tunnel = Snapshot.Tunnel with { State = TunnelState.Faulted, Error = startupError.Message } });
-                throw;
+                throw new AggregateException("Tunnel startup failed and cleanup did not complete.", startupError, cleanupError);
             }
-        }
-        finally
-        {
-            _lifecycle.Release();
+
+            Publish(Snapshot with { Tunnel = Snapshot.Tunnel with { State = TunnelState.Faulted, Error = startupError.Message } });
+            throw;
         }
     }
 
     public async Task StopTunnelAsync(CancellationToken cancellationToken = default)
     {
-        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(ShutdownTimeout);
-            await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
-        }
-        finally
-        {
-            _lifecycle.Release();
-        }
+        using var lease = await _lifecycle.EnterAsync(cancellationToken);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        deadline.CancelAfter(ShutdownTimeout);
+        await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
     }
 
     private async Task StartCoreAsync(RuntimeConfiguration configuration, CancellationToken cancellationToken)
@@ -335,15 +316,8 @@ public sealed class McpRuntime : IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _lifecycle.Release();
-        }
+        using var lease = await _lifecycle.EnterAsync(cancellationToken);
+        await StopCoreAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask DisposeAsync() => DisposeAsync(CancellationToken.None);
@@ -351,21 +325,15 @@ public sealed class McpRuntime : IAsyncDisposable
     /// <summary>Disposes within the caller's remaining shutdown budget, retaining ownership on failure.</summary>
     public async ValueTask DisposeAsync(CancellationToken cancellationToken)
     {
-        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            if (_disposed)
-                return;
-            await StopCoreAsync(cancellationToken).ConfigureAwait(false);
-            _disposed = true;
-            Publish(Snapshot with { State = RuntimeState.Disposed });
-            _diagnostics.Complete();
-        }
-        finally
-        {
-            _lifecycle.Release();
-        }
-        // Keep the managed semaphore usable for calls racing with disposal; it owns no wait handle.
+        // The managed semaphore stays usable for calls racing with disposal; it owns no wait handle.
+        using var lease = await _lifecycle.EnterAsync(cancellationToken);
+        if (_disposed)
+            return;
+
+        await StopCoreAsync(cancellationToken).ConfigureAwait(false);
+        _disposed = true;
+        Publish(Snapshot with { State = RuntimeState.Disposed });
+        _diagnostics.Complete();
     }
 
     private async Task StopCoreAsync(CancellationToken cancellationToken)

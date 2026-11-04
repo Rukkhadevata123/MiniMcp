@@ -18,13 +18,10 @@ internal sealed partial class RecoveryStore
         cancellationToken.ThrowIfCancellationRequested();
         if (changeId == Guid.Empty)
             throw new ArgumentException("A nonempty record ID is required.", nameof(changeId));
-        await Writes.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            using var storeLock = OpenExistingStoreLock(cancellationToken);
-            return (await LoadRecordCoreAsync(changeId, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false)).Snapshot;
-        }
-        finally { Writes.Release(); }
+
+        using var lease = await Writes.EnterAsync(cancellationToken);
+        using var storeLock = OpenExistingStoreLock(cancellationToken);
+        return (await LoadRecordCoreAsync(changeId, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false)).Snapshot;
     }
 
     // Callers retain both the process gate and store lock until all record checks/operations finish.

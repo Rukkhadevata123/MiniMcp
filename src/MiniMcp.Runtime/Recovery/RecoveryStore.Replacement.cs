@@ -33,21 +33,16 @@ internal sealed partial class RecoveryStore
         ValidateOwnership(record, plan);
         EnsureManifestWritesAllowed();
         ArgumentNullException.ThrowIfNull(replacement);
-        await Writes.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            var bytes = ValidateReplacement(record.Manifest, replacement);
-            using var storeLock = OpenExistingStoreLock(cancellationToken);
-            var current = await ValidatePreparedCoreAsync(record, plan, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
-            var before = _guard.Measure(cancellationToken);
-            var oldBytes = current.Files.Single(file => file.Name == ManifestFileName).Bytes.Length;
-            before.EnsureCanReplaceManifest(current.Files.Sum(file => (long)file.Bytes.Length), oldBytes, bytes.Length);
-            return await ReplaceManifestCoreAsync(record, plan, replacement, bytes, before, oldBytes, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            Writes.Release();
-        }
+
+        using var lease = await Writes.EnterAsync(cancellationToken);
+        var bytes = ValidateReplacement(record.Manifest, replacement);
+        using var storeLock = OpenExistingStoreLock(cancellationToken);
+        var current = await ValidatePreparedCoreAsync(record, plan, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
+
+        var before = _guard.Measure(cancellationToken);
+        var oldBytes = current.Files.Single(file => file.Name == ManifestFileName).Bytes.Length;
+        before.EnsureCanReplaceManifest(current.Files.Sum(file => (long)file.Bytes.Length), oldBytes, bytes.Length);
+        return await ReplaceManifestCoreAsync(record, plan, replacement, bytes, before, oldBytes, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
     }
 
     private byte[] ValidateReplacement(RecoveryManifest original, RecoveryManifest replacement)

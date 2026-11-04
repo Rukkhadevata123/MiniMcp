@@ -46,27 +46,23 @@ internal sealed partial class RecoveryStore
             throw new WorkspaceException("ReadOnly mode does not allow recovery preparation for patch writes.");
         if (!Enum.IsDefined(_configuration.Policy.Mode))
             throw new WorkspaceException("Unknown execution mode; recovery preparation is denied.");
-        await Writes.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            var draft = RecoveryDraftBuilder.Create(_runId, plan, cancellationToken);
-            RecoveryManifestValidator.Validate(draft.Manifest, _configuration.Settings.ProjectRoot, draft.Manifest.ChangeId, cancellationToken);
-            var manifest = RecoveryManifestJson.Serialize(draft.Manifest);
-            var recordBytes = checked(draft.BackupBytes + manifest.Length);
-            _ = _guard.Inspect(recordBytes, cancellationToken);
-            EnsureRoot(cancellationToken);
-            _guard.CheckLocation(cancellationToken);
-            using var storeLock = RecoveryFileSystem.OpenFile(Path.Combine(_configuration.Policy.RecoveryDirectory, RecoveryStorageLimits.LockFileName), FileMode.OpenOrCreate);
-            RecoveryFileSystem.Lock(storeLock);
-            if (storeLock.Length != 0)
-                throw new InvalidDataException("Recovery lock marker must have zero length.");
-            var before = _guard.Inspect(recordBytes, cancellationToken);
-            return await WriteRecordAsync(draft, manifest, recordBytes, before, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            Writes.Release();
-        }
+
+        using var lease = await Writes.EnterAsync(cancellationToken);
+        var draft = RecoveryDraftBuilder.Create(_runId, plan, cancellationToken);
+        RecoveryManifestValidator.Validate(draft.Manifest, _configuration.Settings.ProjectRoot, draft.Manifest.ChangeId, cancellationToken);
+        var manifest = RecoveryManifestJson.Serialize(draft.Manifest);
+        var recordBytes = checked(draft.BackupBytes + manifest.Length);
+        _ = _guard.Inspect(recordBytes, cancellationToken);
+
+        EnsureRoot(cancellationToken);
+        _guard.CheckLocation(cancellationToken);
+        using var storeLock = RecoveryFileSystem.OpenFile(Path.Combine(_configuration.Policy.RecoveryDirectory, RecoveryStorageLimits.LockFileName), FileMode.OpenOrCreate);
+        RecoveryFileSystem.Lock(storeLock);
+        if (storeLock.Length != 0)
+            throw new InvalidDataException("Recovery lock marker must have zero length.");
+
+        var before = _guard.Inspect(recordBytes, cancellationToken);
+        return await WriteRecordAsync(draft, manifest, recordBytes, before, cancellationToken).ConfigureAwait(false);
     }
 
     public void ValidateOwnership(PreparedRecord record, PatchPlan plan)

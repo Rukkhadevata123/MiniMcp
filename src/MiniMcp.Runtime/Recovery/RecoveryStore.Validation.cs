@@ -10,13 +10,10 @@ internal sealed partial class RecoveryStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         ValidateOwnership(record, plan);
-        await Writes.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            using var storeLock = OpenExistingStoreLock(cancellationToken);
-            _ = await ValidatePreparedCoreAsync(record, plan, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
-        }
-        finally { Writes.Release(); }
+
+        using var lease = await Writes.EnterAsync(cancellationToken);
+        using var storeLock = OpenExistingStoreLock(cancellationToken);
+        _ = await ValidatePreparedCoreAsync(record, plan, storeLock.RootIdentity, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<LoadedRecord> ValidatePreparedCoreAsync(PreparedRecord record, PatchPlan plan,

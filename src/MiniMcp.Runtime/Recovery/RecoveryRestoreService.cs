@@ -68,23 +68,19 @@ internal sealed class RecoveryRestoreService
         if (changeId == Guid.Empty)
             throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
         EnsureWritable();
-        await _workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            var inspection = await _previews.InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false);
-            if (!inspection.Preview.Blockers.IsEmpty || inspection.Preview.Diff is null)
-                throw new WorkspaceException("Restoration requires a complete conflict-free committed-record preview. Blocking reasons: " + string.Join(", ", inspection.Preview.Blockers));
-            var plan = CreatePatchPlan(inspection.Changes);
-            var executable = await Task.Run(() => PatchDiffBuilder.Create(plan, cancellationToken), cancellationToken).ConfigureAwait(false);
-            if (executable.Diff != inspection.Preview.Diff || executable.Statistics != inspection.Preview.Statistics)
-                throw new InvalidOperationException("The restore plan does not reproduce the complete reviewed diff.");
-            cancellationToken.ThrowIfCancellationRequested();
-            return new(this, _issuer, inspection, plan);
-        }
-        finally
-        {
-            _workspace.Mutations.Release();
-        }
+
+        using var lease = await _workspace.Mutations.EnterAsync(cancellationToken);
+        var inspection = await _previews.InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false);
+        if (!inspection.Preview.Blockers.IsEmpty || inspection.Preview.Diff is null)
+            throw new WorkspaceException("Restoration requires a complete conflict-free committed-record preview. Blocking reasons: " + string.Join(", ", inspection.Preview.Blockers));
+
+        var plan = CreatePatchPlan(inspection.Changes);
+        var executable = await Task.Run(() => PatchDiffBuilder.Create(plan, cancellationToken), cancellationToken).ConfigureAwait(false);
+        if (executable.Diff != inspection.Preview.Diff || executable.Statistics != inspection.Preview.Statistics)
+            throw new InvalidOperationException("The restore plan does not reproduce the complete reviewed diff.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(this, _issuer, inspection, plan);
     }
 
     public async Task<RecoveryRestoreCommit> CommitAsync(RecoveryRestorePlan preparation, CancellationToken cancellationToken = default)
@@ -92,19 +88,14 @@ internal sealed class RecoveryRestoreService
         ArgumentNullException.ThrowIfNull(preparation);
         EnsureWritable();
         preparation.Validate(this, _issuer);
-        await _workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            preparation.Start(this, _issuer);
-            var commit = await _patches.CommitRecordedUnderLockAsync(preparation.Plan, _store,
-                token => _previews.ValidateRecordAsync(preparation.Source, token), cancellationToken).ConfigureAwait(false);
-            return new(preparation.Source.Manifest.ChangeId, commit);
-        }
-        finally
-        {
-            _workspace.Mutations.Release();
-        }
+
+        using var lease = await _workspace.Mutations.EnterAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        preparation.Start(this, _issuer);
+
+        var commit = await _patches.CommitRecordedUnderLockAsync(preparation.Plan, _store,
+            token => _previews.ValidateRecordAsync(preparation.Source, token), cancellationToken).ConfigureAwait(false);
+        return new(preparation.Source.Manifest.ChangeId, commit);
     }
 
     private PatchPlan CreatePatchPlan(ImmutableArray<PatchDiffChange> changes)

@@ -31,17 +31,11 @@ internal sealed class RecoveryPreviewService
     {
         if (changeId == Guid.Empty)
             throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
+
         // Keep the same lock order as recorded commits: workspace first, then short store operations.
         // Release store locks during workspace observation and diff computation.
-        await _workspace.Mutations.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            return (await InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false)).Preview;
-        }
-        finally
-        {
-            _workspace.Mutations.Release();
-        }
+        using var lease = await _workspace.Mutations.EnterAsync(cancellationToken);
+        return (await InspectUnderLockAsync(changeId, cancellationToken).ConfigureAwait(false)).Preview;
     }
 
     internal bool IsFor(ProjectWorkspace workspace, RecoveryStore store) => ReferenceEquals(_workspace, workspace) && ReferenceEquals(_store, store);
@@ -50,16 +44,10 @@ internal sealed class RecoveryPreviewService
     {
         if (changeId == Guid.Empty)
             throw new ArgumentException("A nonempty recovery record ID is required.", nameof(changeId));
-        await _workspace.Mutations.WaitAsync(token).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
-        try
-        {
-            var inspection = await InspectUnderLockAsync(changeId, token).ConfigureAwait(false);
-            return RecoveryRecordDetails.Create(inspection.Record.Manifest, inspection.Preview);
-        }
-        finally
-        {
-            _workspace.Mutations.Release();
-        }
+
+        using var lease = await _workspace.Mutations.EnterAsync(token);
+        var inspection = await InspectUnderLockAsync(changeId, token).ConfigureAwait(false);
+        return RecoveryRecordDetails.Create(inspection.Record.Manifest, inspection.Preview);
     }
 
     // The local preview or restore coordinator owns this exact workspace's mutation lock.

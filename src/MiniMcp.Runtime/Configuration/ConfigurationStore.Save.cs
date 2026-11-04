@@ -18,13 +18,15 @@ public sealed partial class ConfigurationStore
         if (!Path.IsPathFullyQualified(file.FilePath))
             throw new ConfigurationValidationException("settingsFile", "Use an absolute configuration file path.");
         file = file with { FilePath = Path.GetFullPath(file.FilePath) };
-        await Saves.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+
+        using var lease = await Saves.EnterAsync(cancellationToken);
         try
         {
             var policy = await ReadPolicyAsync(cancellationToken).ConfigureAwait(false);
             var validator = new ConfigurationValidator(_paths);
             void Validate() => validator.Validate(file.Value, file.FilePath, policy.Value);
             Validate();
+
             var bytes = EncodeJson(ConfigurationJson.SerializeSettings(file.Value));
             return await WriteAsync(file, bytes, Validate,
                 token => CheckRevisionAsync(policy.FilePath, policy.Revision, token), cancellationToken).ConfigureAwait(false);
@@ -32,10 +34,6 @@ public sealed partial class ConfigurationStore
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or AggregateException)
         {
             throw new ConfigurationSaveException(file.FilePath, exception);
-        }
-        finally
-        {
-            Saves.Release();
         }
     }
 
@@ -57,16 +55,19 @@ public sealed partial class ConfigurationStore
             throw new ConfigurationValidationException("settingsFile", "Read or save an existing settings file before saving policy.");
         file = file with { FilePath = _paths.PolicyFile };
         settings = settings with { FilePath = Path.GetFullPath(settings.FilePath) };
-        await Saves.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+
+        using var lease = await Saves.EnterAsync(cancellationToken);
         try
         {
             await CheckRevisionAsync(settings.FilePath, settings.Revision, cancellationToken).ConfigureAwait(false);
             var currentSettings = await ReadSettingsAsync(settings.FilePath, Path.GetDirectoryName(settings.FilePath)!, cancellationToken).ConfigureAwait(false);
             if (currentSettings.Revision != settings.Revision)
                 throw new ConfigurationConflictException(settings.FilePath);
+
             var validator = new ConfigurationValidator(_paths);
             void Validate() => validator.Validate(currentSettings.Value, currentSettings.FilePath, file.Value);
             Validate();
+
             var bytes = EncodeJson(ConfigurationJson.SerializePolicy(file.Value));
             return await WriteAsync(file, bytes, Validate,
                 token => CheckRevisionAsync(currentSettings.FilePath, currentSettings.Revision, token), cancellationToken).ConfigureAwait(false);
@@ -74,10 +75,6 @@ public sealed partial class ConfigurationStore
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException or AggregateException)
         {
             throw new ConfigurationSaveException(file.FilePath, exception);
-        }
-        finally
-        {
-            Saves.Release();
         }
     }
 
