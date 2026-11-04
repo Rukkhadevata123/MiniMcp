@@ -1,6 +1,6 @@
 # Standalone checks
 
-Each executable uses the same small runner, without a test-framework package:
+Each executable uses the same small runner, without a test-framework package. `tests/CheckInfrastructure` is linked into all four projects: `CheckRunner` (selection, tiers, result reporting), `CheckAssertions` (`Assert` and `Reject<T>`, imported everywhere via `global using static`; `Assert` reports the asserted expression text on failure) and `TemporaryTestDirectory` (`Reserve(tag)` / `Delete(path)` for every fixture's `%TEMP%\minimcp-<tag>-<guid>` directory).
 
 ~~~powershell
 dotnet run --project tests/MiniMcp.Checks -- --list
@@ -24,7 +24,7 @@ Dependencies are resolved where they are used: pure core patch/format checks nee
 
 The patch fixtures check for no staging/backup leftovers as part of the **product assertion**. Separately, their teardown deletes only the fixture's temporary directory. The runner reports teardown errors by path, never drops a primary failure, and never ignores a persistent deletion failure.
 
-An intermittent Windows sharing violation on .minimcp-*.bak.tmp was reproduced during test-directory teardown. Once observed, the file disappeared on later inspection; the locking process has **not** been identified. The affected test-only fixture cleanup therefore allows at most three short retries **only** for native Windows sharing/lock violation codes; every other error fails immediately, and an unresolved share violation still fails. CLEANUP RETRY logs disclose each retry. This retry does not change the product's patch/rollback behavior.
+An intermittent Windows sharing violation on .minimcp-*.bak.tmp was reproduced during test-directory teardown. Once observed, the file disappeared on later inspection; the locking process has **not** been identified. The reported names are uppercased copies with an extra `.tmp` suffix (for example `.MINIMCP-<GUID>.BAK.tmp`, `POLICY.JSON~RF….TMP.tmp`), which the product never creates, so an external file watcher is shadowing freshly written files. `TemporaryTestDirectory.Delete`, used by every fixture, therefore allows at most three short retries **only** for native Windows sharing/lock violation codes; every other error fails immediately, and an unresolved share violation still fails. CLEANUP RETRY logs disclose each retry. This retry does not change the product's patch/rollback behavior.
 
 Do not treat an injected rollback failure, an unexpected file, an unchanged-source mismatch, or a nonempty directory as a successful teardown. Preserve the path, assertion, and exception details to investigate when one recurs.
 
