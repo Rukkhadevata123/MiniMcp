@@ -174,8 +174,6 @@ internal static class PatchRiskChecks
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch risk: " + message); }
-
     private sealed class Fixture : IDisposable
     {
         private string DirectoryPath { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-risk-{Guid.NewGuid():N}");

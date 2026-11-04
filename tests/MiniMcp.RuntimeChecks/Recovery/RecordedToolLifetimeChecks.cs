@@ -132,6 +132,4 @@ internal static class RecordedToolLifetimeChecks
             finally { failInstall.TrySetResult(); saveFinal.TrySetResult(); await Drain(call); if (stopping is not null) await Drain(stopping); }
         });
     }
-
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
 }

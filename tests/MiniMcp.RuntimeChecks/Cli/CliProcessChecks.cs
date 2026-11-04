@@ -38,7 +38,7 @@ internal static class CliProcessChecks
                     await Send(child.Process, signal);
                     await child.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
                     await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5));
-                    CliRunChecks.Assert(child.Process.ExitCode == 0 && output.Text.Contains("已停止") && error.Text == "", "Normal real signal exit: " + error.Text);
+                    Assert(child.Process.ExitCode == 0 && output.Text.Contains("已停止") && error.Text == "", "Normal real signal exit: " + error.Text);
                     await RuntimeCallChecks.AssertStoppedAsync(tunnel);
                     await RuntimeCallChecks.AssertStoppedAsync(descendant);
                     await RuntimeCallChecks.AssertStoppedAsync(bash);
@@ -62,11 +62,11 @@ internal static class CliProcessChecks
                     await Send(child.Process, signal);
                     await CliRunChecks.Until(() => File.Exists(Path.Combine(fixture.DirectoryPath, "cli-stop.entered")));
                     await Send(child.Process, signal, 3);
-                    CliRunChecks.Assert(!child.Process.HasExited, "Repeated signal must not bypass cleanup");
+                    Assert(!child.Process.HasExited, "Repeated signal must not bypass cleanup");
                     File.WriteAllText(Path.Combine(fixture.DirectoryPath, "cli-release"), "release");
                     await child.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
                     await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5));
-                    CliRunChecks.Assert(child.Process.ExitCode == 0 &&
+                    Assert(child.Process.ExitCode == 0 &&
                         File.ReadAllText(Path.Combine(fixture.DirectoryPath, "cli-stop.calls")) == "1", "One actual stop");
                     CliRunChecks.AssertReleased(address.Port);
                 }
@@ -90,7 +90,7 @@ internal static class CliProcessChecks
                     File.WriteAllText(Path.Combine(fixture.DirectoryPath, "cli-release"), "release");
                     await child.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
                     await Task.WhenAll(stdout, stderr).WaitAsync(TimeSpan.FromSeconds(5));
-                    CliRunChecks.Assert(child.Process.ExitCode == 130 && error.Text.Contains("启动已取消") &&
+                    Assert(child.Process.ExitCode == 130 && error.Text.Contains("启动已取消") &&
                         !output.Text.Contains("已停止"), "Real cancelled startup: " + error.Text);
                 }
                 finally { File.WriteAllText(Path.Combine(fixture.DirectoryPath, "cli-release"), "release"); }
@@ -135,7 +135,7 @@ internal static class CliProcessChecks
             // and verifies its entire process list before sending any CTRL_C_EVENT.
             using var sender = TunnelChild.StartSelf("--cli-console-signal", child.Id.ToString(CultureInfo.InvariantCulture), count.ToString(CultureInfo.InvariantCulture));
             await sender.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            CliRunChecks.Assert(sender.ExitCode == 0, "Isolated console signal sender failed");
+            Assert(sender.ExitCode == 0, "Isolated console signal sender failed");
         }
         else
         {

@@ -205,7 +205,6 @@ internal static class RecoveryManifestValidationChecks
         catch (ArgumentException) { return; }
         throw new Exception("Expected invalid validation context rejection.");
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery metadata: " + message); }
 
     private sealed class Fixture : IDisposable
     {

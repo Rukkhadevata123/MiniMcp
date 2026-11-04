@@ -7,7 +7,6 @@ using static PatchExecutionFixture;
 
 internal static class LocalRecoveryEntryChecks
 {
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
         await check("local recovery catalog and read-only preview create no files and isolate projects", async () =>

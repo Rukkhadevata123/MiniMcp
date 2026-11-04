@@ -281,6 +281,4 @@ internal static class RecoveryRestoreLifetimeChecks
             Assert(route.StatusCode == HttpStatusCode.NotFound, "No restoration management endpoint was added");
         });
     }
-
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
 }

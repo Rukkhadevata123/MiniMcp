@@ -566,12 +566,6 @@ internal static class TunnelChecks
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetThreadErrorMode(uint mode, out uint previousMode);
 
-    private static void Assert(bool condition, string reason)
-    {
-        if (!condition)
-            throw new Exception(reason);
-    }
-
     private static bool Gone(int pid)
     {
         try
@@ -579,11 +573,7 @@ internal static class TunnelChecks
         catch (ArgumentException) { return true; }
     }
 
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    {
-        try
-        { await action().WaitAsync(TimeSpan.FromSeconds(20)); }
-        catch (T error) { return error; }
-        throw new Exception("Expected " + typeof(T).Name);
-    }
+    // Tunnel operations block on real process startup; bound every expected failure.
+    private static Task<T> Reject<T>(Func<Task> action) where T : Exception =>
+        CheckAssertions.Reject<T>(action, TimeSpan.FromSeconds(20));
 }

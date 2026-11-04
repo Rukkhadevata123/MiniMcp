@@ -338,11 +338,8 @@ internal static class RecoveryManifestReplacementChecks
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Manifest replacement: " + message); }
     private static void RejectSync<T>(Action action) where T : Exception
     { try { action(); } catch (T) { return; } throw new Exception($"Expected {typeof(T).Name}."); }
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task<Exception> RejectInvalid(Func<Task> action)
     {
         try

@@ -114,11 +114,11 @@ internal static class ConfigurationPatchLimitChecks
                 var before = fixture.Snapshot();
                 foreach (var (field, limits) in InvalidLimits())
                 {
-                    var error = await RejectAsync<ConfigurationValidationException>(() => fixture.Store.SavePolicyAsync(original with
+                    var error = await Reject<ConfigurationValidationException>(() => fixture.Store.SavePolicyAsync(original with
                     { Value = original.Value with { ProjectEditLimits = limits } }, settings));
                     Assert(error.Field == field && before.SequenceEqual(fixture.Snapshot()), "Invalid save effects");
                 }
-                var missing = await RejectAsync<ConfigurationValidationException>(() => fixture.Store.SavePolicyAsync(original with
+                var missing = await Reject<ConfigurationValidationException>(() => fixture.Store.SavePolicyAsync(original with
                 { Value = original.Value with { ProjectEditLimits = null! } }, settings));
                 Assert(missing.Field == "projectEditLimits" && before.SequenceEqual(fixture.Snapshot()), "Null save effects");
             }
@@ -135,15 +135,15 @@ internal static class ConfigurationPatchLimitChecks
                 var before = fixture.Snapshot();
                 foreach (var mode in Enum.GetValues<ExecutionMode>())
                 {
-                    var error = await RejectAsync<ConfigurationValidationException>(() => fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath, mode));
+                    var error = await Reject<ConfigurationValidationException>(() => fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath, mode));
                     Assert(error.Field == field, "Mode override must validate limits");
                 }
-                var save = await RejectAsync<ConfigurationValidationException>(() => fixture.Store.SaveSettingsAsync(settings with
+                var save = await Reject<ConfigurationValidationException>(() => fixture.Store.SaveSettingsAsync(settings with
                 { Value = settings.Value with { Port = 9000 } }));
                 Assert(save.Field == field && before.SequenceEqual(fixture.Snapshot()), "Settings save cannot bypass policy");
             }
             File.WriteAllText(fixture.Paths.PolicyFile, """{"projectEditLimits":null}""");
-            var malformed = await RejectAsync<ConfigurationLoadException>(() => fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath, ExecutionMode.ReadOnly));
+            var malformed = await Reject<ConfigurationLoadException>(() => fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath, ExecutionMode.ReadOnly));
             Assert(malformed.FilePath == fixture.Paths.PolicyFile && malformed.InnerException is JsonException, "Malformed local source");
         });
 
@@ -156,7 +156,7 @@ internal static class ConfigurationPatchLimitChecks
             var external = new ProjectEditLimits { MaxPaths = 0, MaxChangedLines = 0, MaxChangedBytes = 0 };
             fixture.WritePolicy(original.Value with { ProjectEditLimits = external });
             var before = fixture.Snapshot();
-            var error = await RejectAsync<ConfigurationConflictException>(() => fixture.Store.SavePolicyAsync(original, settings));
+            var error = await Reject<ConfigurationConflictException>(() => fixture.Store.SavePolicyAsync(original, settings));
             Assert(error.FilePath == fixture.Paths.PolicyFile && before.SequenceEqual(fixture.Snapshot()), "Conflict leaves external values");
             Assert((await fixture.Store.LoadAsync(fixture.Source, fixture.DirectoryPath)).Policy.ProjectEditLimits == external, "Reload external limits");
         });
@@ -170,21 +170,6 @@ internal static class ConfigurationPatchLimitChecks
             yield return ("projectEditLimits.maxChangedLines", new() { MaxChangedLines = value });
             yield return ("projectEditLimits.maxChangedBytes", new() { MaxChangedBytes = value });
         }
-    }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("ProjectEdit limits configuration: " + message); }
-    private static T Reject<T>(Action action) where T : Exception
-    {
-        try
-        { action(); }
-        catch (T exception) { return exception; }
-        throw new Exception($"Expected {typeof(T).Name}.");
-    }
-    private static async Task<T> RejectAsync<T>(Func<Task> action) where T : Exception
-    {
-        try
-        { await action(); }
-        catch (T exception) { return exception; }
-        throw new Exception($"Expected {typeof(T).Name}.");
     }
 
     private sealed class Fixture : IDisposable

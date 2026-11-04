@@ -336,15 +336,6 @@ internal static class WorkspaceQueryChecks
         return 0;
     }
 
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    {
-        try
-        { await action(); }
-        catch (T error) { return error; }
-        throw new Exception("Expected " + typeof(T).Name);
-    }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Query check: " + message); }
-
     private sealed class Fixture : IAsyncDisposable
     {
         public string Directory { get; } = Path.Combine(Path.GetTempPath(), "minimcp-query-" + Guid.NewGuid().ToString("N"));

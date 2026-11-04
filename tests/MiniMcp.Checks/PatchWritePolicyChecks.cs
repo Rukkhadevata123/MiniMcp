@@ -133,7 +133,6 @@ internal static class PatchWritePolicyChecks
         Assert(decision.Disposition == disposition && decision.Blockers == blockers, "Disposition and blocking causes");
         Assert(decision.CanCommit == (blockers == PatchWriteBlocker.None), "Only unblocked policy allows a recorded attempt");
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch write policy: " + message); }
 
     private sealed class Fixture : IDisposable
     {

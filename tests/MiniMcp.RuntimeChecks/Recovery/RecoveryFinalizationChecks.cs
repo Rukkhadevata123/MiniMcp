@@ -287,10 +287,6 @@ internal static class RecoveryFinalizationChecks
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery finalization: " + message); }
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
-
     private sealed class Fixture : IDisposable
     {
         public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-finalization-{Guid.NewGuid():N}");

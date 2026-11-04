@@ -128,5 +128,4 @@ internal static class MonitorChecks
             Assert(monitor.ObservationError.Length > 0 && fixture.Runtime.Snapshot.State == RuntimeState.Running && fixture.Runtime.DiagnosticSubscriberCounts == (0, 0), "Display errors stay separate from lifecycle and subscriptions close");
         });
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
 }

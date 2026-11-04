@@ -208,7 +208,6 @@ internal static class RecoveryManifestJsonChecks
         catch (JsonException error) { return error; }
         throw new Exception("Expected invalid recovery manifest rejection.");
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery JSON: " + message); }
 
     private sealed class Fixture : IDisposable
     {

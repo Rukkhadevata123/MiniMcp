@@ -44,12 +44,12 @@ internal static class RecoveryStoreChecks
             using var other = new Fixture();
             var plan = await fixture.Plan();
             var before = fixture.ProjectSnapshot();
-            await RejectAsync<WorkspaceException>(() => fixture.Store(mode: ExecutionMode.ReadOnly).PrepareAsync(plan));
+            await Reject<WorkspaceException>(() => fixture.Store(mode: ExecutionMode.ReadOnly).PrepareAsync(plan));
             var otherPlan = await other.Plan();
-            await RejectAsync<System.Text.Json.JsonException>(() => fixture.Store().PrepareAsync(otherPlan));
+            await Reject<System.Text.Json.JsonException>(() => fixture.Store().PrepareAsync(otherPlan));
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
-            await RejectAsync<OperationCanceledException>(() => fixture.Store().PrepareAsync(plan, cancelled.Token));
+            await Reject<OperationCanceledException>(() => fixture.Store().PrepareAsync(plan, cancelled.Token));
             Assert(!Directory.Exists(fixture.Storage) && before.SequenceEqual(fixture.ProjectSnapshot()), "Rejected requests have no preparation artifacts");
             if (OperatingSystem.IsLinux())
             {
@@ -58,7 +58,7 @@ internal static class RecoveryStoreChecks
                 if (MakeFifo(marker, 0x180) != 0)
                     throw new Exception("Cannot create FIFO fixture.");
                 try
-                { await RejectAsync<IOException>(() => fixture.Store().PrepareAsync(plan)).WaitAsync(TimeSpan.FromSeconds(3)); }
+                { await Reject<IOException>(() => fixture.Store().PrepareAsync(plan)).WaitAsync(TimeSpan.FromSeconds(3)); }
                 finally { File.Delete(marker); }
                 Assert(!fixture.RecordDirectories().Any(), "Non-regular marker rejected without a blocking open or a record");
             }
@@ -73,7 +73,7 @@ internal static class RecoveryStoreChecks
                 using var cancelled = new CancellationTokenSource();
                 var store = fixture.Store((current, _) => { if (current == stage) cancelled.Cancel(); return Task.CompletedTask; });
                 var plan = await fixture.Plan();
-                await RejectAsync<OperationCanceledException>(() => store.PrepareAsync(plan, cancelled.Token));
+                await Reject<OperationCanceledException>(() => store.PrepareAsync(plan, cancelled.Token));
                 Assert(fixture.RecordDirectories().SequenceEqual(new[] { "old-record" }) && File.ReadAllText(Path.Combine(fixture.Storage, "old-record", "keep")) == "old data", "Cancellation cleanup preserves old data: " + stage);
                 Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.md")) == "old\n", "No workspace changes");
             }
@@ -86,7 +86,7 @@ internal static class RecoveryStoreChecks
             var store = fixture.Store((stage, _) => stage == RecoveryPreparationStage.BackupWritten
                 ? Task.FromException(new IOException("Injected backup write failure.")) : Task.CompletedTask);
             var plan = await fixture.Plan();
-            await RejectAsync<IOException>(() => store.PrepareAsync(plan));
+            await Reject<IOException>(() => store.PrepareAsync(plan));
             Assert(fixture.RecordDirectories().SequenceEqual(new[] { "old-record" }), "No partial record after successful cleanup");
             var prepared = await fixture.Store().PrepareAsync(plan);
             Assert(Directory.Exists(prepared.DirectoryPath) && File.ReadAllText(Path.Combine(fixture.Storage, "old-record", "keep")) == "old data", "Lock released for retry, old data retained");
@@ -109,9 +109,9 @@ internal static class RecoveryStoreChecks
                 });
                 var plan = await fixture.Plan();
                 if (collision == RecoveryPreparationStage.BeforeDirectory)
-                    await RejectAsync<IOException>(() => store.PrepareAsync(plan));
+                    await Reject<IOException>(() => store.PrepareAsync(plan));
                 else
-                    await RejectAsync<AggregateException>(() => store.PrepareAsync(plan));
+                    await Reject<AggregateException>(() => store.PrepareAsync(plan));
                 Assert(File.ReadAllText(Path.Combine(occupied!, RecoveryStore.ManifestFileName)) == "foreign record data" &&
                     Directory.EnumerateFiles(occupied!).Count() == 1, "Foreign data preserved; only owned backup removed");
             }
@@ -139,7 +139,7 @@ internal static class RecoveryStoreChecks
                     return Task.CompletedTask;
                 });
                 var plan = await fixture.Plan();
-                await RejectAsync<AggregateException>(() => store.PrepareAsync(plan));
+                await Reject<AggregateException>(() => store.PrepareAsync(plan));
                 Assert(directory is not null && Directory.Exists(directory), "Partial record remains visible");
                 Assert(replace ? File.ReadAllText(Path.Combine(directory!, "before-0000.bin")) == "replacement" :
                     File.ReadAllText(Path.Combine(directory!, "unexpected")) == "preserve me", "Unowned entries are not deleted");
@@ -169,7 +169,7 @@ internal static class RecoveryStoreChecks
             try
             {
                 var plan = await fixture.Plan();
-                await RejectAsync<AggregateException>(() => store.PrepareAsync(plan));
+                await Reject<AggregateException>(() => store.PrepareAsync(plan));
                 Assert(File.ReadAllText(Path.Combine(outside, "before-0000.bin")) == "outside data", "Cleanup never follows replaced directory links");
             }
             finally { if (link is not null) Directory.Delete(link); }
@@ -185,7 +185,7 @@ internal static class RecoveryStoreChecks
                 return Task.CompletedTask;
             });
             var plan = await fixture.Plan();
-            await RejectAsync<IOException>(() => store.PrepareAsync(plan));
+            await Reject<IOException>(() => store.PrepareAsync(plan));
             Assert(!fixture.RecordDirectories().Any() && File.ReadAllText(Path.Combine(fixture.Root, "sample.md")) == "old\n", "Corrupt owned data cleaned, workspace unchanged");
         });
 
@@ -205,11 +205,11 @@ internal static class RecoveryStoreChecks
                 using var cancelled = new CancellationTokenSource();
                 var queued = fixture.Store().PrepareAsync(plan, cancelled.Token);
                 cancelled.Cancel();
-                await RejectAsync<OperationCanceledException>(() => queued);
+                await Reject<OperationCanceledException>(() => queued);
                 Assert(!first.IsCompleted, "Cancelling another waiter leaves active writer running");
                 release.TrySetResult();
                 _ = await first;
-                await RejectAsync<IOException>(() => fixture.Store().PrepareAsync(plan));
+                await Reject<IOException>(() => fixture.Store().PrepareAsync(plan));
                 Assert(fixture.RecordDirectories().Count() == 1000, "Exactly one new record fits the last slot");
             }
             finally { release.TrySetResult(); await first; }
@@ -234,7 +234,7 @@ internal static class RecoveryStoreChecks
                 { if (child.HasExited) throw new Exception("Recovery lock helper exited early."); await Task.Delay(10); }
                 Assert(File.Exists(marker), "Child owns the actual filesystem lock");
                 var plan = await fixture.Plan();
-                await RejectAsync<IOException>(() => fixture.Store().PrepareAsync(plan));
+                await Reject<IOException>(() => fixture.Store().PrepareAsync(plan));
                 Assert(!fixture.RecordDirectories().Any(), "Busy store creates no record");
             }
             finally { if (!child.HasExited) child.Kill(entireProcessTree: true); await child.WaitForExitAsync(); }
@@ -242,13 +242,8 @@ internal static class RecoveryStoreChecks
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery store: " + message); }
     [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
     private static extern int MakeFifo([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
-    private static void Reject<T>(Action action) where T : Exception
-    { try { action(); } catch (T) { return; } throw new Exception($"Expected {typeof(T).Name}."); }
-    private static async Task<T> RejectAsync<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
 
     private sealed class Fixture : IDisposable
     {

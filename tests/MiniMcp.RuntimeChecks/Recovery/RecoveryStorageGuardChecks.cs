@@ -179,15 +179,6 @@ internal static class RecoveryStorageGuardChecks
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery storage guard: " + message); }
-    private static void Reject<T>(Action action) where T : Exception
-    {
-        try
-        { action(); }
-        catch (T) { return; }
-        throw new Exception($"Expected {typeof(T).Name} during recovery preflight.");
-    }
-
     private sealed class Fixture : IDisposable
     {
         public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-recovery-guard-{Guid.NewGuid():N}");

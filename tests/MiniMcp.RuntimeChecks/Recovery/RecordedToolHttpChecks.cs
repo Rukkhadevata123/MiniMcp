@@ -196,5 +196,4 @@ internal static class RecordedToolHttpChecks
         !result.Content.OfType<TextContentBlock>().Any(block => block.Text.Contains("# Review diff")), "Failure returns no partial preview or false success: " + message);
     private static async Task Until(Func<bool> condition)
     { for (var index = 0; index < 500; index++) { if (condition()) return; await Task.Delay(10); } throw new Exception("Timed out waiting for actual patch lifecycle state."); }
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
 }

@@ -117,7 +117,6 @@ internal static class DesktopAcceptanceChecks
     }
     private static async Task Until(Func<bool> condition)
     { var deadline = DateTime.UtcNow.AddSeconds(15); while (!condition()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Desktop acceptance timed out"); await Task.Delay(30); } }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
 
 }

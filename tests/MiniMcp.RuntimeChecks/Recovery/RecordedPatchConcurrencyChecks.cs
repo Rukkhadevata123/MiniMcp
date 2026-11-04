@@ -214,6 +214,5 @@ internal static class RecordedPatchConcurrencyChecks
     }
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private static void Assert(bool condition, string message) => RecordedPatchFaultChecks.Assert(condition, message);
     private static async Task Drain(Task task) { try { await task; } catch { /* Preserve the original check failure while draining owned work. */ } }
 }

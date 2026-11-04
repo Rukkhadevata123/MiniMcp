@@ -394,7 +394,6 @@ internal static class UiSmoke
         while (!condition())
         { if (DateTime.UtcNow >= deadline) throw new TimeoutException("UI condition did not complete"); await Task.Delay(25); }
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);

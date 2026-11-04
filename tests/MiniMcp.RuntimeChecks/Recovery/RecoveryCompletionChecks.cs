@@ -285,11 +285,8 @@ internal static class RecoveryCompletionChecks
             });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery completion: " + message); }
     private static void RejectSync<T>(Action action) where T : Exception
     { try { action(); } catch (T) { return; } throw new Exception($"Expected {typeof(T).Name}."); }
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
     private static extern int MakeFifo([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
 

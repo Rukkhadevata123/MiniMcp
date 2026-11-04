@@ -440,7 +440,6 @@ internal static class RecoveryPreviewChecks
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or WorkspaceException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected record read/validation failure without a preview.");
     }
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
     [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CreateHardLinkWindows(string link, string target, IntPtr security);
     [DllImport("libc", EntryPoint = "link", SetLastError = true)] private static extern int Link([MarshalAs(UnmanagedType.LPUTF8Str)] string target, [MarshalAs(UnmanagedType.LPUTF8Str)] string link);

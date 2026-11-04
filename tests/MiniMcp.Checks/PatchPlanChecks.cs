@@ -169,14 +169,6 @@ internal static class PatchPlanChecks
     private static string[] Snapshot(string directory) => System.IO.Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories)
         .Order(StringComparer.Ordinal).Select(path => System.IO.Path.GetRelativePath(directory, path) +
             (System.IO.Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-    private static void Assert(bool condition) { if (!condition) throw new Exception("Patch plan assertion failed."); }
-    private static async Task Reject<TException>(Func<Task> action) where TException : Exception
-    {
-        try
-        { await action(); }
-        catch (TException) { return; }
-        throw new Exception($"Expected {typeof(TException).Name}.");
-    }
 
     private sealed class Fixture : IDisposable
     {

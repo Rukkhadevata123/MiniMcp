@@ -233,6 +233,4 @@ internal static class RecordedToolExecutionChecks
                 !json.Contains(fixture.Root.Replace("\\", "\\\\")) && !json.Contains("before-0000.bin") && !json.Contains("executionContext", StringComparison.OrdinalIgnoreCase), "No internal capability, raw backup, ownership or absolute path enters the public result");
         });
     }
-
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
 }

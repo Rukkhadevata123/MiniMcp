@@ -227,9 +227,6 @@ internal static class RecoveryPreparationValidationChecks
     }
 
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Prepared recovery validation: " + message); }
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task RejectInvalid(Func<Task> action)
     {
         try

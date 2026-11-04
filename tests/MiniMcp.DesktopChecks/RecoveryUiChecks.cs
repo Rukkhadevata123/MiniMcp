@@ -130,5 +130,4 @@ internal static class RecoveryUiChecks
     }
     private static async Task Until(Func<bool> condition)
     { var deadline = DateTime.UtcNow.AddSeconds(15); while (!condition()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Recovery UI condition timed out"); await Task.Delay(25); } }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
 }

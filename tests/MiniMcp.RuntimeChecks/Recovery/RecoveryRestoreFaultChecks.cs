@@ -399,7 +399,6 @@ internal static class RecoveryRestoreFaultChecks
         });
     }
 
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
     private static byte[] PathsBeforeBytesFor(this RecoveryRecordSnapshot record, string path) => record.Backups.Single(backup =>
         backup.FileName == record.Manifest.Paths.Single(state => state.Path == path).BackupFile).Bytes.ToArray();
 }

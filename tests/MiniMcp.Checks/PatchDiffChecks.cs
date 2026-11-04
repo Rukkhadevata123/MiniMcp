@@ -213,7 +213,6 @@ internal static class PatchDiffChecks
         catch (WorkspaceException error) { Assert(error.Message.Contains(message) && error.Message.Contains("split")); return; }
         throw new Exception("Expected complete-preview rejection.");
     }
-    private static void Assert(bool condition) { if (!condition) throw new Exception("Patch diff assertion failed."); }
 
     private sealed class Fixture : IDisposable
     {

@@ -321,12 +321,6 @@ internal static class CliCheckCommandChecks
         PublicOrigin = "https://fixture.invalid"
     };
 
-    private static void Assert(bool condition, string reason)
-    {
-        if (!condition)
-            throw new Exception(reason);
-    }
-
     private sealed class BrokenWriter : TextWriter
     {
         public override Encoding Encoding => Encoding.UTF8;

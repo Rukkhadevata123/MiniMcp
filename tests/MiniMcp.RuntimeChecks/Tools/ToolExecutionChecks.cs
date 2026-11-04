@@ -38,12 +38,12 @@ internal static class ToolExecutionChecks
                         throw new Exception("Complete preview failed.");
                     using var cancelled = new CancellationTokenSource();
                     cancelled.Cancel();
-                    await RejectAsync<OperationCanceledException>(() => execution.ApplyPatchAsync("invalid", dryRun: true, cancellationToken: cancelled.Token));
-                    await RejectAsync<OperationCanceledException>(() => execution.RunBashAsync("exit 0", cancellationToken: cancelled.Token));
+                    await Reject<OperationCanceledException>(() => execution.ApplyPatchAsync("invalid", dryRun: true, cancellationToken: cancelled.Token));
+                    await Reject<OperationCanceledException>(() => execution.RunBashAsync("exit 0", cancellationToken: cancelled.Token));
                     if (mode == ExecutionMode.ProjectEdit)
-                        await RejectAsync<WorkspaceException>(() => execution.RunBashAsync("exit 0"));
+                        await Reject<WorkspaceException>(() => execution.RunBashAsync("exit 0"));
                     else
-                        await RejectAsync<InvalidOperationException>(() => execution.RunBashAsync("exit 0"));
+                        await Reject<InvalidOperationException>(() => execution.RunBashAsync("exit 0"));
                     if ((await execution.ReadFileAsync("sample.txt")).Content != "original\n")
                         throw new Exception("Read after failure failed.");
                 }
@@ -53,13 +53,5 @@ internal static class ToolExecutionChecks
             }
             finally { Directory.Delete(temporary, recursive: true); }
         });
-    }
-
-    private static async Task RejectAsync<TException>(Func<Task> action) where TException : Exception
-    {
-        try
-        { await action(); }
-        catch (TException) { return; }
-        throw new Exception($"Expected {typeof(TException).Name}.");
     }
 }

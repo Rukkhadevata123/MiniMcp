@@ -66,9 +66,6 @@ internal sealed class PatchExecutionFixture : IDisposable
             "Public commit matches the real durable record, workspace and session");
         return saved;
     }
-    public static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch execution: " + message); }
-    public static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     public static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     public static async Task Drain(Task task) { try { await task; } catch { /* Drain owned work without replacing the check's original error. */ } }
     public void Dispose()

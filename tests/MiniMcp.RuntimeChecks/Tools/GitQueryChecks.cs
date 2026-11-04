@@ -437,9 +437,6 @@ internal static class GitQueryChecks
     }
 
     private static string HelperCommand(string marker) => "\"" + Environment.ProcessPath!.Replace('\\', '/') + "\" --git-helper \"" + marker.Replace('\\', '/') + "\"";
-    private static async Task<T> Reject<T>(Func<Task> query) where T : Exception
-    { try { await query(); } catch (T error) { return error; } throw new Exception("Expected " + typeof(T).Name); }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Git query: " + message); }
 
     private sealed class Fixture : IAsyncDisposable
     {

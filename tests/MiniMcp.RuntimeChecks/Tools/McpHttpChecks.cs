@@ -430,15 +430,6 @@ internal static class McpHttpChecks
         catch (Exception error) when (error is OperationCanceledException or McpException or HttpRequestException or IOException) { }
     }
 
-    private static async Task Reject<TException>(Func<Task> action) where TException : Exception
-    {
-        try
-        { await action(); }
-        catch (TException) { return; }
-        throw new Exception($"Expected {typeof(TException).Name}.");
-    }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
-
     private sealed class SessionHeaderObserver : DelegatingHandler
     {
         private int _sawSessionHeader;

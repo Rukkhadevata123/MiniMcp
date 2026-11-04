@@ -171,20 +171,6 @@ internal static class RuntimeSessionChecks
         finally { Directory.Delete(temporary, recursive: true); }
     }
 
-    private static void Assert(bool condition)
-    {
-        if (!condition)
-            throw new Exception("Runtime session assertion failed.");
-    }
-
-    private static async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
-    {
-        try
-        { await action(); }
-        catch (TException error) { return error; }
-        throw new Exception($"Expected {typeof(TException).Name}.");
-    }
-
     private abstract class UnconstructableService { }
 
     private sealed class LifecycleProbe(ToolExecutionService execution) : IHostedService

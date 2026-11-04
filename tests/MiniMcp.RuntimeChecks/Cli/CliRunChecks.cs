@@ -220,12 +220,6 @@ internal static class CliRunChecks
         socket.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, port));
     }
 
-    internal static void Assert(bool condition, string reason)
-    {
-        if (!condition)
-            throw new Exception(reason);
-    }
-
     private static async Task RetryStop(McpRuntime runtime)
     {
         try

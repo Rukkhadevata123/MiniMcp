@@ -511,9 +511,6 @@ internal static class RecordedPatchFaultChecks
         .Select(path => Path.GetRelativePath(fixture.Storage, path) + ":" + (Directory.Exists(path) ? "directory" : Path.GetFileName(path) == RecoveryStorageLimits.LockFileName ? "lock-marker" : Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
     private static void AddSlots(Fixture fixture, int count)
     { for (var index = 0; index < count; index++) Directory.CreateDirectory(Path.Combine(fixture.Storage, $"foreign-{index}")); }
-    internal static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recorded fault matrix: " + message); }
-    internal static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
     private static async Task RejectInvalid(Func<Task> action)
     {
         try

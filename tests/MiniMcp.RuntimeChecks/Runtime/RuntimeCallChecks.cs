@@ -201,20 +201,6 @@ internal static class RuntimeCallChecks
         catch (InvalidOperationException) { }
     }
 
-    private static async Task<TException> Reject<TException>(Func<Task> action) where TException : Exception
-    {
-        try
-        { await action(); }
-        catch (TException error) { return error; }
-        throw new Exception($"Expected {typeof(TException).Name}.");
-    }
-
-    private static void Assert(bool condition)
-    {
-        if (!condition)
-            throw new Exception("Runtime call lifecycle assertion failed.");
-    }
-
     private sealed class GatedLifecycleService(bool blockStop, bool blockDispose) : IHostedService, IAsyncDisposable
     {
         public TaskCompletionSource StopEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);

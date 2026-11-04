@@ -106,10 +106,4 @@ internal static class QueryOutputChecks
         await output.FlushAsync();
         return 0;
     }
-
-    private static void Assert(bool condition, string message)
-    {
-        if (!condition)
-            throw new Exception("Query output check: " + message);
-    }
 }

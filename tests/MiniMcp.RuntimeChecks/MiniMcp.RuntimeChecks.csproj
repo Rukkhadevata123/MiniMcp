@@ -8,6 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/MiniMcp.Runtime/MiniMcp.Runtime.csproj" />
     <Compile Include="../CheckInfrastructure/CheckRunner.cs" Link="CheckRunner.cs" />
+    <Compile Include="../CheckInfrastructure/CheckAssertions.cs" Link="CheckAssertions.cs" />
+    <Compile Include="../CheckInfrastructure/GlobalUsings.cs" Link="GlobalUsings.cs" />
     <ProjectReference Include="../../src/MiniMcp.Cli/MiniMcp.Cli.csproj" />
     <None Include="../../examples/settings.local.json;../../examples/policy.readonly.json"
           Link="examples/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />

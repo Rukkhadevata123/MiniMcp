@@ -255,10 +255,6 @@ internal static class PatchCommitOutcomeChecks
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch commit outcome: " + message); }
-    private static async Task<T> Reject<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T error) { return error; } throw new Exception($"Expected {typeof(T).Name}."); }
-
     private sealed class Fixture : IDisposable
     {
         public string DirectoryPath { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-commit-outcome-{Guid.NewGuid():N}");

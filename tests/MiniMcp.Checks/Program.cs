@@ -33,9 +33,9 @@ try
         var result = await workspace.ReadFileAsync("read.txt", 2, 3);
         Assert(result.Content == "你好 👋\ntail" && result.StartLine == 2 && result.EndLine == 3 && result.TotalLines == 3 && !result.Truncated);
         Assert((await workspace.ReadFileAsync("read.txt", 3, 100)).Content == "tail");
-        await RejectAsync<WorkspaceException>(() => workspace.ReadFileAsync("read.txt", 0));
-        await RejectAsync<WorkspaceException>(() => workspace.ReadFileAsync("read.txt", 4));
-        await RejectAsync<WorkspaceException>(() => workspace.ReadFileAsync("read.txt", 2, 1));
+        await Reject<WorkspaceException>(() => workspace.ReadFileAsync("read.txt", 0));
+        await Reject<WorkspaceException>(() => workspace.ReadFileAsync("read.txt", 4));
+        await Reject<WorkspaceException>(() => workspace.ReadFileAsync("read.txt", 2, 1));
     });
     await Check("empty files and trailing newlines have correct line counts", async () =>
     {
@@ -60,7 +60,7 @@ try
         File.WriteAllBytes(Path.Combine(root, "binary"), [0, 1]);
         File.WriteAllBytes(Path.Combine(root, "invalid"), [0xff]);
         foreach (var path in new[] { "large.txt", "binary", "invalid" })
-            await RejectAsync<WorkspaceException>(() => workspace.ReadFileAsync(path));
+            await Reject<WorkspaceException>(() => workspace.ReadFileAsync(path));
         File.WriteAllBytes(Path.Combine(root, "bom.txt"), [0xef, 0xbb, 0xbf, 0x61]);
         Assert((await workspace.ReadFileAsync("bom.txt")).Content == "a");
     });
@@ -70,7 +70,7 @@ try
             ".env", "src/.env.local", ".git/config", ".ssh/id_rsa", ".aws/credentials", ".codex/config", ".agents/a", ".cloudflared/a", "tunnel-token", "secret.pem", "private.key" })
         {
             Reject<WorkspaceException>(() => workspace.Resolve(path));
-            await RejectAsync<WorkspaceException>(() => Patch($"*** Add File: {path}\n+x"));
+            await Reject<WorkspaceException>(() => Patch($"*** Add File: {path}\n+x"));
         }
     });
     await Check("add Unicode and empty files; refuse overwrite", async () =>
@@ -78,14 +78,14 @@ try
         var result = await Patch("*** Add File: src/示例.cs\n+你好 👋\n*** Add File: zero.txt");
         Assert(result.Changes.Length == 2 && result.Changes[0].AfterBytes == Encoding.UTF8.GetByteCount("你好 👋\n"));
         Assert(Get("src/示例.cs") == "你好 👋\n" && Get("zero.txt") == "");
-        await RejectAsync<WorkspaceException>(() => Patch("*** Add File: src/示例.cs\n+overwrite"));
+        await Reject<WorkspaceException>(() => Patch("*** Add File: src/示例.cs\n+overwrite"));
         Assert(Get("src/示例.cs") == "你好 👋\n");
     });
     await Check("dry run validates but creates no files or directories", async () =>
     {
         var result = await Patch("*** Add File: preview/deep/new.txt\n+hello", dry: true);
         Assert(result.DryRun && result.Changes[0].Action == "add" && !Directory.Exists(Path.Combine(root, "preview")));
-        await RejectAsync<WorkspaceException>(() => Patch("*** Delete File: missing.txt", dry: true));
+        await Reject<WorkspaceException>(() => Patch("*** Delete File: missing.txt", dry: true));
     });
     await Check("ordered chunks and anchor update exact context", async () =>
     {
@@ -97,7 +97,7 @@ try
     {
         Put("ambiguous.txt", "a\na\n");
         foreach (var body in new[] { "@@\n-a\n+b", "@@\n- a\n+b", "@@ missing\n-a\n+b" })
-            await RejectAsync<WorkspaceException>(() => Patch("*** Update File: ambiguous.txt\n" + body));
+            await Reject<WorkspaceException>(() => Patch("*** Update File: ambiguous.txt\n" + body));
         Assert(Get("ambiguous.txt") == "a\na\n");
         await Patch("*** Update File: ambiguous.txt\n@@\n-a\n+b\n*** End of File");
         Assert(Get("ambiguous.txt") == "a\nb\n");
@@ -125,8 +125,8 @@ try
     await Check("move with update, move only, delete and target collision", async () =>
     {
         Put("move.txt", "old\n");
-        await RejectAsync<WorkspaceException>(() => Patch("*** Update File: move.txt\n*** Move to: read.txt"));
-        await RejectAsync<WorkspaceException>(() => Patch("*** Update File: move.txt\n*** Move to: .env"));
+        await Reject<WorkspaceException>(() => Patch("*** Update File: move.txt\n*** Move to: read.txt"));
+        await Reject<WorkspaceException>(() => Patch("*** Update File: move.txt\n*** Move to: .env"));
         await Patch("*** Update File: move.txt\n*** Move to: moved/new.txt\n@@\n-old\n+new");
         Assert(!File.Exists(Path.Combine(root, "move.txt")) && Get("moved/new.txt") == "new\n");
         await Patch("*** Update File: moved/new.txt\n*** Move to: moved/final.txt");
@@ -135,9 +135,9 @@ try
     });
     await Check("whole patch validation prevents earlier operations from writing", async () =>
     {
-        await RejectAsync<WorkspaceException>(() => Patch("*** Add File: atomic/new.txt\n+first\n*** Update File: read.txt\n@@\n-does not exist\n+bad"));
+        await Reject<WorkspaceException>(() => Patch("*** Add File: atomic/new.txt\n+first\n*** Update File: read.txt\n@@\n-does not exist\n+bad"));
         Assert(!Directory.Exists(Path.Combine(root, "atomic")));
-        await RejectAsync<WorkspaceException>(() => Patch("*** Delete File: read.txt\n*** Delete File: missing.txt"));
+        await Reject<WorkspaceException>(() => Patch("*** Delete File: read.txt\n*** Delete File: missing.txt"));
         Assert(Get("read.txt").StartsWith("one"));
     });
     await Check("duplicate paths, parent collisions and malformed patches rejected", async () =>
@@ -145,23 +145,23 @@ try
         foreach (var body in new[] { "*** Add File: duplicate\n+x\n*** Add File: ./duplicate\n+y",
             "*** Add File: parent\n+x\n*** Add File: parent/child\n+y", "*** Update File: read.txt\n@@\n one",
             "*** Update File: read.txt\n@@ -1,1 +1,1 @@\n-one\n+x", "*** Add File: wrong\nno prefix" })
-            await RejectAsync<WorkspaceException>(() => Patch(body));
-        await RejectAsync<WorkspaceException>(() => patches.PrepareAsync("not a patch"));
+            await Reject<WorkspaceException>(() => Patch(body));
+        await Reject<WorkspaceException>(() => patches.PrepareAsync("not a patch"));
         Assert(!File.Exists(Path.Combine(root, "duplicate")) && !File.Exists(Path.Combine(root, "parent")));
     });
     await Check("patch size, operation count, binary and resulting file byte limits", async () =>
     {
-        await RejectAsync<WorkspaceException>(() => Patch("*** Add File: too-large\n+" + new string('中', 100_000)));
-        await RejectAsync<WorkspaceException>(() => Patch("*** Add File: huge\n+" + new string('a', 1024 * 1024)));
-        await RejectAsync<WorkspaceException>(() => Patch("*** Add File: nul\n+a\0b"));
-        await RejectAsync<WorkspaceException>(() => Patch(string.Join('\n', Enumerable.Range(0, 65).Select(i => $"*** Add File: excess-{i}"))));
-        await RejectAsync<WorkspaceException>(() => Patch("*** Delete File: binary"));
+        await Reject<WorkspaceException>(() => Patch("*** Add File: too-large\n+" + new string('中', 100_000)));
+        await Reject<WorkspaceException>(() => Patch("*** Add File: huge\n+" + new string('a', 1024 * 1024)));
+        await Reject<WorkspaceException>(() => Patch("*** Add File: nul\n+a\0b"));
+        await Reject<WorkspaceException>(() => Patch(string.Join('\n', Enumerable.Range(0, 65).Select(i => $"*** Add File: excess-{i}"))));
+        await Reject<WorkspaceException>(() => Patch("*** Delete File: binary"));
     });
     await Check("pre-cancelled patch leaves no files or staging artifacts", async () =>
     {
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
-        await RejectAsync<OperationCanceledException>(() => Patch("*** Add File: cancelled.txt\n+x", ct: cancelled.Token));
+        await Reject<OperationCanceledException>(() => Patch("*** Add File: cancelled.txt\n+x", ct: cancelled.Token));
         Assert(!File.Exists(Path.Combine(root, "cancelled.txt")));
         Assert(!Directory.EnumerateFiles(root, ".minimcp-*", SearchOption.AllDirectories).Any());
     });
@@ -183,9 +183,9 @@ try
             File.CreateSymbolicLink(Path.Combine(root, "dangling"), Path.Combine(outside, "missing"));
             foreach (var path in new[] { "linked/secret", "linked-file", "dangling" })
             {
-                await RejectAsync<WorkspaceException>(() => workspace.ReadFileAsync(path));
-                await RejectAsync<WorkspaceException>(() => Patch($"*** Add File: {path}\n+x"));
-                await RejectAsync<WorkspaceException>(() => Patch($"*** Update File: read.txt\n*** Move to: {path}"));
+                await Reject<WorkspaceException>(() => workspace.ReadFileAsync(path));
+                await Reject<WorkspaceException>(() => Patch($"*** Add File: {path}\n+x"));
+                await Reject<WorkspaceException>(() => Patch($"*** Update File: read.txt\n*** Move to: {path}"));
             }
             Assert(File.ReadAllText(Path.Combine(outside, "secret")) == "secret");
             Directory.CreateSymbolicLink(Path.Combine(temporary, "root-link"), root);
@@ -210,10 +210,10 @@ try
         await bash.Value.RunAsync("export MINIMCP_TEST_STATE=hello; cd cwd");
         var next = await bash.Value.RunAsync("printf '%s' \"${MINIMCP_TEST_STATE-unset}\"; pwd");
         Assert(next.Stdout.StartsWith("unset") && next.Stdout.TrimEnd().EndsWith("project with spaces"));
-        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync("pwd", ".."));
-        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync("pwd", "missing"));
-        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync("pwd", timeoutSeconds: 0));
-        await RejectAsync<WorkspaceException>(() => bash.Value.RunAsync(new string('a', 65_537)));
+        await Reject<WorkspaceException>(() => bash.Value.RunAsync("pwd", ".."));
+        await Reject<WorkspaceException>(() => bash.Value.RunAsync("pwd", "missing"));
+        await Reject<WorkspaceException>(() => bash.Value.RunAsync("pwd", timeoutSeconds: 0));
+        await Reject<WorkspaceException>(() => bash.Value.RunAsync(new string('a', 65_537)));
     });
     await Check("stdin is closed and application secrets are not automatically inherited", async () =>
     {
@@ -248,7 +248,7 @@ try
     await Check("client cancellation cleans up and releases the mutation lock", async () =>
     {
         using var cancelled = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
-        await RejectAsync<OperationCanceledException>(() => bash.Value.RunAsync("sleep 30", cancellationToken: cancelled.Token));
+        await Reject<OperationCanceledException>(() => bash.Value.RunAsync("sleep 30", cancellationToken: cancelled.Token));
         Assert((await bash.Value.RunAsync("exit 0")).ExitCode == 0);
     });
     if (OperatingSystem.IsLinux())
@@ -267,7 +267,7 @@ try
             for (var i = 0; i < 200 && !File.Exists(Path.Combine(root, "cancel-child.pid")); i++)
                 await Task.Delay(10);
             cancelled.Cancel();
-            await RejectAsync<OperationCanceledException>(() => running);
+            await Reject<OperationCanceledException>(() => running);
             await AssertStopped(int.Parse(Get("cancel-child.pid")));
         });
     }
@@ -318,24 +318,3 @@ static async Task AssertStopped(int pid)
     throw new Exception($"Child process {pid} is still running.");
 }
 
-static void Assert(bool condition, string message = "Assertion failed.")
-{
-    if (!condition)
-        throw new Exception(message);
-}
-
-static void Reject<TException>(Action action) where TException : Exception
-{
-    try
-    { action(); }
-    catch (TException) { return; }
-    throw new Exception($"Expected {typeof(TException).Name}.");
-}
-
-static async Task RejectAsync<TException>(Func<Task> action) where TException : Exception
-{
-    try
-    { await action(); }
-    catch (TException) { return; }
-    throw new Exception($"Expected {typeof(TException).Name}.");
-}

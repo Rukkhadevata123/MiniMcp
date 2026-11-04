@@ -117,7 +117,7 @@ await Check("port conflict cleans failed startup without stopping its existing o
     await using var owner = new McpRuntime(0);
     await owner.StartAsync(configuration);
     await using var contender = new McpRuntime(owner.Address!.Port);
-    await RejectAsync<IOException>(() => contender.StartAsync(configuration));
+    await Reject<IOException>(() => contender.StartAsync(configuration));
     Assert(contender.Address is null);
     await Healthy(owner);
     await owner.StopAsync();
@@ -130,10 +130,10 @@ await Check("cancelled start and stop retain consistent ownership", async () =>
     using var cancelled = new CancellationTokenSource();
     cancelled.Cancel();
     await using var runtime = new McpRuntime(0);
-    await RejectAsync<OperationCanceledException>(() => runtime.StartAsync(configuration, cancelled.Token));
+    await Reject<OperationCanceledException>(() => runtime.StartAsync(configuration, cancelled.Token));
     Assert(runtime.Address is null);
     await runtime.StartAsync(configuration);
-    await RejectAsync<OperationCanceledException>(() => runtime.StopAsync(cancelled.Token));
+    await Reject<OperationCanceledException>(() => runtime.StopAsync(cancelled.Token));
     await Healthy(runtime);
     await runtime.StopAsync();
     Assert(runtime.Address is null);
@@ -148,7 +148,7 @@ await Check("disposal releases the port and prevents subsequent startup", async 
         var port = runtime.Address!.Port;
         await runtime.DisposeAsync();
         await runtime.DisposeAsync();
-        await RejectAsync<ObjectDisposedException>(() => runtime.StartAsync(configuration));
+        await Reject<ObjectDisposedException>(() => runtime.StartAsync(configuration));
         await using var replacement = new McpRuntime(port);
         await replacement.StartAsync(configuration);
         await Healthy(replacement);
@@ -275,15 +275,15 @@ await Check("configuration paths reject empty, malformed and ambiguous Windows p
     var paths = ConfigurationPaths.ForCurrentUser();
     var settings = paths.SettingsFile;
     foreach (var path in new[] { "", " ", "invalid\0path" })
-        await RejectAsync<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath(path, settings)));
-    await RejectAsync<ArgumentException>(() => Task.FromResult(paths.ResolveSettingsFile("settings.json", "relative/base")));
-    await RejectAsync<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath("project", "relative/settings.json")));
+        await Reject<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath(path, settings)));
+    await Reject<ArgumentException>(() => Task.FromResult(paths.ResolveSettingsFile("settings.json", "relative/base")));
+    await Reject<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath("project", "relative/settings.json")));
     if (OperatingSystem.IsWindows())
     {
         foreach (var path in new[] { "C:project", "C:", "\\project", "/project" })
         {
-            await RejectAsync<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath(path, settings)));
-            await RejectAsync<ArgumentException>(() => Task.FromResult(paths.ResolveSettingsFile(path, Path.GetTempPath())));
+            await Reject<ArgumentException>(() => Task.FromResult(ConfigurationPaths.ResolveValuePath(path, settings)));
+            await Reject<ArgumentException>(() => Task.FromResult(paths.ResolveSettingsFile(path, Path.GetTempPath())));
         }
     }
 });
@@ -339,20 +339,6 @@ await CliRunChecks.RunAsync(runner.InGroup("cli.run"));
 await CliProcessChecks.RunAsync(runner.InGroup("cli.process"));
 
 return runner.Finish();
-
-static void Assert(bool condition)
-{
-    if (!condition)
-        throw new Exception("Assertion failed.");
-}
-
-static async Task RejectAsync<TException>(Func<Task> action) where TException : Exception
-{
-    try
-    { await action(); }
-    catch (TException) { return; }
-    throw new Exception($"Expected {typeof(TException).Name}.");
-}
 
 internal sealed class RecordingSynchronizationContext : SynchronizationContext
 {

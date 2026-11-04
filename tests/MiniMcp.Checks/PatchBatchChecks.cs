@@ -147,8 +147,8 @@ internal static class PatchBatchChecks
             const string caseMove = "*** Update File: move.md\n*** Move to: MOVE.md";
             if (OperatingSystem.IsWindows())
             {
-                await RejectAsync<WorkspaceException>(() => fixture.Preview(differentCase));
-                await RejectAsync<WorkspaceException>(() => fixture.Preview(caseMove));
+                await Reject<WorkspaceException>(() => fixture.Preview(differentCase));
+                await Reject<WorkspaceException>(() => fixture.Preview(caseMove));
             }
             else
             {
@@ -174,15 +174,6 @@ internal static class PatchBatchChecks
             catch (OperationCanceledException) { }
             Assert(!Directory.Exists(fixture.Root), "Cancellation has no effects");
         });
-    }
-
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Patch batch: " + message); }
-    private static async Task RejectAsync<T>(Func<Task> action) where T : Exception
-    {
-        try
-        { await action(); }
-        catch (T) { return; }
-        throw new Exception($"Expected {typeof(T).Name}.");
     }
 
     private sealed class Fixture : IDisposable

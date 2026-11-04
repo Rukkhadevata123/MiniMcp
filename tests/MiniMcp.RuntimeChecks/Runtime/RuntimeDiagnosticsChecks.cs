@@ -341,11 +341,6 @@ internal static class RuntimeDiagnosticsChecks
             values.Add(value);
         return values;
     }
-    private static void Assert(bool condition, string reason)
-    {
-        if (!condition)
-            throw new Exception(reason);
-    }
 
     private sealed class LogProbe(ILogger logger) : IHostedService
     {

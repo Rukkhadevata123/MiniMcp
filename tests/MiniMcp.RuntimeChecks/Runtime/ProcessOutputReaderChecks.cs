@@ -109,19 +109,9 @@ internal static class ProcessOutputReaderChecks
         return (diagnostics, new RuntimeLoggerProvider(diagnostics, run).CreateLogger(category));
     }
 
-    private static void Assert(bool condition, string reason)
-    {
-        if (!condition)
-            throw new Exception(reason);
-    }
-
-    private static async Task Reject<T>(Task task) where T : Exception
-    {
-        try
-        { await task.WaitAsync(TimeSpan.FromSeconds(5)); }
-        catch (T) { return; }
-        throw new Exception("Expected " + typeof(T).Name);
-    }
+    // Reader tasks may never complete when the reader misbehaves; bound every expected failure.
+    private static Task<T> Reject<T>(Task task) where T : Exception =>
+        CheckAssertions.Reject<T>(task, TimeSpan.FromSeconds(5));
 
     private sealed class FragmentedReader(string text, int chunkSize) : TextReader
     {

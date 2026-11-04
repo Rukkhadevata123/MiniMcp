@@ -325,8 +325,3 @@ static void CheckReview(JsonElement preview, ExecutionMode mode, params string[]
     Assert(decision.GetProperty("canCommit").GetBoolean() == (blockers.Length == 0) && decision.GetProperty("requiresRecoveryRecord").GetBoolean() == (blockers.Length == 0), "Local blockers determine eligibility; every writable mode requires a real recovery record");
 }
 
-static void Assert(bool condition, string message)
-{
-    if (!condition)
-        throw new Exception(message);
-}

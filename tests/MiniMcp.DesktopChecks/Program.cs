@@ -211,4 +211,3 @@ await MonitorChecks.Run(runner.InGroup("monitor"));
 await RecoveryHistoryChecks.Run(runner.InGroup("recovery-history"));
 
 return runner.Finish();
-static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }

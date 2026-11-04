@@ -75,10 +75,4 @@ internal static class CheckRunnerChecks
             throw new Exception("Unknown tier was accepted");
         });
     }
-
-    private static void Assert(bool condition, string message)
-    {
-        if (!condition)
-            throw new Exception(message);
-    }
 }

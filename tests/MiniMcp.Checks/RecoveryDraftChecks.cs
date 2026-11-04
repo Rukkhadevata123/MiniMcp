@@ -143,14 +143,6 @@ internal static class RecoveryDraftChecks
         CheckImage(state.Before, bytes);
         Assert(state.BackupFile is not null && draft.Backups.Single(backup => backup.FileName == state.BackupFile).Bytes.AsSpan().SequenceEqual(bytes), "Complete immutable original backup");
     }
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery draft: " + message); }
-    private static void Reject<T>(Action action) where T : Exception
-    {
-        try
-        { action(); }
-        catch (T) { return; }
-        throw new Exception($"Expected {typeof(T).Name}.");
-    }
 
     private sealed class Fixture : IDisposable
     {

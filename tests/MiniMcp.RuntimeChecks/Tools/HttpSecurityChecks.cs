@@ -245,12 +245,6 @@ internal static class HttpSecurityChecks
         Assert(response.Headers.WwwAuthenticate.Any(value => value.Scheme == "Bearer" && string.IsNullOrEmpty(value.Parameter)));
     }
 
-    private static void Assert(bool condition)
-    {
-        if (!condition)
-            throw new Exception("HTTP authentication or request boundary assertion failed.");
-    }
-
     private sealed class UnknownLengthContent(byte[] bytes) : HttpContent
     {
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => stream.WriteAsync(bytes).AsTask();

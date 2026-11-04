@@ -178,5 +178,4 @@ internal static class RecoveryPreviewLifetimeChecks
 
     private static async Task Until(Func<bool> condition)
     { for (var index = 0; index < 500; index++) { if (condition()) return; await Task.Delay(10); } throw new Exception("Timed out waiting for recovery observation ownership."); }
-    private static void Assert(bool condition, string message) => PatchExecutionFixture.Assert(condition, message);
 }

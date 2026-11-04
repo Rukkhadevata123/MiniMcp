@@ -54,18 +54,18 @@ internal static class RecoveryLoadingChecks
         {
             using var fixture = new Fixture();
             var store = fixture.Store(ExecutionMode.ReadOnly);
-            await RejectAsync<ArgumentException>(() => store.LoadAsync(Guid.Empty));
+            await Reject<ArgumentException>(() => store.LoadAsync(Guid.Empty));
             using var cancelled = new CancellationTokenSource();
             cancelled.Cancel();
-            await RejectAsync<OperationCanceledException>(() => store.LoadAsync(Guid.NewGuid(), cancelled.Token));
-            await RejectAsync<IOException>(() => store.LoadAsync(Guid.NewGuid()));
+            await Reject<OperationCanceledException>(() => store.LoadAsync(Guid.NewGuid(), cancelled.Token));
+            await Reject<IOException>(() => store.LoadAsync(Guid.NewGuid()));
             Assert(!Directory.Exists(fixture.Storage), "No storage was created");
             Directory.CreateDirectory(fixture.Storage);
             var before = fixture.Snapshot();
-            await RejectAsync<IOException>(() => store.LoadAsync(Guid.NewGuid()));
+            await Reject<IOException>(() => store.LoadAsync(Guid.NewGuid()));
             Assert(before.SequenceEqual(fixture.Snapshot()), "Missing lock marker was not created");
             var prepared = await fixture.Prepare();
-            await RejectAsync<IOException>(() => store.LoadAsync(Guid.NewGuid()));
+            await Reject<IOException>(() => store.LoadAsync(Guid.NewGuid()));
             Assert(Directory.Exists(prepared.DirectoryPath), "Missing selected record leaves others intact");
         });
 
@@ -101,7 +101,7 @@ internal static class RecoveryLoadingChecks
                 original with { Paths = [original.Paths[0] with { Path = "../outside.md" }] } })
             {
                 fixture.SaveManifest(prepared, manifest);
-                await RejectAsync<JsonException>(() => fixture.Store().LoadAsync(original.ChangeId));
+                await Reject<JsonException>(() => fixture.Store().LoadAsync(original.ChangeId));
             }
             fixture.SaveManifest(prepared, original);
             _ = await fixture.Store().LoadAsync(original.ChangeId);
@@ -150,7 +150,7 @@ internal static class RecoveryLoadingChecks
             {
                 File.WriteAllBytes(backup, bad);
                 var before = fixture.Snapshot();
-                await RejectAsync<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
+                await Reject<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
                 Assert(before.SequenceEqual(fixture.Snapshot()), "Invalid backup bytes remain untouched");
             }
         });
@@ -168,7 +168,7 @@ internal static class RecoveryLoadingChecks
                     Paths = [state with { Before = state.Before! with {
                     ByteLength = bytes.Length, Sha256 = Convert.ToHexString(SHA256.HashData(bytes)) } }]
                 });
-                await RejectAsync<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
+                await Reject<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
             }
         });
 
@@ -182,7 +182,7 @@ internal static class RecoveryLoadingChecks
                 Assert((await fixture.Store().LoadAsync(prepared.Manifest.ChangeId)).Manifest.State == state, "State is retained, not inferred or promoted");
             }
             File.Delete(Path.Combine(prepared.DirectoryPath, "before-0000.bin"));
-            await RejectAsync<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
+            await Reject<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
             Assert(File.ReadAllText(Path.Combine(fixture.Root, "sample.md")) == "old\n", "No state triggers workspace writes");
         });
 
@@ -202,7 +202,7 @@ internal static class RecoveryLoadingChecks
                 using (var held = RecoveryFileSystem.OpenRead(files[^1]))
                 {
                     RecoveryFileSystem.Lock(held);
-                    await RejectAsync<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
+                    await Reject<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
                 }
             }
             finally
@@ -214,7 +214,7 @@ internal static class RecoveryLoadingChecks
                         File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             }
             File.WriteAllText(files[^1], "invalid marker");
-            await RejectAsync<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
+            await Reject<InvalidDataException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
             Assert(File.ReadAllText(files[^1]) == "invalid marker", "Bad marker is never truncated");
         });
 
@@ -227,7 +227,7 @@ internal static class RecoveryLoadingChecks
                 using var cancelled = new CancellationTokenSource();
                 var before = fixture.Snapshot();
                 var store = fixture.Store(hook: current => { if (stage == current) cancelled.Cancel(); return Task.CompletedTask; });
-                await RejectAsync<OperationCanceledException>(() => store.LoadAsync(prepared.Manifest.ChangeId, cancelled.Token));
+                await Reject<OperationCanceledException>(() => store.LoadAsync(prepared.Manifest.ChangeId, cancelled.Token));
                 Assert(before.SequenceEqual(fixture.Snapshot()), "Cancelled inspection is read-only");
                 _ = await fixture.Store().LoadAsync(prepared.Manifest.ChangeId);
             }
@@ -281,7 +281,7 @@ internal static class RecoveryLoadingChecks
                 using var cancelled = new CancellationTokenSource();
                 var reader = activeStore.LoadAsync(prepared.Manifest.ChangeId, cancelled.Token);
                 cancelled.Cancel();
-                await RejectAsync<OperationCanceledException>(() => reader);
+                await Reject<OperationCanceledException>(() => reader);
                 Assert(!writer.IsCompleted, "Cancelling an inspector does not interrupt the active writer");
                 release.TrySetResult();
                 var written = await writer;
@@ -346,18 +346,17 @@ internal static class RecoveryLoadingChecks
             var alias = Path.Combine(fixture.DirectoryPath, "backup-alias");
             var linked = OperatingSystem.IsWindows() ? CreateHardLink(alias, backup, IntPtr.Zero) : Link(backup, alias) == 0;
             Assert(linked, "Test hard link created");
-            await RejectAsync<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
+            await Reject<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId));
             File.Delete(alias);
             _ = await fixture.Store().LoadAsync(prepared.Manifest.ChangeId);
             if (!OperatingSystem.IsLinux())
                 return;
             File.Delete(backup);
             Assert(MakeFifo(backup, 0x180) == 0, "Test FIFO created");
-            await RejectAsync<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId).WaitAsync(TimeSpan.FromSeconds(3)));
+            await Reject<IOException>(() => fixture.Store().LoadAsync(prepared.Manifest.ChangeId).WaitAsync(TimeSpan.FromSeconds(3)));
         });
     }
 
-    private static void Assert(bool condition, string message) { if (!condition) throw new Exception("Recovery loading: " + message); }
     private static async Task RejectInvalidRecord(Func<Task> action)
     {
         try
@@ -365,8 +364,6 @@ internal static class RecoveryLoadingChecks
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected invalid recovery record to be rejected.");
     }
-    private static async Task RejectAsync<T>(Func<Task> action) where T : Exception
-    { try { await action(); } catch (T) { return; } throw new Exception($"Expected {typeof(T).Name}."); }
 
     [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CreateHardLink(string name, string existing, IntPtr attributes);
