@@ -66,48 +66,78 @@ internal sealed class CheckRunner
         var tier = TierFor(_suite, group, name);
         if (!_registered.Add(id))
             throw new InvalidOperationException($"Duplicate check ID: {id}");
-        if (_group is not null && !group.Equals(_group, StringComparison.OrdinalIgnoreCase) ||
-            _id is not null && !id.Equals(_id, StringComparison.OrdinalIgnoreCase) ||
-            _tier is not null && !_tier.Equals(tier, StringComparison.OrdinalIgnoreCase) ||
-            _filter is not null && !name.Contains(_filter, StringComparison.OrdinalIgnoreCase) &&
-            !id.Contains(_filter, StringComparison.OrdinalIgnoreCase))
+        if (!IsSelected(id, group, name, tier))
             return;
 
         Selected++;
         if (_list)
-        { _output.WriteLine($"{id}\t{name}\t{tier}"); return; }
+        {
+            _output.WriteLine($"{id}\t{name}\t{tier}");
+            return;
+        }
+
         var watch = Stopwatch.StartNew();
         Exception? failure = null;
         CheckSkippedException? skipped = null;
+        string? failedScenario = null;
+        var cleanup = new List<(string Label, Exception Error)>();
         var previous = CleanupFailures.Value;
         var previousScenario = ActiveScenario.Value;
-        var cleanup = new List<(string Label, Exception Error)>();
         CleanupFailures.Value = cleanup;
         ActiveScenario.Value = null;
-        string? failedScenario = null;
         try
         { await action(); }
         catch (CheckSkippedException reason) { skipped = reason; }
         catch (Exception error) { failure = error; failedScenario = ActiveScenario.Value; }
         finally { CleanupFailures.Value = previous; ActiveScenario.Value = previousScenario; }
 
+        var elapsed = $"{watch.Elapsed.TotalMilliseconds:F0} ms";
         if (failure is not null || cleanup.Count != 0)
-        {
-            Failed++;
-            if (failure is not null)
-                _output.WriteLine($"FAIL {id} ({watch.Elapsed.TotalMilliseconds:F0} ms){(failedScenario is null ? "" : " [" + failedScenario + "]")}: {failure}");
-            else
-                _output.WriteLine($"FAIL {id} ({watch.Elapsed.TotalMilliseconds:F0} ms): cleanup failed");
-            foreach (var (label, error) in cleanup)
-                _output.WriteLine($"FAIL CLEANUP {id} [{label}]: {error}");
-        }
+            ReportFailure(id, elapsed, failure, failedScenario, cleanup);
         else if (skipped is not null)
-        {
-            Skipped++;
-            _output.WriteLine($"SKIP {id} ({watch.Elapsed.TotalMilliseconds:F0} ms): {skipped.Message}");
-        }
+            ReportSkipped(id, elapsed, skipped.Message);
         else
-        { Passed++; _output.WriteLine($"PASS {id} ({watch.Elapsed.TotalMilliseconds:F0} ms)"); }
+            ReportPassed(id, elapsed);
+    }
+
+    // --group and --id are exact (case-insensitive); --tier matches the assigned category;
+    // --filter is a substring of the name or the ID. All given selectors must match.
+    private bool IsSelected(string id, string group, string name, string tier)
+    {
+        if (_group is not null && !group.Equals(_group, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (_id is not null && !id.Equals(_id, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (_tier is not null && !_tier.Equals(tier, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (_filter is not null && !name.Contains(_filter, StringComparison.OrdinalIgnoreCase) && !id.Contains(_filter, StringComparison.OrdinalIgnoreCase))
+            return false;
+        return true;
+    }
+
+    // A cleanup failure fails the check even when its body passed, and is always listed separately
+    // so the primary failure (if any) stays readable.
+    private void ReportFailure(string id, string elapsed, Exception? failure, string? scenario, List<(string Label, Exception Error)> cleanup)
+    {
+        Failed++;
+        if (failure is not null)
+            _output.WriteLine($"FAIL {id} ({elapsed}){(scenario is null ? "" : " [" + scenario + "]")}: {failure}");
+        else
+            _output.WriteLine($"FAIL {id} ({elapsed}): cleanup failed");
+        foreach (var (label, error) in cleanup)
+            _output.WriteLine($"FAIL CLEANUP {id} [{label}]: {error}");
+    }
+
+    private void ReportSkipped(string id, string elapsed, string reason)
+    {
+        Skipped++;
+        _output.WriteLine($"SKIP {id} ({elapsed}): {reason}");
+    }
+
+    private void ReportPassed(string id, string elapsed)
+    {
+        Passed++;
+        _output.WriteLine($"PASS {id} ({elapsed})");
     }
 
     // A fixture can finish cleanup without replacing an earlier assertion failure.
