@@ -172,7 +172,7 @@ internal static class PatchPlanChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string Directory { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-plan-{Guid.NewGuid():N}");
+        public string Directory { get; } = TemporaryTestDirectory.Reserve("plan");
         public string Root { get; }
         public ProjectWorkspace Workspace { get; }
         public PatchService Service { get; }
@@ -188,6 +188,6 @@ internal static class PatchPlanChecks
         public void Put(string relative, string text) => File.WriteAllText(Path(relative), text, new UTF8Encoding(false));
         public string Get(string relative) => File.ReadAllText(Path(relative));
         public Task<PatchPlan> Prepare(string body, CancellationToken token = default) => Service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch", token);
-        public void Dispose() { Workspace.Mutations.Dispose(); System.IO.Directory.Delete(Directory, recursive: true); }
+        public void Dispose() { Workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(Directory); }
     }
 }

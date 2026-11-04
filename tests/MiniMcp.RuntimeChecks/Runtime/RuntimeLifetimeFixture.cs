@@ -2,7 +2,7 @@ using MiniMcp.Configuration;
 
 internal sealed class RuntimeLifetimeFixture : IDisposable
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-lifetime-{Guid.NewGuid():N}");
+    private readonly string _directory = TemporaryTestDirectory.Reserve("lifetime");
 
     public RuntimeLifetimeFixture()
     {
@@ -18,5 +18,5 @@ internal sealed class RuntimeLifetimeFixture : IDisposable
 
     public RuntimeConfiguration Configuration { get; }
 
-    public void Dispose() => Directory.Delete(_directory, recursive: true);
+    public void Dispose() => TemporaryTestDirectory.Delete(_directory);
 }

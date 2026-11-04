@@ -136,7 +136,7 @@ internal static class PatchWritePolicyChecks
 
     private sealed class Fixture : IDisposable
     {
-        private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-write-policy-{Guid.NewGuid():N}");
+        private readonly string _directory = TemporaryTestDirectory.Reserve("write-policy");
         public string Root { get; }
         public string SettingsPath => Path.Combine(_directory, "settings.json");
         private readonly ProjectWorkspace _workspace;
@@ -156,6 +156,6 @@ internal static class PatchWritePolicyChecks
         }
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(_directory, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(_directory, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(_directory, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(_directory); }
     }
 }

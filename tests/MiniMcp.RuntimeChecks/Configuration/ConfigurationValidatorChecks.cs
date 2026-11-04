@@ -4,7 +4,7 @@ internal static class ConfigurationValidatorChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-validation-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("validation");
         var root = Path.Combine(temporary, "project");
         var source = Path.Combine(temporary, "config", "settings.json");
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "user", "state"));
@@ -141,6 +141,6 @@ internal static class ConfigurationValidatorChecks
                 return Task.CompletedTask;
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 }

@@ -15,13 +15,13 @@ var runner = new CheckRunner("protocol", args);
 foreach (var mode in Enum.GetValues<ExecutionMode>())
     await runner.CheckAsync("mcp", mode.ToString(), async () =>
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-protocol-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("protocol");
         try
         {
             Directory.CreateDirectory(temporary);
             await CheckModeAsync(temporary, mode);
         }
-        finally { CheckRunner.Cleanup(temporary, () => CheckRunner.DeleteTemporaryDirectory(temporary)); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     });
 return runner.Finish();
 

@@ -14,7 +14,7 @@ internal static class ConfigurationStoreChecks
         {
             await check(name, async () =>
             {
-                temporary = Path.Combine(Path.GetTempPath(), $"minimcp-configuration-{Guid.NewGuid():N}");
+                temporary = TemporaryTestDirectory.Reserve("configuration");
                 paths = new ConfigurationPaths(Path.Combine(temporary, "user config"), Path.Combine(temporary, "user state"));
                 loader = new ConfigurationStore(paths);
                 selected = Path.Combine(temporary, "project", "settings.json");
@@ -26,7 +26,7 @@ internal static class ConfigurationStoreChecks
                 finally
                 {
                     CheckRunner.Cleanup(temporary, () =>
-                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); });
+                    { TemporaryTestDirectory.Delete(temporary); });
                 }
             });
         }

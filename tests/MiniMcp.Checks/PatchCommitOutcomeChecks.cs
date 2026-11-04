@@ -257,7 +257,7 @@ internal static class PatchCommitOutcomeChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-commit-outcome-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("commit-outcome");
         public string Root { get; }
         public ProjectWorkspace Workspace { get; }
         public Fixture()
@@ -281,7 +281,7 @@ internal static class PatchCommitOutcomeChecks
         public void Dispose()
         {
             CheckRunner.Cleanup("outcome mutation gate", Workspace.Mutations.Dispose);
-            CheckRunner.Cleanup(DirectoryPath, () => CheckRunner.DeleteTemporaryDirectory(DirectoryPath));
+            TemporaryTestDirectory.Delete(DirectoryPath);
         }
     }
 }

@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 internal sealed class TunnelFixture : IAsyncDisposable
 {
-    internal string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-tunnel-{Guid.NewGuid():N}");
+    internal string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("tunnel");
     internal string TokenFile { get; }
     internal RuntimeConfiguration Configuration { get; }
     internal McpRuntime Runtime { get; }

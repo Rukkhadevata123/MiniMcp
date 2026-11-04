@@ -6,7 +6,7 @@ internal static class RuntimeConfigurationChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-runtime-config-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("runtime-config");
         var root = Path.Combine(temporary, "project");
         var source = Path.Combine(temporary, "settings.json");
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "state"));
@@ -196,6 +196,6 @@ internal static class RuntimeConfigurationChecks
                 Assert(!Directory.Exists(Path.GetDirectoryName(paths.RecoveryDirectory)));
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 }

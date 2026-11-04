@@ -216,7 +216,7 @@ internal static class PatchDiffChecks
 
     private sealed class Fixture : IDisposable
     {
-        private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-diff-{Guid.NewGuid():N}");
+        private readonly string _directory = TemporaryTestDirectory.Reserve("diff");
         public string Root { get; }
         private readonly ProjectWorkspace _workspace;
         private readonly PatchService _service;
@@ -242,6 +242,6 @@ internal static class PatchDiffChecks
         public PatchPlan Combine(params PatchPlan[] plans) => new(_service, plans.SelectMany(plan => plan.Changes).ToImmutableArray());
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(_directory, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(_directory, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(_directory, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(_directory); }
     }
 }

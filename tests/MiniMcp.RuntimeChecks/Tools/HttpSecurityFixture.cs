@@ -22,7 +22,7 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
     public const string Issuer = "https://fixture-team.cloudflareaccess.com";
     public const string Audience = "fixture-application-aud";
     private const string KeyId = "fixture-key";
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-http-security-{Guid.NewGuid():N}");
+    private readonly string _directory = TemporaryTestDirectory.Reserve("http-security");
     private readonly RSA _rsa = RSA.Create(2048);
     public HttpSecurityFixture(AuthenticationMode mode = AuthenticationMode.CloudflareAccess,
         ExecutionMode executionMode = ExecutionMode.ReadOnly, bool mapProbes = true,
@@ -153,7 +153,7 @@ internal sealed class HttpSecurityFixture : IAsyncDisposable
         await Runtime.DisposeAsync();
         Client.Dispose();
         _rsa.Dispose();
-        Directory.Delete(_directory, recursive: true);
+        TemporaryTestDirectory.Delete(_directory);
     }
 
     internal sealed class SigningDocuments(string jwks) : IDocumentRetriever

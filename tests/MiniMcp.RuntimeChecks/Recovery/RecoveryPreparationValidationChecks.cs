@@ -237,7 +237,7 @@ internal static class RecoveryPreparationValidationChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-preparation-validation-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("preparation-validation");
         public string Root { get; }
         public string Storage => Path.Combine(DirectoryPath, "archive", "recovery");
         private readonly ConfigurationPaths _paths;
@@ -264,6 +264,6 @@ internal static class RecoveryPreparationValidationChecks
         public void Put(string name, string text) => File.WriteAllText(Path.Combine(Root, name), text, new UTF8Encoding(false));
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + ":" + (Directory.Exists(path) ? "directory" : Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }

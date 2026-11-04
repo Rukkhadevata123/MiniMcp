@@ -11,5 +11,6 @@
     <Compile Include="../CheckInfrastructure/CheckRunner.cs" Link="CheckRunner.cs" />
     <Compile Include="../CheckInfrastructure/CheckAssertions.cs" Link="CheckAssertions.cs" />
     <Compile Include="../CheckInfrastructure/GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="../CheckInfrastructure/TemporaryTestDirectory.cs" Link="TemporaryTestDirectory.cs" />
   </ItemGroup>
 </Project>

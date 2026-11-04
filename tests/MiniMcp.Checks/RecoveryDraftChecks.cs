@@ -146,7 +146,7 @@ internal static class RecoveryDraftChecks
 
     private sealed class Fixture : IDisposable
     {
-        private readonly string _directory = Path.Combine(Path.GetTempPath(), $"minimcp-recovery-draft-{Guid.NewGuid():N}");
+        private readonly string _directory = TemporaryTestDirectory.Reserve("recovery-draft");
         public string Root { get; }
         private readonly ProjectWorkspace _workspace;
         private readonly PatchService _service;
@@ -161,6 +161,6 @@ internal static class RecoveryDraftChecks
         public Task<PatchPlan> Prepare(string body) => _service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch");
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(_directory, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(_directory, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(_directory, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(_directory); }
     }
 }

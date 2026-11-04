@@ -208,7 +208,7 @@ internal static class RecoveryManifestValidationChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-recovery-validation-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("recovery-validation");
         public string Root { get; }
         private readonly ProjectWorkspace _workspace;
         private readonly PatchService _service;
@@ -227,6 +227,6 @@ internal static class RecoveryManifestValidationChecks
         public void Validate(RecoveryManifest manifest, Guid? expectedId = null) => RecoveryManifestValidator.Validate(manifest, Root, expectedId ?? manifest.ChangeId);
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }

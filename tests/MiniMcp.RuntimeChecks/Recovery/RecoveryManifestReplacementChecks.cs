@@ -350,7 +350,7 @@ internal static class RecoveryManifestReplacementChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-manifest-replacement-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("manifest-replacement");
         public string Root { get; }
         public string Storage => Path.Combine(DirectoryPath, "archive", "recovery");
         private readonly ConfigurationPaths _paths;
@@ -382,6 +382,6 @@ internal static class RecoveryManifestReplacementChecks
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + ":" + (Directory.Exists(path) ? "directory" : Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
         public string[] ProjectSnapshot() => Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(Root, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))).ToArray();
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }

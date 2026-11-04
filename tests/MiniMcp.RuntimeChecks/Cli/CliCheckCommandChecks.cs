@@ -329,7 +329,7 @@ internal static class CliCheckCommandChecks
 
     private sealed class Fixture : IDisposable
     {
-        internal string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-cli-check-{Guid.NewGuid():N}");
+        internal string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("cli-check");
         internal string Root { get; }
         internal string Working { get; }
         internal ConfigurationPaths Paths { get; }
@@ -396,14 +396,7 @@ internal static class CliCheckCommandChecks
             socket.Bind(new IPEndPoint(IPAddress.Loopback, port ?? Settings.Port));
         }
 
-        public void Dispose()
-        {
-            var target = Path.GetFullPath(DirectoryPath);
-            var temporary = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (!target.StartsWith(temporary, StringComparison.Ordinal) ||
-                !Path.GetFileName(target).StartsWith("minimcp-cli-check-", StringComparison.Ordinal))
-                throw new Exception("Unsafe CLI fixture cleanup target.");
-            Directory.Delete(target, recursive: true);
-        }
+        public void Dispose() => TemporaryTestDirectory.Delete(DirectoryPath);
+
     }
 }

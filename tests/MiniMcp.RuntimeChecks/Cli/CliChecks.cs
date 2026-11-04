@@ -8,7 +8,7 @@ internal static class CliChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-cli-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("cli");
         var root = Path.Combine(temporary, "project");
         var working = Path.Combine(temporary, "work");
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "state"));
@@ -213,7 +213,7 @@ internal static class CliChecks
                 finally { owner.Stop(); }
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 
     private sealed class ReadyWriter : StringWriter

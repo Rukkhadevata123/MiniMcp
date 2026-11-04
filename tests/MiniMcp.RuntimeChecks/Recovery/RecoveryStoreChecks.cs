@@ -247,7 +247,7 @@ internal static class RecoveryStoreChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-recovery-store-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("recovery-store");
         public string Root { get; }
         public string Storage => Path.Combine(DirectoryPath, "archive", "recovery");
         public Guid RunId { get; } = Guid.NewGuid();
@@ -280,6 +280,6 @@ internal static class RecoveryStoreChecks
         public void PutStorage(string name, string value) { var path = Path.Combine(Storage, name); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, value); }
         public string[] ProjectSnapshot() => Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories).Order().Select(path => Path.GetRelativePath(Root, path) + ":" + Convert.ToBase64String(File.ReadAllBytes(path))).ToArray();
         public IEnumerable<string> RecordDirectories() => Directory.Exists(Storage) ? Directory.EnumerateDirectories(Storage).Select(Path.GetFileName).Select(name => name!) : [];
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }

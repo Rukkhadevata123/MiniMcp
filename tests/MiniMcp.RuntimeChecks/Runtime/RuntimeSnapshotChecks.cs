@@ -7,7 +7,7 @@ internal static class RuntimeSnapshotChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-snapshots-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("snapshots");
         var source = Path.Combine(temporary, "settings.json");
         Directory.CreateDirectory(Path.Combine(temporary, "project"));
         var store = new ConfigurationStore(new ConfigurationPaths(Path.Combine(temporary, "user"), Path.Combine(temporary, "state")));
@@ -131,6 +131,6 @@ internal static class RuntimeSnapshotChecks
                 Assert(ReferenceEquals(runtime.Snapshot, disposed));
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 }

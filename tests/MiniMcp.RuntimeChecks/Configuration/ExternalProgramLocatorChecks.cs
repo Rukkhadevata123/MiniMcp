@@ -4,7 +4,7 @@ internal static class ExternalProgramLocatorChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-programs-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("programs");
         Directory.CreateDirectory(temporary);
         var settings = Path.Combine(temporary, "settings.json");
         var cloudflared = OperatingSystem.IsWindows() ? "cloudflared.exe" : "cloudflared";
@@ -134,6 +134,6 @@ internal static class ExternalProgramLocatorChecks
                 return Task.CompletedTask;
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 }

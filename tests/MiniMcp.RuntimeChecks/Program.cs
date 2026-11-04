@@ -189,7 +189,7 @@ await Check("configuration defaults follow user directories and native XDG rules
 {
     var previousConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
     var previousState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
-    var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-paths-{Guid.NewGuid():N}");
+    var temporary = TemporaryTestDirectory.Reserve("paths");
     try
     {
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.Combine(temporary, "config"));
@@ -244,7 +244,7 @@ await Check("settings selection is anchored to the caller and leaves local polic
 await Check("JSON paths use their own file directories and remain stable after cwd changes", () =>
 {
     var previous = Environment.CurrentDirectory;
-    var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-paths-{Guid.NewGuid():N}");
+    var temporary = TemporaryTestDirectory.Reserve("paths");
     var settings = Path.Combine(temporary, "config", "settings.json");
     var policy = Path.Combine(temporary, "user", "policy.json");
     try

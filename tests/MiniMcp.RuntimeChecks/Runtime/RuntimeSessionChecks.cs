@@ -9,7 +9,7 @@ internal static class RuntimeSessionChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-sessions-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("sessions");
         Directory.CreateDirectory(temporary);
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user"), Path.Combine(temporary, "state"));
         var bash = Path.Combine(temporary, "bash-fixture");
@@ -168,7 +168,7 @@ internal static class RuntimeSessionChecks
                 Assert(runtime.Execution!.RunId != execution.RunId && runtime.Execution.RunId == runtime.Snapshot.RunId);
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 
     private abstract class UnconstructableService { }

@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Text;
 using MiniMcp.Configuration;
 
-var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-checks-{Guid.NewGuid():N}");
+var temporary = TemporaryTestDirectory.Reserve("checks");
 var root = Path.Combine(temporary, "project with spaces");
 Directory.CreateDirectory(root);
 var workspace = new ProjectWorkspace(root);
@@ -296,7 +296,7 @@ try
     await RecoveryManifestValidationChecks.RunAsync(runner.InGroup("recovery.validation"));
     return runner.Finish();
 }
-finally { Directory.Delete(temporary, recursive: true); }
+finally { TemporaryTestDirectory.Delete(temporary); }
 
 static async Task AssertStopped(int pid)
 {

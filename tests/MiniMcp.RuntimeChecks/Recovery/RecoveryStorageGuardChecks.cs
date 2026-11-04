@@ -181,7 +181,7 @@ internal static class RecoveryStorageGuardChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-recovery-guard-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("recovery-guard");
         public string Root { get; }
         public string Storage => Path.Combine(DirectoryPath, "archive", "recovery");
         private readonly ConfigurationPaths _paths;
@@ -202,6 +202,6 @@ internal static class RecoveryStorageGuardChecks
         }
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() => Directory.Delete(DirectoryPath, recursive: true);
+        public void Dispose() => TemporaryTestDirectory.Delete(DirectoryPath);
     }
 }

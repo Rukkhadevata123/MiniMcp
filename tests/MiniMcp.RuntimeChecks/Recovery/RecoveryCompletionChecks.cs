@@ -292,7 +292,7 @@ internal static class RecoveryCompletionChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-completion-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("completion");
         public string Root { get; }
         public string Storage => Path.Combine(DirectoryPath, "archive", "recovery");
         public ProjectWorkspace Workspace { get; }
@@ -329,7 +329,7 @@ internal static class RecoveryCompletionChecks
         public void Dispose()
         {
             CheckRunner.Cleanup("completion mutation gate", Workspace.Mutations.Dispose);
-            CheckRunner.Cleanup(DirectoryPath, () => CheckRunner.DeleteTemporaryDirectory(DirectoryPath));
+            TemporaryTestDirectory.Delete(DirectoryPath);
         }
     }
 }

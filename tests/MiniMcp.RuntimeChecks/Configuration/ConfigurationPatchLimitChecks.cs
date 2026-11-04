@@ -174,7 +174,7 @@ internal static class ConfigurationPatchLimitChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-limit-config-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("limit-config");
         public string Source { get; }
         public ConfigurationPaths Paths { get; }
         public ConfigurationStore Store { get; }
@@ -195,6 +195,6 @@ internal static class ConfigurationPatchLimitChecks
         }
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => Path.GetRelativePath(DirectoryPath, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() => Directory.Delete(DirectoryPath, recursive: true);
+        public void Dispose() => TemporaryTestDirectory.Delete(DirectoryPath);
     }
 }

@@ -9,7 +9,7 @@ using MiniMcp.Services;
 
 internal sealed class PatchExecutionFixture : IDisposable
 {
-    public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-patch-execution-{Guid.NewGuid():N}");
+    public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("patch-execution");
     public Guid RunId { get; } = Guid.NewGuid();
     public string Root { get; }
     public RuntimeConfiguration Configuration { get; }
@@ -70,11 +70,7 @@ internal sealed class PatchExecutionFixture : IDisposable
     public static async Task Drain(Task task) { try { await task; } catch { /* Drain owned work without replacing the check's original error. */ } }
     public void Dispose()
     {
-        var directory = Path.GetFullPath(DirectoryPath);
-        if (!string.Equals(Path.GetDirectoryName(directory), Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())),
-                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
-            !Path.GetFileName(directory).StartsWith("minimcp-patch-execution-", StringComparison.Ordinal))
-            throw new IOException("Unexpected test cleanup path.");
-        CheckRunner.Cleanup(directory, () => CheckRunner.DeleteTemporaryDirectory(directory));
+        TemporaryTestDirectory.Delete(DirectoryPath);
+
     }
 }

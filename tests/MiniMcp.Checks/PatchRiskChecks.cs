@@ -176,7 +176,7 @@ internal static class PatchRiskChecks
 
     private sealed class Fixture : IDisposable
     {
-        private string DirectoryPath { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-risk-{Guid.NewGuid():N}");
+        private string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("risk");
         public string Root { get; }
         public string SettingsPath => System.IO.Path.Combine(DirectoryPath, "settings.json");
         private ProjectWorkspace Workspace { get; }
@@ -195,6 +195,6 @@ internal static class PatchRiskChecks
             PatchRiskClassifier.Classify(PatchDiffBuilder.Create(plan), settingsPath ?? SettingsPath, new());
         public string[] Snapshot() => Directory.EnumerateFileSystemEntries(DirectoryPath, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(path => System.IO.Path.GetRelativePath(DirectoryPath, path) + (Directory.Exists(path) ? "/" : ":" + Convert.ToBase64String(File.ReadAllBytes(path)))).ToArray();
-        public void Dispose() { Workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { Workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }

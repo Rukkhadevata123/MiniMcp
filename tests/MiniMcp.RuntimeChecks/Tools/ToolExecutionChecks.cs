@@ -8,7 +8,7 @@ internal static class ToolExecutionChecks
     {
         await check("execution defers Bash initialization past reads, previews, denials and cancellation", async () =>
         {
-            var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-execution-{Guid.NewGuid():N}");
+            var temporary = TemporaryTestDirectory.Reserve("execution");
             var root = Path.Combine(temporary, "project");
             Directory.CreateDirectory(root);
             File.WriteAllText(Path.Combine(root, "sample.txt"), "original\n");
@@ -51,7 +51,7 @@ internal static class ToolExecutionChecks
                     Directory.Exists(Path.GetDirectoryName(paths.PolicyFile)) || Directory.Exists(Path.GetDirectoryName(paths.RecoveryDirectory)))
                     throw new Exception("Preview, denial or cancellation created files or state directories.");
             }
-            finally { Directory.Delete(temporary, recursive: true); }
+            finally { TemporaryTestDirectory.Delete(temporary); }
         });
     }
 }

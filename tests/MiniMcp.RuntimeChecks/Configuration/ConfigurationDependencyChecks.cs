@@ -4,7 +4,7 @@ internal static class ConfigurationDependencyChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-dependencies-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("dependencies");
         var source = Path.Combine(temporary, "settings.json");
         var root = Path.Combine(temporary, "project");
         var paths = new ConfigurationPaths(Path.Combine(temporary, "user"), Path.Combine(temporary, "state"));
@@ -197,6 +197,6 @@ internal static class ConfigurationDependencyChecks
                 catch (OperationCanceledException) { }
             });
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 }

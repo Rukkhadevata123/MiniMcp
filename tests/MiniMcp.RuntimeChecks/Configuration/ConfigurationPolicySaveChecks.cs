@@ -20,7 +20,7 @@ internal static class ConfigurationPolicySaveChecks
         {
             await check(name, async () =>
             {
-                temporary = Path.Combine(Path.GetTempPath(), $"minimcp-policy-save-{Guid.NewGuid():N}");
+                temporary = TemporaryTestDirectory.Reserve("policy-save");
                 root = Path.Combine(temporary, "project");
                 source = Path.Combine(temporary, "settings.json");
                 paths = new ConfigurationPaths(Path.Combine(temporary, "user", "config"), Path.Combine(temporary, "state"));
@@ -38,7 +38,7 @@ internal static class ConfigurationPolicySaveChecks
                 finally
                 {
                     CheckRunner.Cleanup(temporary, () =>
-                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); });
+                    { TemporaryTestDirectory.Delete(temporary); });
                 }
             });
         }

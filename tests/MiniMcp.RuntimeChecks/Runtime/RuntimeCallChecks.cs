@@ -10,7 +10,7 @@ internal static class RuntimeCallChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
-        var temporary = Path.Combine(Path.GetTempPath(), $"minimcp-calls-{Guid.NewGuid():N}");
+        var temporary = TemporaryTestDirectory.Reserve("calls");
         var root = Path.Combine(temporary, "project");
         Directory.CreateDirectory(root);
         File.WriteAllText(Path.Combine(root, "sample.txt"), "original\n");
@@ -88,7 +88,7 @@ internal static class RuntimeCallChecks
             await check("cancelled shutdown retains one unfinished host disposal and truthful session ownership", () =>
                 CheckBlockedCleanupAsync(readOnly, blockStop: false));
         }
-        finally { Directory.Delete(temporary, recursive: true); }
+        finally { TemporaryTestDirectory.Delete(temporary); }
     }
 
     private static async Task CheckBlockedCleanupAsync(RuntimeConfiguration configuration, bool blockStop)

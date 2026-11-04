@@ -289,7 +289,7 @@ internal static class RecoveryFinalizationChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-finalization-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("finalization");
         public string Root { get; }
         public string Storage => Path.Combine(DirectoryPath, "archive", "recovery");
         public ProjectWorkspace Workspace { get; }
@@ -335,6 +335,6 @@ internal static class RecoveryFinalizationChecks
                 catch (DirectoryNotFoundException) when (attempt < 2) { }
             }
         }
-        public void Dispose() { Workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { Workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }

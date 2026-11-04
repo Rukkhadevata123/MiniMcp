@@ -15,7 +15,7 @@ internal static class ConfigurationSaveChecks
         {
             await check(name, async () =>
             {
-                temporary = Path.Combine(Path.GetTempPath(), $"minimcp-save-{Guid.NewGuid():N}");
+                temporary = TemporaryTestDirectory.Reserve("save");
                 root = Path.Combine(temporary, "project");
                 source = Path.Combine(temporary, "settings.json");
                 paths = new ConfigurationPaths(Path.Combine(temporary, "local config"), Path.Combine(temporary, "state"));
@@ -28,7 +28,7 @@ internal static class ConfigurationSaveChecks
                 finally
                 {
                     CheckRunner.Cleanup(temporary, () =>
-                    { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); });
+                    { TemporaryTestDirectory.Delete(temporary); });
                 }
             });
         }

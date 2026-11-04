@@ -342,7 +342,7 @@ internal static class RecordedPatchCommitChecks
 
     internal sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"minimcp-recorded-commit-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("recorded-commit");
         public Guid RunId { get; } = Guid.NewGuid();
         public string Root { get; }
         public string Storage => System.IO.Path.Combine(DirectoryPath, "archive", "recovery");
@@ -381,12 +381,8 @@ internal static class RecordedPatchCommitChecks
         public void Dispose()
         {
             Workspace.Mutations.Dispose();
-            var directory = System.IO.Path.GetFullPath(DirectoryPath);
-            if (!string.Equals(System.IO.Path.GetDirectoryName(directory), System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())),
-                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
-                !System.IO.Path.GetFileName(directory).StartsWith("minimcp-recorded-commit-", StringComparison.Ordinal))
-                throw new IOException("Unexpected test cleanup path.");
-            CheckRunner.Cleanup(directory, () => CheckRunner.DeleteTemporaryDirectory(directory));
+            TemporaryTestDirectory.Delete(DirectoryPath);
+
         }
     }
 }

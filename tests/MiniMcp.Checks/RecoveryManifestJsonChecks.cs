@@ -211,7 +211,7 @@ internal static class RecoveryManifestJsonChecks
 
     private sealed class Fixture : IDisposable
     {
-        public string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), $"minimcp-recovery-json-{Guid.NewGuid():N}");
+        public string DirectoryPath { get; } = TemporaryTestDirectory.Reserve("recovery-json");
         public string Root { get; }
         private readonly ProjectWorkspace _workspace;
         private readonly PatchService _service;
@@ -226,6 +226,6 @@ internal static class RecoveryManifestJsonChecks
         public Task<PatchPlan> Prepare(string body) => _service.PrepareAsync("*** Begin Patch\n" + body + "\n*** End Patch");
         public async Task<RecoveryManifest> Manifest() => RecoveryDraftBuilder.Create(Guid.NewGuid(),
             await Prepare("*** Update File: sample.md\n@@\n-old\n+new")).Manifest;
-        public void Dispose() { _workspace.Mutations.Dispose(); Directory.Delete(DirectoryPath, recursive: true); }
+        public void Dispose() { _workspace.Mutations.Dispose(); TemporaryTestDirectory.Delete(DirectoryPath); }
     }
 }
