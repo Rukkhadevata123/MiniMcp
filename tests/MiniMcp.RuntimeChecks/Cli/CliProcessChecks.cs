@@ -13,7 +13,7 @@ using MiniMcp.Configuration;
 
 internal sealed record CliProcessScenario(string Directory, string Behavior);
 
-internal static class CliProcessChecks
+internal static partial class CliProcessChecks
 {
     internal static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
@@ -245,22 +245,28 @@ internal static class CliProcessChecks
         }
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachConsole(uint pid);
-    [DllImport("kernel32.dll")]
+    private static partial bool AttachConsole(uint pid);
+
+    [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool FreeConsole();
-    [DllImport("kernel32.dll", SetLastError = true)]
+    private static partial bool FreeConsole();
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetConsoleCtrlHandler(IntPtr handler, [MarshalAs(UnmanagedType.Bool)] bool add);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern uint GetConsoleProcessList([Out] uint[] processes, uint capacity);
-    [DllImport("kernel32.dll", SetLastError = true)]
+    private static partial bool SetConsoleCtrlHandler(IntPtr handler, [MarshalAs(UnmanagedType.Bool)] bool add);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial uint GetConsoleProcessList([Out] uint[] processes, uint capacity);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GenerateConsoleCtrlEvent(uint signal, uint group);
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetConsoleWindow();
-    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
-    private static extern int Kill(int pid, int signal);
+    private static partial bool GenerateConsoleCtrlEvent(uint signal, uint group);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetConsoleWindow();
+
+    [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static partial int Kill(int pid, int signal);
 }

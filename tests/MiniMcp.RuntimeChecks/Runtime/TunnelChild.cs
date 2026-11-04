@@ -8,7 +8,7 @@ internal sealed record TunnelScenario(string Directory, string Behavior = "wait"
 internal sealed record TunnelChildReport(int ProcessId, string[] Arguments, bool Redirected, bool InJob,
     bool HasConsole, bool HostReady, bool HasInheritedToken);
 
-internal static class TunnelChild
+internal static partial class TunnelChild
 {
     internal static async Task<int> RunAsync(string tokenFile, string[] arguments)
     {
@@ -101,9 +101,10 @@ internal static class TunnelChild
         File.Move(path + ".tmp", path, overwrite: true);
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsProcessInJob(IntPtr process, IntPtr job, [MarshalAs(UnmanagedType.Bool)] out bool result);
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetConsoleWindow();
+    private static partial bool IsProcessInJob(IntPtr process, IntPtr job, [MarshalAs(UnmanagedType.Bool)] out bool result);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetConsoleWindow();
 }

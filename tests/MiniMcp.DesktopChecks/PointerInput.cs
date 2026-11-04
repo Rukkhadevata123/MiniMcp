@@ -7,7 +7,7 @@ using Windows.Foundation;
 namespace MiniMcp.DesktopChecks;
 
 // Only used by the explicit interactive UI check; restore the user's pointer even on failure.
-internal sealed class PointerInput : IDisposable
+internal sealed partial class PointerInput : IDisposable
 {
     private readonly ScreenPoint _original;
     private readonly OverlappedPresenter _presenter;
@@ -54,14 +54,40 @@ internal sealed class PointerInput : IDisposable
         keybd_event(9, 0, 2, UIntPtr.Zero);
     }
 
-    [StructLayout(LayoutKind.Sequential)] private struct ScreenPoint { public int X, Y; }
-    [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out ScreenPoint point);
-    [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static extern bool ClientToScreen(IntPtr window, ref ScreenPoint point);
-    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(ScreenPoint point);
-    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
-    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
-    [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static extern bool ShowWindow(IntPtr window, int command);
-    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ScreenPoint
+    {
+        public int X, Y;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetCursorPos(out ScreenPoint point);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetCursorPos(int x, int y);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ClientToScreen(IntPtr window, ref ScreenPoint point);
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr WindowFromPoint(ScreenPoint point);
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetAncestor(IntPtr window, uint flags);
+
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr GetForegroundWindow();
+
+    [LibraryImport("user32.dll")]
+    private static partial void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ShowWindow(IntPtr window, int command);
+
+    [LibraryImport("user32.dll")]
+    private static partial void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extraInfo);
 }

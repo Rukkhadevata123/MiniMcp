@@ -160,27 +160,27 @@ internal sealed partial class ProcessLifetime : IDisposable
         }
     }
 
-    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
-    private static extern int KillGroup(int pid, int signal);
+    [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static partial int KillGroup(int pid, int signal);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern SafeFileHandle CreateJobObject(IntPtr attributes, string? name);
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateJobObjectW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    private static partial SafeFileHandle CreateJobObject(IntPtr attributes, string? name);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetInformationJobObject(SafeFileHandle job, int informationClass, ref ExtendedLimitInformation information, uint length);
+    private static partial bool SetInformationJobObject(SafeFileHandle job, int informationClass, ref ExtendedLimitInformation information, uint length);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
+    private static partial bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool TerminateJobObject(SafeFileHandle job, uint exitCode);
+    private static partial bool TerminateJobObject(SafeFileHandle job, uint exitCode);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool QueryInformationJobObject(SafeFileHandle job, int informationClass,
+    private static partial bool QueryInformationJobObject(SafeFileHandle job, int informationClass,
         out BasicAccountingInformation information, uint length, IntPtr returnLength);
 
     [StructLayout(LayoutKind.Sequential)]

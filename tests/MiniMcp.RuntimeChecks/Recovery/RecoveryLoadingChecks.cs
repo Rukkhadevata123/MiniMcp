@@ -7,7 +7,7 @@ using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Recovery;
 
-internal static class RecoveryLoadingChecks
+internal static partial class RecoveryLoadingChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
@@ -365,12 +365,15 @@ internal static class RecoveryLoadingChecks
         throw new Exception("Expected invalid recovery record to be rejected.");
     }
 
-    [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CreateHardLink(string name, string existing, IntPtr attributes);
-    [DllImport("libc", EntryPoint = "link", SetLastError = true)]
-    private static extern int Link([MarshalAs(UnmanagedType.LPUTF8Str)] string existing, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
-    [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
-    private static extern int MakeFifo([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CreateHardLink(string name, string existing, IntPtr attributes);
+
+    [LibraryImport("libc", EntryPoint = "link", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int Link(string existing, string name);
+
+    [LibraryImport("libc", EntryPoint = "mkfifo", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int MakeFifo(string path, uint mode);
 
     private sealed class Fixture : IDisposable
     {

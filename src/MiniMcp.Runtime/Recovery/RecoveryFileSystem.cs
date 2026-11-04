@@ -9,7 +9,7 @@ internal readonly record struct RecoveryFileIdentity(ulong Device, ulong File);
 // Native directory creation is exclusive. Handle metadata rejects links/special files before file I/O.
 // Linux statx uses its fixed UAPI layout, not architecture-dependent libc struct stat offsets:
 // https://github.com/torvalds/linux/blob/master/include/uapi/linux/stat.h
-internal static class RecoveryFileSystem
+internal static partial class RecoveryFileSystem
 {
     public static bool CreateDirectory(string path)
     {
@@ -163,30 +163,55 @@ internal static class RecoveryFileSystem
     }
     private static IOException Failure(string operation, int code) => new($"{operation} failed (native error {code}).", new Win32Exception(code));
 
-    [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CreateDirectoryWindows(string path, IntPtr attributes);
-    [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern SafeFileHandle CreateFileWindows(string path, uint access, uint share, IntPtr attributes, uint disposition, uint flags, IntPtr template);
-    [DllImport("kernel32.dll", EntryPoint = "MoveFileExW", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool MoveFileWindows(string source, string destination, uint flags);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern uint GetFileType(SafeFileHandle handle);
-    [DllImport("kernel32.dll", EntryPoint = "GetFileInformationByHandle", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetFileInformation(SafeFileHandle handle, out WindowsInformation information);
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateDirectoryW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CreateDirectoryWindows(string path, IntPtr attributes);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    private static partial SafeFileHandle CreateFileWindows(string path, uint access, uint share, IntPtr attributes, uint disposition, uint flags, IntPtr template);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "MoveFileExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool MoveFileWindows(string source, string destination, uint flags);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial uint GetFileType(SafeFileHandle handle);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "GetFileInformationByHandle", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetFileInformation(SafeFileHandle handle, out WindowsInformation information);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowsInformation
     {
         public uint Attributes, CreatedLow, CreatedHigh, AccessedLow, AccessedHigh, WrittenLow, WrittenHigh;
         public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
     }
-    [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)] private static extern int MakeDirectory([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
-    [DllImport("libc", EntryPoint = "open", SetLastError = true)] private static extern int Open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mode);
-    [DllImport("libc", EntryPoint = "flock", SetLastError = true)] private static extern int Flock(int descriptor, int operation);
-    [DllImport("libc", EntryPoint = "fcntl", SetLastError = true)] private static extern int DuplicateDescriptor(int descriptor, int command, int minimum);
-    [DllImport("libc", EntryPoint = "close", SetLastError = true)] private static extern int Close(int descriptor);
-    [DllImport("libc", EntryPoint = "fsync", SetLastError = true)] private static extern int Fsync(int descriptor);
-    [DllImport("libc", EntryPoint = "rename", SetLastError = true)]
-    private static extern int Rename([MarshalAs(UnmanagedType.LPUTF8Str)] string source, [MarshalAs(UnmanagedType.LPUTF8Str)] string destination);
-    [DllImport("libc", EntryPoint = "statx", SetLastError = true)] private static extern int Statx(int descriptor, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, out LinuxStatx status);
+
+    [LibraryImport("libc", EntryPoint = "mkdir", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int MakeDirectory(string path, uint mode);
+
+    [LibraryImport("libc", EntryPoint = "open", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int Open(string path, int flags, uint mode);
+
+    [LibraryImport("libc", EntryPoint = "flock", SetLastError = true)]
+    private static partial int Flock(int descriptor, int operation);
+
+    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+    private static partial int DuplicateDescriptor(int descriptor, int command, int minimum);
+
+    [LibraryImport("libc", EntryPoint = "close", SetLastError = true)]
+    private static partial int Close(int descriptor);
+
+    [LibraryImport("libc", EntryPoint = "fsync", SetLastError = true)]
+    private static partial int Fsync(int descriptor);
+
+    [LibraryImport("libc", EntryPoint = "rename", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int Rename(string source, string destination);
+
+    [LibraryImport("libc", EntryPoint = "statx", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int Statx(int descriptor, string path, int flags, uint mask, out LinuxStatx status);
+
     [StructLayout(LayoutKind.Explicit, Size = 256)]
     private struct LinuxStatx
     {

@@ -3,7 +3,7 @@ using System.Text;
 using MiniMcp.Cli;
 using MiniMcp.Configuration;
 
-internal static class CliRecoveryTerminalChecks
+internal static partial class CliRecoveryTerminalChecks
 {
     // Explicit interactive acceptance entry. It uses real console handles and CliEntry's real
     // signal/input path while retaining the same temporary store isolation as other checks.
@@ -44,15 +44,20 @@ internal static class CliRecoveryTerminalChecks
         Console.WriteLine("PASS actual terminal recovery " + expected);
         return 0;
     }
-    [StructLayout(LayoutKind.Explicit, Size = 20, CharSet = CharSet.Unicode)]
+    [StructLayout(LayoutKind.Explicit, Size = 20)]
     private struct ConsoleKey
     {
         [FieldOffset(0)] public ushort EventType;
         [FieldOffset(4)] public int Down;
         [FieldOffset(8)] public ushort Repeat;
         [FieldOffset(10)] public ushort VirtualKey;
-        [FieldOffset(14)] public char Character;
+        [FieldOffset(14)] public ushort Character; // WCHAR; char is not blittable for the generator.
     }
-    [DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int kind);
-    [DllImport("kernel32.dll", EntryPoint = "WriteConsoleInputW")] private static extern bool WriteConsoleInput(IntPtr handle, ConsoleKey[] events, uint count, out uint written);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial IntPtr GetStdHandle(int kind);
+
+    [LibraryImport("kernel32.dll", EntryPoint = "WriteConsoleInputW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool WriteConsoleInput(IntPtr handle, ConsoleKey[] events, uint count, out uint written);
 }

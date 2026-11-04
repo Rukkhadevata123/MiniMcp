@@ -23,7 +23,7 @@ namespace MiniMcp.DesktopChecks;
 
 // Separate, explicit UI run. It hosts the real App/Window with a real Store rooted in the
 // fixture, so neither the user's settings nor policy can be saved by UI automation.
-internal static class UiSmoke
+internal static partial class UiSmoke
 {
     internal static int Run(string? screenshotDirectory = null)
     {
@@ -394,7 +394,7 @@ internal static class UiSmoke
         while (!condition())
         { if (DateTime.UtcNow >= deadline) throw new TimeoutException("UI condition did not complete"); await Task.Delay(25); }
     }
-    [DllImport("user32.dll", SetLastError = true)]
+    [LibraryImport("user32.dll", EntryPoint = "PostMessageW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    private static partial bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

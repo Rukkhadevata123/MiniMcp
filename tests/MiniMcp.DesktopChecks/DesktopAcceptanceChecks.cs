@@ -10,7 +10,7 @@ using MiniMcp.Desktop.ViewModels;
 
 namespace MiniMcp.DesktopChecks;
 
-internal static class DesktopAcceptanceChecks
+internal static partial class DesktopAcceptanceChecks
 {
     internal static async Task Run(Window window, FrameworkElement root, SettingsFixture fixture,
         Func<string, FrameworkElement> find, Func<string, Task> navigate, Action<Button> invoke)
@@ -117,6 +117,6 @@ internal static class DesktopAcceptanceChecks
     }
     private static async Task Until(Func<bool> condition)
     { var deadline = DateTime.UtcNow.AddSeconds(15); while (!condition()) { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Desktop acceptance timed out"); await Task.Delay(30); } }
-    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
-
+    [LibraryImport("user32.dll")]
+    private static partial uint GetDpiForWindow(IntPtr window);
 }

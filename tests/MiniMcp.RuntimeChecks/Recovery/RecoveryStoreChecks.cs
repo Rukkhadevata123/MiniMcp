@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using MiniMcp.Configuration;
 using MiniMcp.Recovery;
 
-internal static class RecoveryStoreChecks
+internal static partial class RecoveryStoreChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
@@ -242,8 +242,8 @@ internal static class RecoveryStoreChecks
         });
     }
 
-    [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
-    private static extern int MakeFifo([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
+    [LibraryImport("libc", EntryPoint = "mkfifo", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int MakeFifo(string path, uint mode);
 
     private sealed class Fixture : IDisposable
     {

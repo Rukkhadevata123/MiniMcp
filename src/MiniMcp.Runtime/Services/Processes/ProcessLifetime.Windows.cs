@@ -64,6 +64,9 @@ internal sealed partial class ProcessLifetime
                 arguments.Append(' ').Append(QuoteArgument(argument));
             if (arguments.Length >= 32767)
                 throw new IOException("The managed process command line is too long.");
+            // CreateProcessW may modify the command line in place, so it receives a writable terminated buffer.
+            var commandLine = new char[arguments.Length + 1];
+            arguments.CopyTo(0, commandLine, 0, arguments.Length);
 
             // Hidden console creation does not suppress Windows loader error dialogs. Keep this
             // synchronous scope on the same thread and preserve the caller's other error flags.
@@ -73,7 +76,7 @@ internal sealed partial class ProcessLifetime
             Win32Exception? startError = null, restoreError = null;
             try
             {
-                if (!CreateProcess(start.FileName, arguments, IntPtr.Zero, IntPtr.Zero, true,
+                if (!CreateProcess(start.FileName, commandLine, IntPtr.Zero, IntPtr.Zero, true,
                     0x80000 | 0x4 | (start.CreateNoWindow ? 0x8000000u : 0x10u) | 0x400,
                     environment, start.WorkingDirectory, ref startup, out created))
                     startError = new Win32Exception(Marshal.GetLastWin32Error());
@@ -173,35 +176,35 @@ internal sealed partial class ProcessLifetime
         public int ProcessId, ThreadId;
     }
 
-    [DllImport("kernel32.dll")]
-    private static extern uint GetThreadErrorMode();
+    [LibraryImport("kernel32.dll")]
+    private static partial uint GetThreadErrorMode();
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetThreadErrorMode(uint mode, out uint previousMode);
+    private static partial bool SetThreadErrorMode(uint mode, out uint previousMode);
 
-    [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateProcessW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CreateProcess(string application, StringBuilder arguments, IntPtr processAttributes,
+    private static partial bool CreateProcess(string application, [In, Out] char[] commandLine, IntPtr processAttributes,
         IntPtr threadAttributes, [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint flags,
         IntPtr environment, string directory, ref StartupInformationEx startup, out ProcessInformation process);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref nuint size);
+    private static partial bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref nuint size);
 
-    [DllImport("kernel32.dll", EntryPoint = "UpdateProcThreadAttribute", SetLastError = true)]
+    [LibraryImport("kernel32.dll", EntryPoint = "UpdateProcThreadAttribute", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, nuint attribute,
+    private static partial bool UpdateProcThreadAttribute(IntPtr list, uint flags, nuint attribute,
         IntPtr value, nuint size, IntPtr previous, IntPtr returnSize);
 
-    [DllImport("kernel32.dll")]
-    private static extern void DeleteProcThreadAttributeList(IntPtr list);
+    [LibraryImport("kernel32.dll")]
+    private static partial void DeleteProcThreadAttributeList(IntPtr list);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern uint ResumeThread(IntPtr thread);
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial uint ResumeThread(IntPtr thread);
 
-    [DllImport("kernel32.dll")]
+    [LibraryImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CloseHandle(IntPtr handle);
+    private static partial bool CloseHandle(IntPtr handle);
 }

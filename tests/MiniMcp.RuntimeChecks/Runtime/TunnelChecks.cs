@@ -7,7 +7,7 @@ using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-internal static class TunnelChecks
+internal static partial class TunnelChecks
 {
     internal static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
@@ -570,12 +570,12 @@ internal static class TunnelChecks
             ExceptionDispatchInfo.Throw(failure);
     }
 
-    [DllImport("kernel32.dll")]
-    private static extern uint GetThreadErrorMode();
+    [LibraryImport("kernel32.dll")]
+    private static partial uint GetThreadErrorMode();
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetThreadErrorMode(uint mode, out uint previousMode);
+    private static partial bool SetThreadErrorMode(uint mode, out uint previousMode);
 
     private static bool Gone(int pid)
     {

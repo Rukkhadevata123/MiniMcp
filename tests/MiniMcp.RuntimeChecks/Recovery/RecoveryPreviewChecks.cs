@@ -8,7 +8,7 @@ using MiniMcp.Recovery;
 using MiniMcp.Services;
 using static PatchExecutionFixture;
 
-internal static class RecoveryPreviewChecks
+internal static partial class RecoveryPreviewChecks
 {
     public static async Task RunAsync(Func<string, Func<Task>, Task> check)
     {
@@ -440,8 +440,13 @@ internal static class RecoveryPreviewChecks
         catch (Exception error) when (error is IOException or InvalidDataException or JsonException or WorkspaceException or UnauthorizedAccessException) { return; }
         throw new Exception("Expected record read/validation failure without a preview.");
     }
-    [DllImport("kernel32.dll", EntryPoint = "CreateHardLinkW", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CreateHardLinkWindows(string link, string target, IntPtr security);
-    [DllImport("libc", EntryPoint = "link", SetLastError = true)] private static extern int Link([MarshalAs(UnmanagedType.LPUTF8Str)] string target, [MarshalAs(UnmanagedType.LPUTF8Str)] string link);
-    [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)] private static extern int MakeFifo([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
+    [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CreateHardLinkWindows(string link, string target, IntPtr security);
+
+    [LibraryImport("libc", EntryPoint = "link", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int Link(string target, string link);
+
+    [LibraryImport("libc", EntryPoint = "mkfifo", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    private static partial int MakeFifo(string path, uint mode);
 }
