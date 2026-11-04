@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using MiniMcp.Configuration;
 using MiniMcp.Services;
 
@@ -8,10 +9,12 @@ public sealed record RecoveryRecordSummary(Guid ChangeId, string Name, Guid? Rec
     DateTimeOffset? CreatedAtUtc, string State, int PathCount, string? Error);
 public sealed record RecoveryRecordDetails(string ManifestJson, RecoveryPreviewResult Preview)
 {
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     internal static RecoveryRecordDetails Create(RecoveryManifest manifest, RecoveryPreviewResult preview)
     {
-        using var json = System.Text.Json.JsonDocument.Parse(RecoveryManifestJson.Serialize(manifest));
-        return new(System.Text.Json.JsonSerializer.Serialize(json, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), preview);
+        using var json = JsonDocument.Parse(RecoveryManifestJson.Serialize(manifest));
+        return new(JsonSerializer.Serialize(json, IndentedJson), preview);
     }
 }
 public sealed record RecoveryRestoreResult(Guid SourceChangeId, Guid RunId, Guid ChangeId, string State,

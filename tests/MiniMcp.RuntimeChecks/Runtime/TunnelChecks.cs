@@ -3,6 +3,7 @@ using MiniMcp.Diagnostics;
 using MiniMcp.Services.Processes;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -547,16 +548,26 @@ internal static class TunnelChecks
         var callerMode = (previous | 0x8000u) & ~0x0001u;
         if (!SetThreadErrorMode(callerMode, out _))
             throw new Win32Exception(Marshal.GetLastWin32Error());
+
+        Exception? failure = null;
         try
         {
             action();
             Assert(GetThreadErrorMode() == callerMode, "Process startup must restore the caller thread error mode.");
         }
-        finally
+        catch (Exception error)
         {
-            if (!SetThreadErrorMode(previous, out _))
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+            failure = error;
         }
+
+        // Restore outside the finally block so a restore failure is reported alongside, not instead of, the check failure.
+        if (!SetThreadErrorMode(previous, out _))
+        {
+            var restoreFailure = new Win32Exception(Marshal.GetLastWin32Error());
+            throw failure is null ? restoreFailure : new AggregateException(failure, restoreFailure);
+        }
+        if (failure is not null)
+            ExceptionDispatchInfo.Throw(failure);
     }
 
     [DllImport("kernel32.dll")]

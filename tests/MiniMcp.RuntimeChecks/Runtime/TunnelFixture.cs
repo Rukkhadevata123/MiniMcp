@@ -115,6 +115,10 @@ internal sealed class TunnelFixture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        var target = Path.GetFullPath(DirectoryPath);
+        var temporary = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var safeToDelete = target.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) &&
+            Path.GetFileName(target).StartsWith("minimcp-tunnel-", StringComparison.Ordinal);
         try
         { await Runtime.DisposeAsync(); }
         finally
@@ -127,21 +131,26 @@ internal sealed class TunnelFixture : IAsyncDisposable
                 process.Dispose();
             }
             Http.Dispose();
-            var target = Path.GetFullPath(DirectoryPath);
-            var temporary = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            if (!target.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) ||
-                !Path.GetFileName(target).StartsWith("minimcp-tunnel-", StringComparison.Ordinal))
-                throw new Exception("Unsafe tunnel fixture cleanup path.");
-            // Image mappings/other Windows readers can briefly retain a terminated executable.
-            // Retry cleanup for a bounded time; never suppress a persistent failure.
-            var cleanup = Stopwatch.StartNew();
-            while (true)
-            {
-                try
-                { Directory.Delete(target, recursive: true); break; }
-                catch (IOException) when (cleanup.Elapsed < TimeSpan.FromSeconds(5)) { await Task.Delay(50); }
-                catch (UnauthorizedAccessException) when (cleanup.Elapsed < TimeSpan.FromSeconds(5)) { await Task.Delay(50); }
-            }
+            if (safeToDelete)
+                await DeleteWithRetryAsync(target);
+        }
+
+        // Thrown outside the finally block so it cannot replace a Runtime disposal failure.
+        if (!safeToDelete)
+            throw new Exception("Unsafe tunnel fixture cleanup path.");
+    }
+
+    // Image mappings/other Windows readers can briefly retain a terminated executable.
+    // Retry cleanup for a bounded time; never suppress a persistent failure.
+    private static async Task DeleteWithRetryAsync(string target)
+    {
+        var cleanup = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            { Directory.Delete(target, recursive: true); break; }
+            catch (IOException) when (cleanup.Elapsed < TimeSpan.FromSeconds(5)) { await Task.Delay(50); }
+            catch (UnauthorizedAccessException) when (cleanup.Elapsed < TimeSpan.FromSeconds(5)) { await Task.Delay(50); }
         }
     }
 }

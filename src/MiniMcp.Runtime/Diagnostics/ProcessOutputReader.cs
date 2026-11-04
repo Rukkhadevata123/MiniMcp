@@ -35,7 +35,7 @@ internal static class ProcessOutputReader
                 afterCarriageReturn = value == '\r';
                 if (value is '\r' or '\n')
                 {
-                    if (!discarding)
+                    if (!discarding && logger.IsEnabled(level))
                         logger.Log(level, new EventId(0), "{Output}", line.ToString());
                     line.Clear();
                     discarding = false;
@@ -53,7 +53,7 @@ internal static class ProcessOutputReader
                 }
             }
         }
-        if (!discarding && line.Length != 0)
+        if (!discarding && line.Length != 0 && logger.IsEnabled(level))
             logger.Log(level, new EventId(0), "{Output}", line.ToString());
     }
 }

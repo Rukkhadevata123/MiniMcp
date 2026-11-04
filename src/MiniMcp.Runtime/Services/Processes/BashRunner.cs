@@ -103,8 +103,9 @@ internal sealed class BashRunner
                     { if (!process.HasExited) process.Kill(entireProcessTree: true); }
                     catch (InvalidOperationException) { }
                     catch (Win32Exception) { }
+                    // Cleanup keeps its own fixed bound; the caller token may already be cancelled here.
                     try
-                    { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); }
+                    { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None); }
                     catch (TimeoutException) { }
                     reading.CancelAfter(TimeSpan.FromSeconds(5));
                     await Task.WhenAll(outputTask, errorTask);

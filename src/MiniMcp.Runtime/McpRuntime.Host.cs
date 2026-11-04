@@ -115,12 +115,14 @@ public sealed partial class McpRuntime
             if (Started && _dispose is null)
             {
                 if (_stop is null || _stop.IsFaulted || _stop.IsCanceled)
-                    _stop = Task.Run(() => Application.StopAsync(cancellationToken));
+                    _stop = Task.Run(() => Application.StopAsync(cancellationToken), CancellationToken.None);
                 await _stop.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
             // Dispatch even synchronous disposal work so a blocking service cannot bypass the shared deadline.
-            _dispose ??= Task.Run(async () => await Application.DisposeAsync().ConfigureAwait(false));
+            // Neither Task.Run takes the caller token: once dispatched, stop/dispose must run to completion
+            // so a later retry observes a settled task instead of one that never started.
+            _dispose ??= Task.Run(async () => await Application.DisposeAsync().ConfigureAwait(false), CancellationToken.None);
             await _dispose.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
