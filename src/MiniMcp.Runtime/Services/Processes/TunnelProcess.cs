@@ -74,9 +74,7 @@ internal sealed class TunnelProcess
         foreach (var argument in new[] { "tunnel", "--no-autoupdate", "run", "--token-file", settings.TokenFilePath })
             start.ArgumentList.Add(argument);
         // Inherited TUNNEL_* options/tokens must not override this session's explicit arguments.
-        foreach (var key in start.Environment.Keys.ToArray())
-            if (!KeepEnvironment(key))
-                start.Environment.Remove(key);
+        ProcessEnvironment.Restrict(start, TlsEnvironment);
         var lifetime = ProcessLifetime.Start(start);
         try
         { return new(lifetime, logs, checks); }
@@ -170,9 +168,6 @@ internal sealed class TunnelProcess
         return _lifetime.Process.ExitCode;
     }
 
-    private static bool KeepEnvironment(string key) =>
-        key.StartsWith("LC_", StringComparison.OrdinalIgnoreCase) ||
-        new[] { "PATH", "HOME", "USER", "LOGNAME", "LANG", "TMP", "TEMP", "TMPDIR", "SystemRoot", "WINDIR",
-            "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
-            "SSL_CERT_FILE", "SSL_CERT_DIR" }.Contains(key, StringComparer.OrdinalIgnoreCase);
+    // cloudflared honours custom CA bundles only through these variables.
+    private static readonly string[] TlsEnvironment = ["SSL_CERT_FILE", "SSL_CERT_DIR"];
 }
