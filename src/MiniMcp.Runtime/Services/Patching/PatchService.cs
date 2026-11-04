@@ -218,42 +218,11 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
         Exception? failure = null;
         var rollbackErrors = ImmutableArray.CreateBuilder<Exception>();
         var cleanupErrors = ImmutableArray.CreateBuilder<Exception>();
+
         try
         {
-            // Stage all new contents before changing any existing file.
-            await StageChangesAsync(changes, directories, cancellationToken);
-            await Checkpoint(PatchCommitStage.Staged, -1).ConfigureAwait(false);
-            await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
-            if (validateSourceRecord is not null)
-                await validateSourceRecord(cancellationToken).ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Once commit starts, finish or roll back instead of leaving half a patch on cancellation.
-            for (var i = 0; i < changes.Count; i++)
-            {
-                var change = changes[i];
-                await Checkpoint(PatchCommitStage.BeforeInstall, i).ConfigureAwait(false);
-                if (validateSourceRecord is not null)
-                    await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
-                // Earlier operations may already be installed, so recheck this untouched operation
-                // rather than the full original plan. Late cancellation must not split the batch.
-                await ValidateChangeAsync(plan.Changes[i], CancellationToken.None).ConfigureAwait(false);
-                if (change.Before is not null)
-                {
-                    var backup = Path.Combine(Path.GetDirectoryName(change.Source)!, $".minimcp-{Guid.NewGuid():N}.bak");
-                    File.Move(change.Source, backup);
-                    change.Backup = backup;
-                }
-                if (change.Temporary is not null)
-                {
-                    File.Move(change.Temporary, change.Destination);
-                    change.Temporary = null;
-                    change.Installed = true;
-                }
-                await Checkpoint(PatchCommitStage.Installed, i).ConfigureAwait(false);
-            }
-            if (validateSourceRecord is not null)
-                await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
+            await StageAndValidateAsync(plan, changes, directories, validateSourceRecord, cancellationToken).ConfigureAwait(false);
+            await InstallAllAsync(plan, changes, validateSourceRecord).ConfigureAwait(false);
             committed = true;
         }
         catch (Exception error)
@@ -266,12 +235,59 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
             CleanupChanges(changes, directories, committed, cleanupErrors);
         }
 
-        var state = PatchCommitState.Incomplete;
-        if (committed)
-            state = PatchCommitState.Committed;
-        else if (rollbackErrors.Count == 0 && cleanupErrors.Count == 0)
-            state = PatchCommitState.RolledBack;
+        var state = committed ? PatchCommitState.Committed
+            : rollbackErrors.Count == 0 && cleanupErrors.Count == 0 ? PatchCommitState.RolledBack
+            : PatchCommitState.Incomplete;
         return new PatchCommitOutcome(plan, _outcomeIssuer, context, state, failure, rollbackErrors.ToImmutable(), cleanupErrors.ToImmutable());
+    }
+
+    // Stage all new contents before changing any existing file; cancellation is still honoured here.
+    private async Task StageAndValidateAsync(PatchPlan plan, List<Change> changes, List<string> directories,
+        Func<CancellationToken, Task>? validateSourceRecord, CancellationToken cancellationToken)
+    {
+        await StageChangesAsync(changes, directories, cancellationToken);
+        await Checkpoint(PatchCommitStage.Staged, -1).ConfigureAwait(false);
+        await ValidatePlanAsync(plan, cancellationToken).ConfigureAwait(false);
+        if (validateSourceRecord is not null)
+            await validateSourceRecord(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    // Once installation starts, finish or roll back instead of leaving half a patch on cancellation.
+    private async Task InstallAllAsync(PatchPlan plan, List<Change> changes, Func<CancellationToken, Task>? validateSourceRecord)
+    {
+        for (var i = 0; i < changes.Count; i++)
+        {
+            await Checkpoint(PatchCommitStage.BeforeInstall, i).ConfigureAwait(false);
+            if (validateSourceRecord is not null)
+                await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
+
+            // Earlier operations may already be installed, so recheck this untouched operation
+            // rather than the full original plan. Late cancellation must not split the batch.
+            await ValidateChangeAsync(plan.Changes[i], CancellationToken.None).ConfigureAwait(false);
+            Install(changes[i]);
+            await Checkpoint(PatchCommitStage.Installed, i).ConfigureAwait(false);
+        }
+
+        if (validateSourceRecord is not null)
+            await validateSourceRecord(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static void Install(Change change)
+    {
+        if (change.Before is not null)
+        {
+            var backup = Path.Combine(Path.GetDirectoryName(change.Source)!, $".minimcp-{Guid.NewGuid():N}.bak");
+            File.Move(change.Source, backup);
+            change.Backup = backup;
+        }
+
+        if (change.Temporary is not null)
+        {
+            File.Move(change.Temporary, change.Destination);
+            change.Temporary = null;
+            change.Installed = true;
+        }
     }
 
     private async Task StageChangesAsync(List<Change> changes, List<string> directories, CancellationToken cancellationToken)
