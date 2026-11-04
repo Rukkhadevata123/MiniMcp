@@ -1,4 +1,3 @@
-using System.Text;
 using MiniMcp.Configuration;
 using MiniMcp.Recovery;
 
@@ -38,14 +37,14 @@ internal static class CliRecoveryCommand
         {
             var configuration = await store.LoadRecoveryAsync(config, workingDirectory, token).ConfigureAwait(false);
             await using var session = LocalRecoverySession.Open(configuration);
-            output.WriteLine($"项目：{Display(configuration.Settings.ProjectRoot)}");
+            output.WriteLine($"项目：{CliText.Escape(configuration.Settings.ProjectRoot)}");
             output.WriteLine($"模式：{configuration.Policy.Mode} · 恢复会话：{session.RunId:N}");
             if (command == "list")
             {
                 var rows = await session.ListAsync(token).ConfigureAwait(false);
                 foreach (var row in rows)
-                    output.WriteLine($"{Display(row.Name)}  {row.CreatedAtUtc:O}  {row.State}  {row.PathCount} 个路径" +
-                        (row.Error is null ? "" : "  " + Display(row.Error)));
+                    output.WriteLine($"{CliText.Escape(row.Name)}  {row.CreatedAtUtc:O}  {row.State}  {row.PathCount} 个路径" +
+                        (row.Error is null ? "" : "  " + CliText.Escape(row.Error)));
                 output.WriteLine($"共 {rows.Length} 条记录。");
                 return CliExitCodes.Success;
             }
@@ -56,9 +55,9 @@ internal static class CliRecoveryCommand
             { preparation = await session.PrepareAsync(id, token).ConfigureAwait(false); preview = preparation.Preview; details = preparation.Record; }
             output.WriteLine(details.ManifestJson);
             output.WriteLine("完整反向预览：");
-            output.WriteLine(preview.Diff is null ? "当前无法生成完整预览。" : Display(preview.Diff, keepNewlines: true));
+            output.WriteLine(preview.Diff is null ? "当前无法生成完整预览。" : CliText.Escape(preview.Diff, keepNewlines: true));
             foreach (var conflict in preview.Conflicts)
-                output.WriteLine($"冲突：{Display(conflict.Path ?? "记录")} · {Display(conflict.Message)}");
+                output.WriteLine($"冲突：{CliText.Escape(conflict.Path ?? "记录")} · {CliText.Escape(conflict.Message)}");
             if (!preview.Blockers.IsEmpty)
                 output.WriteLine("恢复限制：" + string.Join(", ", preview.Blockers));
             if (command == "show")
@@ -76,7 +75,7 @@ internal static class CliRecoveryCommand
             var result = await session.RestoreAsync(preparation, token).ConfigureAwait(false);
             output.WriteLine($"恢复结果：{result.State} · 新记录：{result.ChangeId:N} · 来源：{result.SourceChangeId:N}");
             foreach (var problem in result.Errors)
-                error.WriteLine(Display(problem));
+                error.WriteLine(CliText.Escape(problem));
             return result.State == "Committed" && !result.CleanupIncomplete ? CliExitCodes.Success : CliExitCodes.Failure;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -89,16 +88,5 @@ internal static class CliRecoveryCommand
         int Invalid(string message)
         { error.WriteLine(message + " 使用 records --help 查看帮助。"); return CliExitCodes.InvalidInput; }
     }
-
-    // Complete local preview, not a diagnostic message: never send it through log redaction/truncation.
-    internal static string Display(string value, bool keepNewlines = false)
-    {
-        var result = new StringBuilder(value.Length);
-        foreach (var character in value)
-            if (char.IsControl(character) && !(keepNewlines && character == '\n'))
-                result.Append($"\\u{(int)character:x4}");
-            else
-                result.Append(character);
-        return result.ToString();
-    }
 }
+
