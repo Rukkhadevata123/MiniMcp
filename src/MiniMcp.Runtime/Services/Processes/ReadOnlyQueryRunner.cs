@@ -18,8 +18,8 @@ internal sealed class ReadOnlyQueryRunner : IDisposable
     {
         if (!await _capacity.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             throw new WorkspaceException("Read-only query capacity reached; retry after another query finishes.");
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(QueryText.Timeout);
+
+        using var deadline = cancellationToken.WithTimeout(QueryText.Timeout);
         var entered = false;
         try
         {

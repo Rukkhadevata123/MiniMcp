@@ -56,8 +56,7 @@ internal sealed class WorkspaceQueries(ProjectWorkspace workspace)
     private FileListResult List(string root, int maxDepth, int maxEntries, bool includeHidden,
         string format, CancellationToken cancellationToken)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(QueryText.Timeout);
+        using var deadline = cancellationToken.WithTimeout(QueryText.Timeout);
         var entries = new List<FileListEntry>();
         var notices = new HashSet<string>(StringComparer.Ordinal);
         var work = 0;

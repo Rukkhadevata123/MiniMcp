@@ -120,9 +120,7 @@ public sealed class McpRuntime : IAsyncDisposable
         if (Snapshot.Configuration?.Settings.Tunnel.Enabled != true)
             throw new InvalidOperationException("The saved session configuration disables the managed tunnel.");
 
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        deadline.CancelAfter(ShutdownTimeout);
+        using var deadline = cancellationToken.WithTimeout(ShutdownTimeout);
         if (_tunnel is not null)
         {
             if (!_tunnel.HasExited)
@@ -157,9 +155,7 @@ public sealed class McpRuntime : IAsyncDisposable
         using var lease = await _lifecycle.EnterAsync(cancellationToken);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        deadline.CancelAfter(ShutdownTimeout);
+        using var deadline = cancellationToken.WithTimeout(ShutdownTimeout);
         await StopTunnelCoreAsync(deadline.Token).ConfigureAwait(false);
     }
 
@@ -347,8 +343,7 @@ public sealed class McpRuntime : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(ShutdownTimeout);
+            using var deadline = cancellationToken.WithTimeout(ShutdownTimeout);
             var draining = _execution?.StopAsync(deadline.Token) ?? Task.CompletedTask;
             Publish(Snapshot with { State = RuntimeState.Stopping, Error = null });
             await StopOwnedResourcesAsync(deadline.Token, draining).ConfigureAwait(false);

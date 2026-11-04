@@ -61,13 +61,10 @@ internal sealed class BashRunner
             start.ArgumentList.Add("IFS= read -r _minimcp_start || exit 125; exec \"$BASH\" --noprofile --norc -c \"$1\"");
             start.ArgumentList.Add("minimcp");
             start.ArgumentList.Add(command);
-            foreach (var key in start.Environment.Keys.ToArray())
-                if (!KeepEnvironment(key))
-                    start.Environment.Remove(key);
+            ProcessEnvironment.Restrict(start, WindowsShellEnvironment);
 
             using var process = new Process { StartInfo = start };
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            deadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+            using var deadline = cancellationToken.WithTimeout(TimeSpan.FromSeconds(timeoutSeconds));
             using var reading = new CancellationTokenSource();
             ProcessLifetime? lifetime = null;
             var stdout = new CapturedOutput();
@@ -119,12 +116,9 @@ internal sealed class BashRunner
         finally { _workspace.Mutations.Release(); }
     }
 
-    private static bool KeepEnvironment(string key) =>
-        key.StartsWith("LC_", StringComparison.OrdinalIgnoreCase) ||
-        new[] { "PATH", "HOME", "USER", "LOGNAME", "LANG", "TMP", "TEMP", "TMPDIR", "SystemRoot", "WINDIR",
-            "COMSPEC", "PATHEXT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
-            "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY" }
-            .Contains(key, StringComparer.OrdinalIgnoreCase);
+    // Git Bash and tools it launches resolve Windows program and shell locations through these.
+    private static readonly string[] WindowsShellEnvironment =
+        ["COMSPEC", "PATHEXT", "HOMEDRIVE", "HOMEPATH", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"];
 
     private sealed class CapturedOutput
     {
