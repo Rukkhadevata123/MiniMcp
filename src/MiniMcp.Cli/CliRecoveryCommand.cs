@@ -80,7 +80,7 @@ internal static class CliRecoveryCommand
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         { error.WriteLine("记录操作已取消。"); return CliExitCodes.Cancelled; }
-        catch (Exception failure) when (failure is ConfigurationLoadException or ConfigurationValidationException)
+        catch (Exception failure) when (failure is ConfigurationException)
         { error.WriteLine("配置错误：" + CliText.Visible(failure.Message)); return CliExitCodes.InvalidInput; }
         catch (Exception failure)
         { error.WriteLine("记录操作失败：" + CliText.Visible(failure.Message)); return CliExitCodes.Failure; }

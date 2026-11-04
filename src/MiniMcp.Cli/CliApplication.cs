@@ -59,7 +59,7 @@ internal static class CliApplication
             error.WriteLine(options.Command == Command.Check ? "检查已取消。" : "启动已取消。");
             return CliExitCodes.Cancelled;
         }
-        catch (Exception exception) when (exception is ConfigurationLoadException or ConfigurationValidationException
+        catch (Exception exception) when (exception is ConfigurationException
             or ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
         {
             error.WriteLine($"配置错误：{Visible(exception.Message)}");
