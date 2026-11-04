@@ -124,16 +124,8 @@ public sealed partial class MainWindow : Window
         WorkspaceColumn.Margin = new Thickness(gutter, 20, gutter, 24);
     }
 
-    private async void OnSettingsAction(object? sender, string action)
-    {
-        if (_busy || _uiAction || _closing || _editor.IsBusy)
-            return;
-        _uiAction = true;
-        _editor.SetInteractionBusy(true);
-        UpdateControls();
-        _operation = HandleSettingsActionAsync(action);
-        await _operation;
-    }
+    private void OnSettingsAction(object? sender, string action) =>
+        RunInteraction(() => HandleSettingsActionAsync(action));
 
     private async Task HandleSettingsActionAsync(string action)
     {
@@ -144,7 +136,6 @@ public sealed partial class MainWindow : Window
             await SettingsActionAsync(action);
         }
         catch (Exception error) { ShowError("设置操作失败", error); }
-        finally { _uiAction = false; _editor.SetInteractionBusy(false); UpdateControls(); }
     }
 
     private async Task SettingsActionAsync(string action)
@@ -273,16 +264,9 @@ public sealed partial class MainWindow : Window
         UpdateControls();
     }
 
-    private async void OnLogAction(object? sender, string action)
-    {
-        if (_busy || _editor.IsBusy || _uiAction || _closing)
-            return;
-        _uiAction = true;
-        _editor.SetInteractionBusy(true);
-        UpdateControls();
-        _operation = HandleLogActionAsync(action);
-        await _operation;
-    }
+    private void OnLogAction(object? sender, string action) =>
+        RunInteraction(() => HandleLogActionAsync(action));
+
     private async Task HandleLogActionAsync(string action)
     {
         try
@@ -297,9 +281,6 @@ public sealed partial class MainWindow : Window
             _exporting?.Dispose();
             _exporting = null;
             _cancellingExport = Task.CompletedTask;
-            _uiAction = false;
-            _editor.SetInteractionBusy(false);
-            UpdateControls();
         }
     }
     private async Task LogActionAsync(string action)
@@ -377,6 +358,33 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnEditorChanged(object? sender, PropertyChangedEventArgs args) => UpdateControls();
+
+    // Page actions (settings, logs, records) run one at a time with every page's controls disabled.
+    // The handler keeps its own try/catch; this wrapper only owns the busy flag and its reset.
+    private async void RunInteraction(Func<Task> action)
+    {
+        if (_busy || _uiAction || _closing || _editor.IsBusy)
+            return;
+        _uiAction = true;
+        _editor.SetInteractionBusy(true);
+        UpdateControls();
+
+        _operation = InteractionAsync(action);
+        await _operation;
+    }
+
+    private async Task InteractionAsync(Func<Task> action)
+    {
+        try
+        { await action(); }
+        finally
+        {
+            _uiAction = false;
+            _editor.SetInteractionBusy(false);
+            UpdateControls();
+        }
+    }
+
     private void UpdateControls()
     {
         _overview?.ShowStatus(_runtime.Snapshot, _busy || _uiAction || _closing || _editor.IsBusy,

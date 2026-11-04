@@ -12,19 +12,13 @@ public sealed partial class MainWindow
     private CancellationTokenSource? _recovering;
     private Task _cancellingRecovery = Task.CompletedTask;
 
-    private async void OnRecoveryAction(object? sender, string action)
+    private void OnRecoveryAction(object? sender, string action) => RunInteraction(() =>
     {
-        if (_busy || _uiAction || _closing || _editor.IsBusy)
-            return;
-        var row = _records?.Selection;
-        _uiAction = true;
-        _editor.SetInteractionBusy(true);
         _recovering = new();
         _cancellingRecovery = Task.CompletedTask;
-        UpdateControls();
-        _operation = RecoveryActionAsync(action, row, _recovering);
-        await _operation;
-    }
+        return RecoveryActionAsync(action, _records?.Selection, _recovering);
+    });
+
     private async Task RecoveryActionAsync(string action, DesktopRecoveryRow? row, CancellationTokenSource cancellation)
     {
         try
@@ -76,11 +70,9 @@ public sealed partial class MainWindow
             catch (Exception error) { ShowError("记录操作取消失败", error); }
             _recovering = null;
             cancellation.Dispose();
-            _uiAction = false;
-            _editor.SetInteractionBusy(false);
-            UpdateControls();
         }
     }
+
     private async Task ReleaseHistoryAsync(string message)
     { _history.Invalidate(message); await _history.DisposeAsync(); }
 }
