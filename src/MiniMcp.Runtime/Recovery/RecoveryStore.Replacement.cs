@@ -98,39 +98,14 @@ internal sealed partial class RecoveryStore
         var attempted = false;
         try
         {
-            await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeTemporaryFile, path).ConfigureAwait(false);
-            CheckReplacementLocation(record, cancellationToken);
-            await WriteFileAsync(path, bytes, files, cancellationToken).ConfigureAwait(false);
-            var temporary = new LoadedFile(name, files.Single().Identity, bytes.ToImmutableArray());
-            await ReplacementCheckpoint(RecoveryManifestReplacementStage.TemporaryWritten, path).ConfigureAwait(false);
-            await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeReplace, path).ConfigureAwait(false);
-            // Our one tracked temporary file is the only additional entry tolerated by the common reader.
-            _ = await ValidatePreparedCoreAsync(record, plan, rootIdentity, cancellationToken, temporary).ConfigureAwait(false);
-            await VerifyReplacementFileAsync(path, temporary.Identity, bytes, flush: false, cancellationToken).ConfigureAwait(false);
-            var staged = _guard.Measure(cancellationToken);
-            if (staged.RecordSlots != before.RecordSlots || staged.Bytes != checked(before.Bytes + bytes.Length))
-                throw new IOException("Recovery usage changed while staging the manifest.");
-            CheckReplacementLocation(record, cancellationToken);
-            // Recheck both names after measurement, immediately before the replace attempt.
-            await VerifyReplacementFileAsync(target, record.FileIdentities[ManifestFileName], RecoveryManifestJson.Serialize(record.Manifest), false, cancellationToken).ConfigureAwait(false);
-            await VerifyReplacementFileAsync(path, temporary.Identity, bytes, false, cancellationToken).ConfigureAwait(false);
-            if (temporary.Identity.Device != record.FileIdentities[ManifestFileName].Device)
-                throw new IOException("Recovery manifest replacement requires the same filesystem device.");
-            CheckReplacementLocation(record, cancellationToken);
+            var temporary = await StageTemporaryManifestAsync(record, path, name, bytes, files, cancellationToken).ConfigureAwait(false);
+            await VerifyBeforeReplaceAsync(record, plan, rootIdentity, temporary, path, target, bytes, before, cancellationToken).ConfigureAwait(false);
+
             attempted = true;
             RecoveryFileSystem.ReplaceFile(path, target);
 
             // Complete verification once replacement begins, even if cancellation arrives afterwards.
-            await ReplacementCheckpoint(RecoveryManifestReplacementStage.Replaced, path).ConfigureAwait(false);
-            await VerifyReplacementFileAsync(target, temporary.Identity, bytes, flush: true, CancellationToken.None).ConfigureAwait(false);
-            RecoveryFileSystem.FlushDirectory(record.DirectoryPath);
-            await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeReturn, path).ConfigureAwait(false);
-            var after = await LoadRecordCoreAsync(record.Manifest.ChangeId, rootIdentity, CancellationToken.None).ConfigureAwait(false);
-            ValidateReplacementReadback(record, after, temporary, bytes);
-            var usage = _guard.Measure();
-            if (usage.RecordSlots != before.RecordSlots || usage.Bytes != checked(before.Bytes - oldBytes + bytes.Length))
-                throw new IOException("Recovery usage changed after manifest replacement.");
-            CheckReplacementLocation(record, CancellationToken.None);
+            await VerifyAfterReplaceAsync(record, rootIdentity, temporary, path, target, bytes, before, oldBytes).ConfigureAwait(false);
             return new(replacement, temporary.Identity);
         }
         catch (Exception failure)
@@ -139,28 +114,80 @@ internal sealed partial class RecoveryStore
             // Preserve all evidence in that case; never roll back or delete an uncertain manifest.
             if (attempted)
                 throw new RecoveryManifestReplacementException(true, path, failure, []);
-            var errors = ImmutableArray.CreateBuilder<Exception>();
-            if (files.Count != 0)
-            {
-                try
-                {
-                    CheckReplacementLocation(record, CancellationToken.None);
-                    using (var stream = RecoveryFileSystem.OpenRead(path))
-                    {
-                        if (RecoveryFileSystem.FileIdentity(stream) != files.Single().Identity)
-                            throw new IOException("The temporary manifest was replaced; cleanup preserved it.");
-                    }
-                    File.Delete(path);
-                    RecoveryFileSystem.FlushDirectory(record.DirectoryPath);
-                }
-                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
-                {
-                    errors.Add(error);
-                }
-            }
-            if (errors.Count != 0)
-                throw new RecoveryManifestReplacementException(false, path, failure, errors.ToImmutable());
+
+            var errors = files.Count != 0 ? RemoveTemporaryManifest(record, path, files.Single().Identity) : [];
+            if (errors.Length != 0)
+                throw new RecoveryManifestReplacementException(false, path, failure, errors);
             throw;
+        }
+    }
+
+    private async Task<LoadedFile> StageTemporaryManifestAsync(PreparedRecord record, string path, string name, byte[] bytes,
+        List<(string Path, RecoveryFileIdentity Identity)> files, CancellationToken cancellationToken)
+    {
+        await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeTemporaryFile, path).ConfigureAwait(false);
+        CheckReplacementLocation(record, cancellationToken);
+        await WriteFileAsync(path, bytes, files, cancellationToken).ConfigureAwait(false);
+        var temporary = new LoadedFile(name, files.Single().Identity, bytes.ToImmutableArray());
+        await ReplacementCheckpoint(RecoveryManifestReplacementStage.TemporaryWritten, path).ConfigureAwait(false);
+        return temporary;
+    }
+
+    private async Task VerifyBeforeReplaceAsync(PreparedRecord record, PatchPlan plan, RecoveryFileIdentity rootIdentity, LoadedFile temporary,
+        string path, string target, byte[] bytes, RecoveryStorageUsage before, CancellationToken cancellationToken)
+    {
+        await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeReplace, path).ConfigureAwait(false);
+        // Our one tracked temporary file is the only additional entry tolerated by the common reader.
+        _ = await ValidatePreparedCoreAsync(record, plan, rootIdentity, cancellationToken, temporary).ConfigureAwait(false);
+        await VerifyReplacementFileAsync(path, temporary.Identity, bytes, flush: false, cancellationToken).ConfigureAwait(false);
+
+        var staged = _guard.Measure(cancellationToken);
+        if (staged.RecordSlots != before.RecordSlots || staged.Bytes != checked(before.Bytes + bytes.Length))
+            throw new IOException("Recovery usage changed while staging the manifest.");
+        CheckReplacementLocation(record, cancellationToken);
+
+        // Recheck both names after measurement, immediately before the replace attempt.
+        await VerifyReplacementFileAsync(target, record.FileIdentities[ManifestFileName], RecoveryManifestJson.Serialize(record.Manifest), false, cancellationToken).ConfigureAwait(false);
+        await VerifyReplacementFileAsync(path, temporary.Identity, bytes, false, cancellationToken).ConfigureAwait(false);
+        if (temporary.Identity.Device != record.FileIdentities[ManifestFileName].Device)
+            throw new IOException("Recovery manifest replacement requires the same filesystem device.");
+        CheckReplacementLocation(record, cancellationToken);
+    }
+
+    private async Task VerifyAfterReplaceAsync(PreparedRecord record, RecoveryFileIdentity rootIdentity, LoadedFile temporary,
+        string path, string target, byte[] bytes, RecoveryStorageUsage before, int oldBytes)
+    {
+        await ReplacementCheckpoint(RecoveryManifestReplacementStage.Replaced, path).ConfigureAwait(false);
+        await VerifyReplacementFileAsync(target, temporary.Identity, bytes, flush: true, CancellationToken.None).ConfigureAwait(false);
+        RecoveryFileSystem.FlushDirectory(record.DirectoryPath);
+        await ReplacementCheckpoint(RecoveryManifestReplacementStage.BeforeReturn, path).ConfigureAwait(false);
+
+        var after = await LoadRecordCoreAsync(record.Manifest.ChangeId, rootIdentity, CancellationToken.None).ConfigureAwait(false);
+        ValidateReplacementReadback(record, after, temporary, bytes);
+        var usage = _guard.Measure();
+        if (usage.RecordSlots != before.RecordSlots || usage.Bytes != checked(before.Bytes - oldBytes + bytes.Length))
+            throw new IOException("Recovery usage changed after manifest replacement.");
+        CheckReplacementLocation(record, CancellationToken.None);
+    }
+
+    // Only a temporary whose identity is still ours is removed; anything else is left as evidence.
+    private ImmutableArray<Exception> RemoveTemporaryManifest(PreparedRecord record, string path, RecoveryFileIdentity identity)
+    {
+        try
+        {
+            CheckReplacementLocation(record, CancellationToken.None);
+            using (var stream = RecoveryFileSystem.OpenRead(path))
+            {
+                if (RecoveryFileSystem.FileIdentity(stream) != identity)
+                    throw new IOException("The temporary manifest was replaced; cleanup preserved it.");
+            }
+            File.Delete(path);
+            RecoveryFileSystem.FlushDirectory(record.DirectoryPath);
+            return [];
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return [error];
         }
     }
 
