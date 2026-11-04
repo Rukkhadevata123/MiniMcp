@@ -18,20 +18,21 @@ namespace MiniMcp;
 public sealed partial class McpRuntime : IAsyncDisposable
 {
     private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(10);
+
+    // Fixed at construction
     private readonly SemaphoreSlim _lifecycle = new(1, 1);
+    private readonly RuntimeDiagnostics _diagnostics = new();
     private readonly int? _testPortOverride;
     private readonly Action<IServiceCollection>? _configureServices;
     private readonly Action<IEndpointRouteBuilder>? _configureEndpoints;
     private readonly TunnelCheckpoints? _tunnelChecks;
-    private WebApplication? _application;
-    private ToolExecutionService? _execution;
-    private Task? _hostStopTask;
-    private Task? _hostDisposeTask;
-    private readonly RuntimeDiagnostics _diagnostics = new();
+
+    // Owned for the duration of one run; null exactly when no host resources are held
+    private HostLease? _host;
     private ILogger? _runtimeLogger;
     private RuntimeLoggerProvider? _logProvider;
     private TunnelProcess? _tunnel;
-    private bool _hostStarted;
+
     private bool _disposed;
 
     public McpRuntime() { }
@@ -50,7 +51,7 @@ public sealed partial class McpRuntime : IAsyncDisposable
 
     public RuntimeSnapshot Snapshot => _diagnostics.Snapshot;
     public Uri? Address => Snapshot.Address;
-    internal ToolExecutionService? Execution => Volatile.Read(ref _execution);
+    internal ToolExecutionService? Execution => Volatile.Read(ref _host)?.Execution;
     internal (int Logs, int States) DiagnosticSubscriberCounts => _diagnostics.SubscriberCounts;
 
     /// <summary>Up to 1000 entries / 512 Ki UTF-16 characters; each message is at most 4096 characters.</summary>
@@ -158,7 +159,7 @@ public sealed partial class McpRuntime : IAsyncDisposable
         if (configuration.ForRecoveryOnly)
             throw new InvalidOperationException("Recovery-only configuration cannot start the MCP host; load a complete runtime configuration.");
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_application is not null)
+        if (_host is not null)
             throw new InvalidOperationException("The runtime already owns an HTTP host. Stop it before starting again.");
 
         var runId = Guid.NewGuid();
@@ -170,70 +171,87 @@ public sealed partial class McpRuntime : IAsyncDisposable
             Tunnel = new(configuration.Settings.Tunnel.Enabled ? TunnelState.Stopped : TunnelState.Disabled)
         });
         LogState(Snapshot);
+
         try
         {
-            var application = BuildHost(configuration, runId, logProvider);
-            ToolExecutionService? execution = null;
-            _application = application;
+            var host = new HostLease(BuildHost(configuration, runId, logProvider));
+            Volatile.Write(ref _host, host);
             Publish(Snapshot);
 
             try
             {
-                // Resolve before listening, so workspace initialization cannot fail on the first tool request.
-                execution = application.Services.GetRequiredService<ToolExecutionService>();
-                Volatile.Write(ref _execution, execution);
-                ConfigureHttpPipeline(application, configuration.Settings.Authentication.Mode);
-                await application.StartAsync(cancellationToken).ConfigureAwait(false);
-                _hostStarted = true;
-                cancellationToken.ThrowIfCancellationRequested();
-                Publish(Snapshot with { Address = new Uri(application.Urls.Single()) });
-
-                if (configuration.Settings.Tunnel.Enabled)
-                    await StartTunnelCoreAsync(cancellationToken).ConfigureAwait(false);
-                cancellationToken.ThrowIfCancellationRequested();
-                var running = Snapshot with { State = RuntimeState.Running, Address = new Uri(application.Urls.Single()) };
-                _application = application;
-                Volatile.Write(ref _execution, execution);
-                Publish(running);
-                ObserveTunnel();
+                await StartHostAsync(host, configuration, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception startupError)
             {
-                // Retain both ownership and any unfinished cleanup task until cleanup actually completes.
-                _application = application;
-                Volatile.Write(ref _execution, execution);
-                try
-                {
-                    using var deadline = new CancellationTokenSource(ShutdownTimeout);
-                    var draining = execution?.StopAsync(deadline.Token) ?? Task.CompletedTask;
-                    Publish(Snapshot with
-                    {
-                        State = RuntimeState.Stopping,
-                        Error = startupError is OperationCanceledException && cancellationToken.IsCancellationRequested ? null : startupError.Message
-                    });
-                    await StopOwnedResourcesAsync(deadline.Token, draining).ConfigureAwait(false);
-                    ReleaseHost();
-                }
-                catch (Exception cleanupError)
-                {
-                    throw new AggregateException("Startup failed and HTTP host cleanup did not complete.", startupError, cleanupError);
-                }
+                await CleanUpFailedStartAsync(host, startupError, cancellationToken).ConfigureAwait(false);
                 throw;
             }
         }
         catch (Exception error)
         {
-            var cancelled = error is OperationCanceledException && cancellationToken.IsCancellationRequested && _application is null;
-            Publish(Snapshot with
-            {
-                State = cancelled ? RuntimeState.Stopped : RuntimeState.Faulted,
-                Address = _application is null ? null : Snapshot.Address,
-                Error = cancelled ? null : error.Message
-            });
-            if (_application is null)
-                _diagnostics.EndRun(runId);
+            PublishStartFailure(runId, error, cancellationToken);
             throw;
         }
+    }
+
+    private async Task StartHostAsync(HostLease host, RuntimeConfiguration configuration, CancellationToken cancellationToken)
+    {
+        var application = host.Application;
+
+        // Resolve before listening, so workspace initialization cannot fail on the first tool request.
+        host.Execution = application.Services.GetRequiredService<ToolExecutionService>();
+        ConfigureHttpPipeline(application, configuration.Settings.Authentication.Mode);
+        await application.StartAsync(cancellationToken).ConfigureAwait(false);
+        host.Started = true;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var address = new Uri(application.Urls.Single());
+        Publish(Snapshot with { Address = address });
+        if (configuration.Settings.Tunnel.Enabled)
+            await StartTunnelCoreAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Publish(Snapshot with { State = RuntimeState.Running, Address = address });
+        ObserveTunnel();
+    }
+
+    // The lease stays in _host until cleanup actually completes, so a failed cleanup can be retried.
+    private async Task CleanUpFailedStartAsync(HostLease host, Exception startupError, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var deadline = new CancellationTokenSource(ShutdownTimeout);
+            var draining = host.Execution?.StopAsync(deadline.Token) ?? Task.CompletedTask;
+            var cancelledByCaller = startupError is OperationCanceledException && cancellationToken.IsCancellationRequested;
+
+            Publish(Snapshot with
+            {
+                State = RuntimeState.Stopping,
+                Error = cancelledByCaller ? null : startupError.Message
+            });
+            await StopOwnedResourcesAsync(deadline.Token, draining).ConfigureAwait(false);
+            ReleaseHost();
+        }
+        catch (Exception cleanupError)
+        {
+            throw new AggregateException("Startup failed and HTTP host cleanup did not complete.", startupError, cleanupError);
+        }
+    }
+
+    private void PublishStartFailure(Guid runId, Exception error, CancellationToken cancellationToken)
+    {
+        var released = _host is null;
+        var cancelled = released && error is OperationCanceledException && cancellationToken.IsCancellationRequested;
+
+        Publish(Snapshot with
+        {
+            State = cancelled ? RuntimeState.Stopped : RuntimeState.Faulted,
+            Address = released ? null : Snapshot.Address,
+            Error = cancelled ? null : error.Message
+        });
+        if (released)
+            _diagnostics.EndRun(runId);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -260,20 +278,22 @@ public sealed partial class McpRuntime : IAsyncDisposable
 
     private async Task StopCoreAsync(CancellationToken cancellationToken)
     {
-        if (_application is null)
+        if (_host is null)
         {
             if (!_disposed)
                 Publish(Snapshot with { State = RuntimeState.Stopped, Address = null, Error = null });
             return;
         }
         cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             using var deadline = cancellationToken.WithTimeout(ShutdownTimeout);
-            var draining = _execution?.StopAsync(deadline.Token) ?? Task.CompletedTask;
+            var draining = _host.Execution?.StopAsync(deadline.Token) ?? Task.CompletedTask;
             Publish(Snapshot with { State = RuntimeState.Stopping, Error = null });
             await StopOwnedResourcesAsync(deadline.Token, draining).ConfigureAwait(false);
             ReleaseHost();
+
             Publish(Snapshot with { State = RuntimeState.Stopped, Address = null });
             _diagnostics.EndRun(Snapshot.RunId);
         }
@@ -284,26 +304,16 @@ public sealed partial class McpRuntime : IAsyncDisposable
         }
     }
 
-    private async Task StopOwnedResourcesAsync(CancellationToken cancellationToken, Task? draining = null)
+    private async Task StopOwnedResourcesAsync(CancellationToken cancellationToken, Task draining)
     {
-        draining ??= _execution?.StopAsync(cancellationToken) ?? Task.CompletedTask;
         var tunnel = StopTunnelCoreAsync(cancellationToken);
         await Task.WhenAll(draining, tunnel).ConfigureAwait(false);
-
-        var application = _application!;
-        // A failed stop can be retried; never overlap stopping with unfinished disposal.
-        if (_hostStarted && _hostDisposeTask is null)
-        {
-            if (_hostStopTask is null || _hostStopTask.IsFaulted || _hostStopTask.IsCanceled)
-                _hostStopTask = Task.Run(() => application.StopAsync(cancellationToken));
-            await _hostStopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        await DisposeHostAsync(application, cancellationToken).ConfigureAwait(false);
+        await _host!.StopAndDisposeAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void Publish(RuntimeSnapshot snapshot)
     {
-        snapshot = snapshot with { HasOwnedResources = _application is not null };
+        snapshot = snapshot with { HasOwnedResources = _host is not null };
         var previousTunnelState = Snapshot.Tunnel.State;
         if (snapshot.Error is { } error)
             snapshot = snapshot with { Error = LogSanitizer.Sanitize(error, RuntimeDiagnostics.MaxEntryCharacters, out _) };

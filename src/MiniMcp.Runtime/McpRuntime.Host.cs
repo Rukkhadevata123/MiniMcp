@@ -85,20 +85,44 @@ public sealed partial class McpRuntime
         _configureEndpoints?.Invoke(application);
     }
 
-    private Task DisposeHostAsync(WebApplication application, CancellationToken cancellationToken)
-    {
-        // Dispatch even synchronous disposal work so a blocking service cannot bypass the shared deadline.
-        _hostDisposeTask ??= Task.Run(async () => await application.DisposeAsync().ConfigureAwait(false));
-        return _hostDisposeTask.WaitAsync(cancellationToken);
-    }
+    private void ReleaseHost() => Volatile.Write(ref _host, null);
 
-    private void ReleaseHost()
+    /// <summary>
+    /// Everything one run owns once BuildHost has succeeded. Stop and dispose tasks are kept so a
+    /// failed shutdown can be retried without overlapping work that is still in flight.
+    /// </summary>
+    private sealed class HostLease(WebApplication application)
     {
-        _application = null;
-        Volatile.Write(ref _execution, null);
-        _hostStopTask = null;
-        _hostDisposeTask = null;
-        _hostStarted = false;
+        private volatile ToolExecutionService? _execution;
+        private Task? _stop;
+        private Task? _dispose;
+
+        public WebApplication Application { get; } = application;
+
+        /// <summary>Resolved before the host listens; readers outside the lifecycle lock see it via a volatile read.</summary>
+        public ToolExecutionService? Execution
+        {
+            get => _execution;
+            set => _execution = value;
+        }
+
+        /// <summary>True once Kestrel has started; an unstarted host is only disposed.</summary>
+        public bool Started { get; set; }
+
+        public async Task StopAndDisposeAsync(CancellationToken cancellationToken)
+        {
+            // A failed stop can be retried; never overlap stopping with unfinished disposal.
+            if (Started && _dispose is null)
+            {
+                if (_stop is null || _stop.IsFaulted || _stop.IsCanceled)
+                    _stop = Task.Run(() => Application.StopAsync(cancellationToken));
+                await _stop.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // Dispatch even synchronous disposal work so a blocking service cannot bypass the shared deadline.
+            _dispose ??= Task.Run(async () => await Application.DisposeAsync().ConfigureAwait(false));
+            await _dispose.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private sealed class CallerControlledLifetime : IHostLifetime
