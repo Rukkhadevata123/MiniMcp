@@ -98,32 +98,8 @@ public sealed partial class ConfigurationStore
             var parent = CreateParentDirectories(file.FilePath, createdDirectories);
             validate();
 
-            var candidate = Path.Combine(parent, $".minimcp-config-{Guid.NewGuid():N}.tmp");
-            var options = new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Options = FileOptions.Asynchronous
-            };
-            if (OperatingSystem.IsLinux())
-                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            await using (var stream = new FileStream(candidate, options))
-            {
-                temporaryPath = candidate;
-                await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-                stream.Flush(flushToDisk: true);
-            }
-
-            if (_beforeCommit is not null)
-                await _beforeCommit().ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-            validate();
-            await checkDependencies(cancellationToken).ConfigureAwait(false);
-            await CheckRevisionAsync(file.FilePath, file.Revision, cancellationToken).ConfigureAwait(false);
-            if (OperatingSystem.IsLinux() && file.Revision is not null)
-                File.SetUnixFileMode(temporaryPath, File.GetUnixFileMode(file.FilePath));
-            cancellationToken.ThrowIfCancellationRequested();
+            temporaryPath = await StageFileAsync(parent, bytes, created => temporaryPath = created, cancellationToken).ConfigureAwait(false);
+            await ValidateBeforeCommitAsync(file, temporaryPath, validate, checkDependencies, cancellationToken).ConfigureAwait(false);
 
             // Commit is not cancellable: once installed, report the saved snapshot rather than cancellation.
             if (file.Revision is null)
@@ -141,6 +117,47 @@ public sealed partial class ConfigurationStore
                 throw new AggregateException("Saving failed and temporary storage cleanup did not complete.", failures);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Writes the new contents to a sibling temporary file, flushed to disk. <paramref name="created"/>
+    /// fires as soon as the file exists so the caller owns its cleanup even if the write then fails.
+    /// </summary>
+    private static async Task<string> StageFileAsync(string parent, byte[] bytes, Action<string> created, CancellationToken cancellationToken)
+    {
+        var candidate = Path.Combine(parent, $".minimcp-config-{Guid.NewGuid():N}.tmp");
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Options = FileOptions.Asynchronous
+        };
+        if (OperatingSystem.IsLinux())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        await using var stream = new FileStream(candidate, options);
+        created(candidate);
+        await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        stream.Flush(flushToDisk: true);
+        return candidate;
+    }
+
+    // Everything that was checked before staging is checked again right before the rename, so a
+    // concurrent edit, dependency change or revision bump between the two cannot be overwritten.
+    private async Task ValidateBeforeCommitAsync<T>(ConfigurationFile<T> file, string temporaryPath, Action validate,
+        Func<CancellationToken, Task> checkDependencies, CancellationToken cancellationToken)
+    {
+        if (_beforeCommit is not null)
+            await _beforeCommit().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        validate();
+        await checkDependencies(cancellationToken).ConfigureAwait(false);
+        await CheckRevisionAsync(file.FilePath, file.Revision, cancellationToken).ConfigureAwait(false);
+        if (OperatingSystem.IsLinux() && file.Revision is not null)
+            File.SetUnixFileMode(temporaryPath, File.GetUnixFileMode(file.FilePath));
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private static string CreateParentDirectories(string filePath, List<string> createdDirectories)
