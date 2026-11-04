@@ -80,26 +80,9 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
             foreach (var candidate in metadata.Candidates)
             {
                 token.ThrowIfCancellationRequested();
-                FileObservation? before;
-                try
-                {
-                    before = await ObserveFileAsync(candidate.Path, token).ConfigureAwait(false);
-                }
-                catch (WorkspaceException error) when (error.Message.Contains("UTF-8", StringComparison.Ordinal))
-                {
-                    notices.Add("BinaryOrNonUtf8FilesSkipped");
+                var (eligible, before) = await ObserveDiffCandidateAsync(repository, candidate, notices, token).ConfigureAwait(false);
+                if (!eligible)
                     continue;
-                }
-                if (before is { Length: > ProjectWorkspace.MaxFileBytes })
-                {
-                    notices.Add("OversizedFilesSkipped");
-                    continue;
-                }
-                if (await HasOversizedObjectsAsync(repository, candidate, token).ConfigureAwait(false))
-                {
-                    notices.Add("OversizedObjectsSkipped");
-                    continue;
-                }
 
                 var lines = new List<string>();
                 var pathBytes = JsonSerializer.SerializeToUtf8Bytes(candidate.Path).Length;
@@ -255,6 +238,35 @@ internal sealed class GitQueryService(ProjectWorkspace workspace, RuntimeConfigu
             candidates.Add(new(relative, fields[4], fields[2], fields[3]));
             return true;
         }
+    }
+
+    // Skips (with a notice) files whose current content or git objects cannot be diffed within limits.
+    // The observation is returned so the caller can detect a change made while git ran.
+    private async Task<(bool Eligible, FileObservation? Before)> ObserveDiffCandidateAsync(GitRepository repository, DiffCandidate candidate,
+        HashSet<string> notices, CancellationToken token)
+    {
+        FileObservation? before;
+        try
+        {
+            before = await ObserveFileAsync(candidate.Path, token).ConfigureAwait(false);
+        }
+        catch (WorkspaceException error) when (error.Message.Contains("UTF-8", StringComparison.Ordinal))
+        {
+            notices.Add("BinaryOrNonUtf8FilesSkipped");
+            return (false, null);
+        }
+
+        if (before is { Length: > ProjectWorkspace.MaxFileBytes })
+        {
+            notices.Add("OversizedFilesSkipped");
+            return (false, null);
+        }
+        if (await HasOversizedObjectsAsync(repository, candidate, token).ConfigureAwait(false))
+        {
+            notices.Add("OversizedObjectsSkipped");
+            return (false, null);
+        }
+        return (true, before);
     }
 
     private static async Task<bool> HasOversizedObjectsAsync(GitRepository repository, DiffCandidate candidate, CancellationToken token)

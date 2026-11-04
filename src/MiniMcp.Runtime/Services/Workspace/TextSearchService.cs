@@ -46,10 +46,35 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
         // ignore file may itself be a symlink, even when rg does not follow ordinary file links.
         var allowed = await Task.Run(() => Inspect(root, maxDepth, notices, cancellationToken), cancellationToken).ConfigureAwait(false);
 
+        var (candidates, discoveryLimited) = await DiscoverCandidatesAsync(executable, root, glob, maxDepth, allowed, notices, cancellationToken).ConfigureAwait(false);
+
+        // rg JSON can emit valid-looking matches before reporting binary_offset at file end.
+        // Check bounded candidate bytes first so a result limit cannot publish those early matches.
+        candidates.RemoveAll(relative => IsBinaryCandidate(relative, allowed, notices, cancellationToken));
+        var matches = new MatchCollector(workspace.Relative(root), maxResults, notices, ValidateMatchPath);
+        var stopped = await SearchCandidatesAsync(executable, pattern, regex, caseSensitive, maxResults, candidates, allowed, matches, notices, cancellationToken).ConfigureAwait(false);
+
+        foreach (var file in matches.MatchedFiles)
+            ValidateCandidate(file, allowed);
+        return new(workspace.Relative(root), matches.Entries, notices.Count == 0, stopped || discoveryLimited,
+            ["Scope: selected root; project-local ignore files/glob, hidden and binary filtering by rg; no parent/global ignores, private paths or links; UTF-8 snippets only, not full-file encoding validation; matching lines, no character columns; live observation, not a snapshot.", .. notices.Order()]);
+
+        string ValidateMatchPath(string raw)
+        {
+            var relative = NormalizeResultPath(raw);
+            ValidateCandidate(relative, allowed);
+            if (!candidates.Contains(relative, StringComparer.Ordinal))
+                throw new WorkspaceException("rg returned a file outside its candidate set.");
+            return relative;
+        }
+    }
+
+    private async Task<(List<string> Candidates, bool Limited)> DiscoverCandidatesAsync(string executable, string root, string? glob,
+        int maxDepth, Dictionary<string, Observation> allowed, HashSet<string> notices, CancellationToken cancellationToken)
+    {
         var candidates = new List<string>();
-        var discoveryArguments = BuildDiscoveryArguments(root, glob, maxDepth);
         var discovery = await ReadOnlyQueryRunner.RunAsync(executable, workspace.Root,
-            discoveryArguments, '\0', 8192, QueryText.MaxResultBytes,
+            BuildDiscoveryArguments(root, glob, maxDepth), '\0', 8192, QueryText.MaxResultBytes,
             raw =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -63,21 +88,23 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
         CheckExit(discovery, notices);
         if (discovery.OutputLimited)
             notices.Add("CandidateOutputLimit");
+        return (candidates, discovery.OutputLimited);
+    }
 
-        // rg JSON can emit valid-looking matches before reporting binary_offset at file end.
-        // Check bounded candidate bytes first so a result limit cannot publish those early matches.
-        candidates.RemoveAll(relative => IsBinaryCandidate(relative, allowed, notices, cancellationToken));
-        var matches = new MatchCollector(workspace.Relative(root), maxResults, notices, ValidateMatchPath);
-
-        // Explicit candidates preserve rg's earlier ignore/glob decision while preventing the
-        // search process from opening an unchecked file. Batches stay below Windows argv limits.
-        var stopped = false;
+    // Explicit candidates preserve rg's earlier ignore/glob decision while preventing the
+    // search process from opening an unchecked file. Batches stay below Windows argv limits.
+    // Returns true when a result or output limit stopped the search early.
+    private async Task<bool> SearchCandidatesAsync(string executable, string pattern, bool regex, bool caseSensitive, int maxResults,
+        List<string> candidates, Dictionary<string, Observation> allowed, MatchCollector matches, HashSet<string> notices,
+        CancellationToken cancellationToken)
+    {
         foreach (var files in BuildBatches(candidates))
         {
             cancellationToken.ThrowIfCancellationRequested();
             // Recheck every candidate immediately before the child starts, not just returned matches.
             foreach (var file in files)
                 ValidateCandidate(file[2..], allowed);
+
             var arguments = BuildSearchArguments(pattern, regex, caseSensitive, maxResults, files);
             var result = await ReadOnlyQueryRunner.RunAsync(executable, workspace.Root, arguments, '\n',
                 2 * 1024 * 1024, 8 * 1024 * 1024,
@@ -86,24 +113,11 @@ internal sealed class TextSearchService(ProjectWorkspace workspace, RuntimeConfi
             if (result.OutputLimited)
             {
                 notices.Add("ResultOrOutputLimit");
-                stopped = true;
-                break;
+                return true;
             }
         }
 
-        foreach (var file in matches.MatchedFiles)
-            ValidateCandidate(file, allowed);
-        return new(workspace.Relative(root), matches.Entries, notices.Count == 0, stopped || discovery.OutputLimited,
-            ["Scope: selected root; project-local ignore files/glob, hidden and binary filtering by rg; no parent/global ignores, private paths or links; UTF-8 snippets only, not full-file encoding validation; matching lines, no character columns; live observation, not a snapshot.", .. notices.Order()]);
-
-        string ValidateMatchPath(string raw)
-        {
-            var relative = NormalizeResultPath(raw);
-            ValidateCandidate(relative, allowed);
-            if (!candidates.Contains(relative, StringComparer.Ordinal))
-                throw new WorkspaceException("rg returned a file outside its candidate set.");
-            return relative;
-        }
+        return false;
     }
 
     private List<string> BuildDiscoveryArguments(string root, string? glob, int maxDepth)
