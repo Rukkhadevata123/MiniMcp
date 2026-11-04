@@ -364,7 +364,7 @@ internal sealed partial class PatchService(ProjectWorkspace workspace, Func<Patc
     {
         var current = await workspace.SnapshotRegularAsync(change.Destination, CancellationToken.None).ConfigureAwait(false);
         var mode = change.TargetMode(plan);
-        var creation = change.Before is null && change.ExactAfterMode is null;
+        var creation = change.RequestsCreationMode;
         if (change.After is null || !current.Bytes.AsSpan().SequenceEqual(change.After.Value.AsSpan()) ||
             (!creation && current.Mode != mode) || (creation && current.Mode is { } actual && mode is { } request && (actual & ~request) != 0))
             throw new IOException("Rollback refused to overwrite a file changed after installation; the original backup was preserved.");

@@ -19,4 +19,7 @@ internal sealed record PlannedPatchChange(string Source, string Destination, Tex
     // Ordinary adds request the plan's restrictive creation mode. Restoration may require an exact
     // recorded mode; installation and verification must both honor it, including restored additions.
     internal UnixFileMode? TargetMode(PatchPlan plan) => After is null ? null : ExactAfterMode ?? Before?.Mode ?? plan.NewFileCreateMode;
+
+    /// <summary>A new file without an exact recorded mode: the OS umask may narrow the requested mode.</summary>
+    internal bool RequestsCreationMode => Before is null && ExactAfterMode is null;
 }
