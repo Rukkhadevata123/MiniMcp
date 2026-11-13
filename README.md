@@ -16,7 +16,7 @@ Git 查询会读取仓库本地配置，可能触发其中配置的外部程序�
 
 ## 开始使用
 
-需要 .NET 10 SDK。搜索需要单独安装 ripgrep，Git 查询需要 Git；FullAccess 需要 Bash，受管 Tunnel 需要 cloudflared。Linux 的 Bash、受管隧道和文本搜索还需要 `/usr/bin/setsid`。项目不自动下载这些程序。
+需要 .NET 11 SDK。搜索需要单独安装 ripgrep，Git 查询需要 Git；FullAccess 需要 Bash，受管 Tunnel 需要 cloudflared。Linux 的 Bash、受管隧道和文本搜索还需要 `/usr/bin/setsid`。项目不自动下载这些程序。
 
 1. 准备一个已有的项目目录。复制 [本机配置示例](examples/settings.local.json)，将 `projectRoot` 改为该目录的绝对路径。示例使用 Local 认证，仅适合可信的本机环境。
 2. 在仓库根目录检查并启动，替换下面的配置路径：
